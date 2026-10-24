@@ -1,0 +1,45 @@
+{% extends "studio/base.html" %}
+{% block title %}{{ member.username }}{% endblock %}
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="{% url 'studio:team' %}">Team</a> <span aria-hidden="true">/</span> <span aria-current="page">{{ member.username }}</span></nav>
+{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ member.username }}</h1>
+    <p class="lede">Current role: {{ current_role|default:"No role" }}. Last signed in {% if member.last_login %}{{ member.last_login|date:"M j, Y" }}{% else %}never{% endif %}.</p>
+  </div>
+</div>
+
+{% include "studio/settings/_errors.html" %}
+
+{% if editable %}
+<form method="post" class="panel" style="max-width:640px" novalidate>
+  {% csrf_token %}
+  <div class="panel-body">
+    <div class="field">
+      <label class="label" for="f-email">Email address</label>
+      <input class="input" id="f-email" name="email" type="email" value="{{ state.email }}" required{% if errors.email %} aria-invalid="true" aria-describedby="m-email-err"{% endif %}>
+      {% if errors.email %}<p class="field-error" id="m-email-err">{{ errors.email|join:" " }}</p>{% endif %}
+    </div>
+    <fieldset class="fieldset" id="f-role" style="margin-top:var(--s-4)"{% if errors.role %} aria-describedby="m-role-err"{% endif %}>
+      <legend>Role</legend>
+      {% if errors.role %}<p class="field-error" id="m-role-err">{{ errors.role|join:" " }}</p>{% endif %}
+      {% for opt in role_options %}
+        <label class="choice-card" style="margin-bottom:var(--s-2)"><input type="radio" name="role" value="{{ opt.value }}"{% if opt.checked %} checked{% endif %}><span><strong>{{ opt.label }}</strong><br><span class="small">{{ opt.help }}</span></span></label>
+      {% endfor %}
+    </fieldset>
+    <div class="field" id="f-is_active" style="margin-top:var(--s-4)">
+      <label class="switch"><input type="checkbox" name="is_active" value="on"{% if state.is_active %} checked{% endif %} aria-describedby="m-active-help"><span class="switch-track" aria-hidden="true"></span> Can sign in</label>
+      <p class="help" id="m-active-help">Turn off to block access without deleting the account or its history.</p>
+    </div>
+  </div>
+  <div class="panel-foot form-actions" style="margin-top:0">
+    <button class="btn btn-primary" type="submit">Save changes</button>
+    <a class="btn btn-ghost" href="{% url 'studio:team' %}">Cancel</a>
+  </div>
+</form>
+{% else %}
+<p class="callout">{% if member.is_superuser %}Superuser accounts are managed with the <code>bootstrap_admin</code> command and the maintenance admin.{% else %}You can't change your own role or access. Ask another superuser.{% endif %}</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "studio/base.html" %}
+{% block title %}Deliveries{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Connect</p>
+    <h1>Deliveries</h1>
+    <p class="lede">The latest 100 messages sent to your integrations. Message contents aren't shown here because they can include personal data.</p>
+  </div>
+</div>
+
+<form method="get" class="form-actions" style="margin-top:0;margin-bottom:var(--s-4)">
+  <div class="field">
+    <label class="label" for="status-filter">Status</label>
+    <select class="select" id="status-filter" name="status">
+      <option value="">All statuses</option>
+      {% for value, label in statuses %}<option value="{{ value }}"{% if value == status %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </div>
+  <button class="btn btn-sm" type="submit" style="align-self:flex-end">Filter</button>
+</form>
+
+{% if rows %}
+<div class="panel">
+  <div class="table-wrap">
+    <table class="table">
+      <caption class="visually-hidden">Recent deliveries{% if status %}, filtered by status{% endif %}</caption>
+      <thead><tr><th scope="col">Created</th><th scope="col">Integration</th><th scope="col">Event</th><th scope="col">Status</th><th scope="col" class="num">Attempts</th><th scope="col">Last result</th>{% if can_retry %}<th scope="col"><span class="visually-hidden">Actions</span></th>{% endif %}</tr></thead>
+      <tbody>
+        {% for row in rows %}
+          {% with m=row.obj %}
+          <tr>
+            <td>{{ m.created_at|date:"M j, H:i" }}</td>
+            <td>{{ m.destination.name }}</td>
+            <td><code>{{ m.event_type }}</code></td>
+            <td><span class="badge badge-{{ row.badge }}">{{ m.get_status_display }}</span></td>
+            <td class="num">{{ m.attempts }}</td>
+            <td>{% if m.last_status_code %}HTTP {{ m.last_status_code }}{% endif %}{% if m.last_error %}<span class="small"> {{ m.last_error|truncatechars:80 }}</span>{% endif %}{% if m.status == "delivered" and m.delivered_at %}Delivered {{ m.delivered_at|date:"M j, H:i" }}{% elif m.status == "pending" %} Next try {{ m.next_attempt_at|date:"M j, H:i" }}{% endif %}</td>
+            {% if can_retry %}
+            <td>{% if m.status == "dead" %}
+              <form method="post" action="{% url 'studio:delivery-retry' pk=m.pk %}">{% csrf_token %}<input type="hidden" name="status" value="{{ status }}"><button class="btn btn-sm" type="submit">Retry</button></form>
+            {% endif %}</td>
+            {% endif %}
+          </tr>
+          {% endwith %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="panel"><div class="empty">
+  <h2>{% if status %}No deliveries with this status{% else %}Nothing delivered yet{% endif %}</h2>
+  <p>Deliveries appear here when an enabled integration receives an event, such as a new registration.</p>
+</div></div>
+{% endif %}
+{% endblock %}

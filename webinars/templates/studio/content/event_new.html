@@ -1,0 +1,58 @@
+{% extends "studio/base.html" %}
+{% block title %}New event{% endblock %}
+{% block breadcrumbs %}<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="{% url 'studio:events' %}">Events</a> / <span aria-current="page">New event</span></nav>{% endblock %}
+{% block content %}
+{% if choosing %}
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">New event</p>
+      <h1>How do you want to start?</h1>
+      <p class="lede">Templates come with complete copy, a host and a topic. You'll review everything before anything is public.</p>
+    </div>
+  </div>
+  <div class="grid-3">
+    {% for card in cards %}
+      <article class="panel">
+        <div class="panel-body stack-sm">
+          <p class="eyebrow">{{ card.label }}</p>
+          <h2>{{ card.title }}</h2>
+          <p class="muted">{{ card.description }}</p>
+          <p class="small muted">{{ card.duration }} minutes</p>
+        </div>
+        <div class="panel-foot"><a class="btn btn-primary btn-sm" href="?starter={{ card.key }}">Use this template<span class="visually-hidden">: {{ card.label }}</span></a></div>
+      </article>
+    {% endfor %}
+    <article class="panel">
+      <div class="panel-body stack-sm">
+        <p class="eyebrow">Blank</p>
+        <h2>Start from scratch</h2>
+        <p class="muted">An empty page with your default registration form. Good when you already have copy.</p>
+      </div>
+      <div class="panel-foot"><a class="btn btn-ghost btn-sm" href="?starter=blank">Start blank</a></div>
+    </article>
+  </div>
+{% else %}
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">{% if starter %}{{ starter.label }} template{% else %}Blank event{% endif %}</p>
+      <h1>Name your event</h1>
+      <p class="lede">This creates a draft. Nothing is public until you publish it.</p>
+    </div>
+  </div>
+  {% include "studio/content/_error_summary.html" with items=error_summary %}
+  <form method="post" action="{% url 'studio:event-new' %}" class="panel" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="starter" value="{{ starter_key }}">
+    <div class="panel-body">
+      {% include "studio/content/_field.html" with name="public_title" label="Public title" kind="title" value=values.public_title error=errors.public_title help="The headline visitors see." %}
+      {% include "studio/content/_field.html" with name="internal_name" label="Internal name" value=values.internal_name error=errors.internal_name help="Only your team sees this. Leave blank to reuse the title." optional=True %}
+      {% include "studio/content/_field.html" with name="slug" label="URL slug" value=values.slug error=errors.slug help="Lowercase letters, numbers and dashes. Leave blank to generate one from the title." optional=True %}
+      {% if starter %}<p class="callout callout-teal" style="margin-top:var(--s-5)">The template's Attention, Interest, Decision and Action copy, learning outcomes, host and topic are added for you.</p>{% endif %}
+    </div>
+    <div class="panel-foot form-actions">
+      <button class="btn btn-primary" type="submit">Create draft</button>
+      <a class="btn btn-ghost" href="{% url 'studio:event-new' %}">Choose a different template</a>
+    </div>
+  </form>
+{% endif %}
+{% endblock %}

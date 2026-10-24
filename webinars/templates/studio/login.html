@@ -1,0 +1,58 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Sign in · Webinar Studio</title>
+  <link rel="stylesheet" href="{% static 'studio/studio.css' %}">
+</head>
+<body>
+<main class="auth" id="main">
+  <section class="auth-art" aria-label="About the studio">
+    <p class="brand"><span class="brand-mark" aria-hidden="true">W</span> Studio</p>
+    <blockquote>Plan the session, write the page, open the doors. <span class="accent">One place for all of it.</span></blockquote>
+    <p class="small">Events, registration forms, waiting rooms and reports for your team.</p>
+  </section>
+  <section class="auth-form">
+    <div class="panel">
+      <div class="panel-body stack">
+        <h1>Sign in</h1>
+        {% if rate_limited %}
+          <div class="error-summary" role="alert" tabindex="-1" autofocus>
+            <h2>Too many attempts</h2>
+            <p>Wait a few minutes before trying again.</p>
+          </div>
+        {% elif form.errors %}
+          <div class="error-summary" role="alert" tabindex="-1" autofocus>
+            <h2>We couldn't sign you in</h2>
+            <ul>
+              {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+              {% for field in form %}{% for error in field.errors %}<li><a href="#{{ field.id_for_label }}">{{ field.label }}: {{ error }}</a></li>{% endfor %}{% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+        <form method="post" action="{% url 'studio:login' %}" novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ next }}">
+          <div class="field">
+            <label class="label" for="{{ form.username.id_for_label }}">Username</label>
+            <input class="input" type="text" name="username" id="{{ form.username.id_for_label }}" autocomplete="username" autocapitalize="none" required value="{{ form.username.value|default:'' }}"{% if form.username.errors %} aria-invalid="true" aria-describedby="username-error"{% endif %}>
+            {% if form.username.errors %}<p class="field-error" id="username-error">{{ form.username.errors|join:" " }}</p>{% endif %}
+          </div>
+          <div class="field">
+            <label class="label" for="{{ form.password.id_for_label }}">Password</label>
+            <input class="input" type="password" name="password" id="{{ form.password.id_for_label }}" autocomplete="current-password" required{% if form.password.errors %} aria-invalid="true" aria-describedby="password-error"{% endif %}>
+            {% if form.password.errors %}<p class="field-error" id="password-error">{{ form.password.errors|join:" " }}</p>{% endif %}
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+          </div>
+        </form>
+        <p class="help">New to the team? Use the invitation link a superuser sent you.</p>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

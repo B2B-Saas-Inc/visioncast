@@ -1,0 +1,51 @@
+{% extends "studio/base.html" %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Insights</p>
+    <h1>Reports</h1>
+    <p class="lede">Registrations and recorded attendance per session. Attendance is only counted when it was recorded or checked in, never guessed.</p>
+  </div>
+</div>
+
+<div class="grid-3" style="margin-bottom:var(--s-6)">
+  <div class="panel"><div class="panel-body stat"><span class="stat-value">{{ totals.registered }}</span><span class="stat-label">Registered</span></div></div>
+  <div class="panel"><div class="panel-body stat"><span class="stat-value">{{ totals.attended }}</span><span class="stat-label">Attended</span></div></div>
+  <div class="panel"><div class="panel-body stat"><span class="stat-value">{{ totals.no_show }}</span><span class="stat-label">No-shows</span></div></div>
+</div>
+
+{% if rows %}
+  <div class="panel table-wrap">
+    <table class="table">
+      <caption class="visually-hidden">Sessions with registration and attendance counts</caption>
+      <thead><tr><th scope="col">Session</th><th scope="col">Status</th><th scope="col" class="num">Registered</th><th scope="col" class="num">Cancelled</th><th scope="col" class="num">Attended</th><th scope="col" class="num">No-show</th><th scope="col" class="num">Unknown</th><th scope="col" class="num">SMS consents</th></tr></thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td class="primary-cell">{% if can_view_sessions %}<a href="{% url 'studio:session' row.id %}">{{ row.event }}</a>{% else %}{{ row.event }}{% endif %}<div class="small muted">{{ row.starts_at|date:"j M Y, H:i" }} UTC</div></td>
+            <td><span class="badge badge-{% if row.status == 'cancelled' %}cancelled{% elif row.status == 'completed' %}plain{% else %}public{% endif %}">{{ row.status|capfirst }}</span></td>
+            <td class="num">{{ row.registered }}</td>
+            <td class="num">{{ row.cancelled }}</td>
+            <td class="num">{{ row.attended }}</td>
+            <td class="num">{{ row.no_show }}</td>
+            <td class="num">{{ row.unknown }}</td>
+            <td class="num">{{ row.consents.sms|default:0 }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="panel empty"><h2>No sessions yet</h2><p>Reports fill in as soon as the first session is scheduled.</p></div>
+{% endif %}
+
+<section class="panel" aria-labelledby="outbox-title" style="margin-top:var(--s-6)">
+  <div class="panel-head"><h2 id="outbox-title">Integration deliveries</h2></div>
+  <div class="panel-body grid-3">
+    {% for label, count in outbox %}
+      <div class="stat"><span class="stat-value">{{ count }}</span><span class="stat-label">{{ label }}</span></div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

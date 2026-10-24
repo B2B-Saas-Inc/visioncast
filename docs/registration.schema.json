@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webinar-platform.invalid/schemas/registration/1.json",
+  "title": "Webinar registration request (schemaVersion 1)",
+  "description": "Body of POST /api/v1/registrations and POST /webinar-api/registrations. Structural schema only: the server additionally normalises fields, resolves aliases/per-form mappings, enforces the form's required fields, gates attribution by consent and rejects conflicts. Client consent claims are stored as client_claim evidence and are never server-verified.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "occurrenceId", "formVersion", "idempotencyKey", "profile"],
+  "properties": {
+    "schemaVersion": { "const": "1" },
+    "occurrenceId": { "type": "string", "format": "uuid" },
+    "formVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_\\-:.]{8,128}$",
+      "description": "Client-generated random value (UUIDv4 recommended). Reuse it to retry the same intent; generate a new one after a completed registration. Server regex: ^[A-Za-z0-9_\\-:.]{8,128}$."
+    },
+    "profile": { "$ref": "#/$defs/profile" },
+    "organization": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "externalIds": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["namespace", "value"],
+            "properties": {
+              "namespace": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$", "description": "Lowercase, e.g. \"crm\", \"salesforce_account\". Browser-supplied ids are stored unverified." },
+              "value": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S", "description": "Must contain a non-whitespace character; trimmed before storage." }
+            }
+          }
+        }
+      }
+    },
+    "consents": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sms": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["granted"],
+          "properties": {
+            "granted": { "type": "boolean" },
+            "disclosureVersion": { "type": "string", "maxLength": 64, "description": "Must identify the SMS disclosure shown (FormVersion.sms_disclosure_version) when granted is true." }
+          }
+        },
+        "analytics": { "$ref": "#/$defs/simpleConsent" },
+        "advertising": { "$ref": "#/$defs/simpleConsent" }
+      }
+    },
+    "attribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "parameters": {
+          "type": "object",
+          "description": "Allowlisted URL parameters only: utm_source, utm_medium, utm_campaign, utm_term, utm_content, utm_id; ValueTrack campaignid, adgroupid, keyword, matchtype, network, device, creative, placement, targetid, loc_physical_ms; click ids gclid, gbraid, wbraid, fbclid, msclkid, ttclid, twclid, ScCid, rdt_cid. Other keys (e.g. gad_source, utm_source_platform) are dropped server-side; click ids require advertising consent.",
+          "maxProperties": 50,
+          "additionalProperties": { "type": "string", "maxLength": 256 }
+        },
+        "identifiers": {
+          "type": "object",
+          "description": "Allowlisted first-party cookie identifiers (fbp, fbc, gaClientId, gclAw, gclAu, scid, rdtUuid, twclid). Canonical key for the GA4 client id is gaClientId (the SDK sends this; ga4ClientId and _ga are accepted as input aliases). Dropped unless the matching consent purpose is granted. Never used for authentication.",
+          "maxProperties": 20,
+          "additionalProperties": { "type": "string", "maxLength": 256 }
+        },
+        "pageUrl": { "type": "string", "maxLength": 2000, "description": "Query string and fragment are stripped before storage." },
+        "referrer": { "type": "string", "maxLength": 2000, "description": "Query string and fragment are stripped before storage." }
+      }
+    },
+    "customFields": {
+      "type": "object",
+      "description": "Keys must be listed in the form's custom_fields (with or without the \"custom.\" prefix). Stored namespaced as custom.<key>.",
+      "maxProperties": 100,
+      "additionalProperties": {
+        "type": ["string", "number", "boolean", "null"],
+        "maxLength": 1000
+      }
+    }
+  },
+  "$defs": {
+    "simpleConsent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["granted"],
+      "properties": { "granted": { "type": "boolean" } }
+    },
+    "profile": {
+      "type": "object",
+      "description": "Canonical camelCase keys. Common snake_case aliases and the form's explicit field_mapping keys are also accepted (see docs/field-mapping.md). Blank or null values are ignored and never erase stored data.",
+      "maxProperties": 100,
+      "properties": {
+        "email": { "type": ["string", "null"], "maxLength": 254 },
+        "phone": { "type": ["string", "null"], "maxLength": 40, "description": "E.164 (+<country><number>) unless the form supplies a default region." },
+        "firstName": { "type": ["string", "null"], "maxLength": 150 },
+        "lastName": { "type": ["string", "null"], "maxLength": 150 },
+        "name": { "type": ["string", "null"], "maxLength": 300, "description": "Never split into firstName/lastName." },
+        "company": { "type": ["string", "null"], "maxLength": 300 },
+        "jobTitle": { "type": ["string", "null"], "maxLength": 300 },
+        "companySize": { "type": ["string", "null"], "maxLength": 64 }
+      },
+      "additionalProperties": { "type": ["string", "null"], "maxLength": 1000 }
+    }
+  },
+  "examples": [
+    {
+      "schemaVersion": "1",
+      "occurrenceId": "0f8b2d4e-6c1a-4b7e-9f3d-2a5c8e1b7d90",
+      "formVersion": "2025-default",
+      "idempotencyKey": "c8f1a1f2-9b8e-4a9c-8d2e-3f7b6a5c4d21",
+      "profile": { "email": "ada@example.com", "firstName": "Ada", "lastName": "Lovelace", "company": "Analytical Engines" },
+      "organization": { "externalIds": [{ "namespace": "crm_account", "value": "ACC-1042" }] },
+      "consents": {
+        "sms": { "granted": false },
+        "analytics": { "granted": true },
+        "advertising": { "granted": false }
+      },
+      "attribution": {
+        "parameters": { "utm_source": "newsletter", "utm_medium": "email" },
+        "identifiers": { "gaClientId": "1234567890.1700000000" },
+        "pageUrl": "https://www.example.com/webinars/data-101",
+        "referrer": "https://news.example.org/"
+      },
+      "customFields": { "role_focus": "Engineering" }
+    }
+  ]
+}

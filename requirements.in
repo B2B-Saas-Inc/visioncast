@@ -1,0 +1,10 @@
+# Direct runtime dependencies. Regenerate requirements.txt inside a managed container:
+# uv pip compile requirements.in --generate-hashes -o requirements.txt
+# Re-run audit, regression checks and the hash-enforced image build after updates.
+Django==5.2.17
+psycopg[binary]==3.2.10
+cryptography==50.0.0
+gunicorn==23.0.0
+whitenoise==6.11.0
+tzdata==2025.2
+Pillow==13.0.0

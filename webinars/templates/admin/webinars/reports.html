@@ -1,0 +1,59 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a> &rsaquo; Reports
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <p>Aggregate counts only. Attendance shows recorded attendance events; it is never inferred from RSVPs.</p>
+
+  <h2>Occurrences</h2>
+  {% if summary.occurrences %}
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Event</th>
+        <th scope="col">Starts (UTC)</th>
+        <th scope="col">Status</th>
+        <th scope="col">Registered</th>
+        <th scope="col">Cancelled</th>
+        <th scope="col">Attended</th>
+        <th scope="col">No-show</th>
+        <th scope="col">Unknown</th>
+        <th scope="col">Consents granted</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in summary.occurrences %}
+      <tr>
+        <td>{{ row.event }} <small>({{ row.eventSlug }})</small></td>
+        <td>{{ row.startsAt }}</td>
+        <td>{{ row.status }}</td>
+        <td>{{ row.registrations.registered }}</td>
+        <td>{{ row.registrations.cancelled }}</td>
+        <td>{{ row.attendance.attended }}</td>
+        <td>{{ row.attendance.no_show }}</td>
+        <td>{{ row.attendance.unknown }}</td>
+        <td>{% for purpose, n in row.consentsGranted.items %}{{ purpose }}: {{ n }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No occurrences yet.</p>
+  {% endif %}
+
+  <h2>Outbox</h2>
+  <table>
+    <thead><tr><th scope="col">Status</th><th scope="col">Messages</th></tr></thead>
+    <tbody>
+      {% for status, n in summary.outbox.items %}
+      <tr><td>{{ status }}</td><td>{{ n }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

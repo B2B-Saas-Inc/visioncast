@@ -1,0 +1,20 @@
+{% extends "studio/base.html" %}
+{% block title %}{{ item.subject|default:"Message" }}{% endblock %}
+{% block head %}<meta name="referrer" content="no-referrer">{% endblock %}
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="{% url 'studio:mailbox' %}">Preview mailbox</a> <span aria-hidden="true">/</span> <span aria-current="page">Message</span></nav>
+{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ item.subject|default:"(no subject)" }}</h1>
+    <p class="lede">To {{ item.to }} · {{ item.created_at|date:"M j, Y H:i:s" }}</p>
+  </div>
+</div>
+<section class="panel">
+  <div class="panel-body">
+    <pre class="code-block" style="white-space:pre-wrap;word-break:break-word">{{ body|urlize }}</pre>
+  </div>
+</section>
+<p class="help" style="margin-top:var(--s-4)">Links in this message are real and single-use, just like in a delivered email.</p>
+{% endblock %}

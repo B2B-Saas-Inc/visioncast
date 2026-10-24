@@ -1,0 +1,8 @@
+{% if items %}<div class="error-summary" role="alert" tabindex="-1" autofocus id="{{ summary_id|default:'error-summary' }}">
+  <h2>{{ heading|default:"Please fix the following before saving" }}</h2>
+  <ul>
+    {% for item in items %}
+      <li>{% if item.href %}<a href="{{ item.href }}">{% if item.label %}{{ item.label }}: {% endif %}{{ item.message }}</a>{% else %}{{ item.message }}{% endif %}</li>
+    {% endfor %}
+  </ul>
+</div>{% endif %}

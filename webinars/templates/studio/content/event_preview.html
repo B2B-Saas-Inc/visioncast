@@ -1,0 +1,94 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Preview: {{ event.public_title }}</title>
+  <link rel="stylesheet" href="{% static 'studio/studio.css' %}">
+  <style>
+    body { background: var(--paper); }
+    .pv-banner { position: sticky; top: 0; z-index: 10; display: flex; gap: var(--s-3); align-items: center; justify-content: space-between; flex-wrap: wrap; padding: var(--s-2) var(--s-5); background: var(--ink-950); color: #efe9df; font-size: var(--fs-sm); }
+    .pv-banner a { color: #efe9df; }
+    .pv-hero { padding: var(--s-8) var(--s-5) var(--s-7); max-width: 1120px; margin: 0 auto; display: grid; gap: var(--s-7); grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: start; }
+    .pv-hero h1 { font-family: var(--font-display); font-size: clamp(2rem, 4vw, 3.2rem); line-height: 1.1; margin: var(--s-3) 0 var(--s-4); }
+    .pv-hook { font-family: var(--font-display); font-size: var(--fs-lg); color: var(--coral-700); margin: 0; }
+    .pv-img { width: 100%; border-radius: var(--r-md); margin-top: var(--s-5); }
+    .pv-section { margin-top: var(--s-6); }
+    .pv-section h2 { font-family: var(--font-display); font-size: var(--fs-lg); }
+    .pv-outcomes { padding-left: var(--s-5); }
+    .pv-outcomes li { margin-bottom: var(--s-2); }
+    .pv-hosts { display: grid; gap: var(--s-4); grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+    .pv-host img { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; }
+    .pv-form { position: sticky; top: 64px; }
+    @media (max-width: 860px) { .pv-hero { grid-template-columns: 1fr; padding-top: var(--s-6); } .pv-form { position: static; } }
+  </style>
+</head>
+<body>
+<div class="pv-banner" role="note">
+  <strong>Preview — not public.</strong>
+  <span>This is how the landing page reads. Registration is disabled here.</span>
+  <a href="{% url 'studio:event-edit' event.pk %}">Back to the editor</a>
+</div>
+<main class="pv-hero" id="main">
+  <article>
+    {% if topics %}<p class="eyebrow">{% for t in topics %}{{ t.name }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+    {% if event.attention %}<p class="pv-hook">{{ event.attention }}</p>{% endif %}
+    <h1>{{ event.public_title }}</h1>
+    {% if event.summary %}<p class="lede">{{ event.summary }}</p>{% endif %}
+    {% if sessions %}
+      <p><strong>{{ sessions.0.local_label }}</strong> <span class="muted">({{ sessions.0.timezone }}) · {{ sessions.0.duration_minutes }} minutes</span>{% if sessions|length > 1 %} <span class="muted">· {{ sessions|length }} sessions to choose from</span>{% endif %}</p>
+    {% else %}
+      <p class="callout callout-warn">No upcoming session is scheduled, so visitors couldn't register yet.</p>
+    {% endif %}
+    {% if event.cover_image_id %}<img class="pv-img" src="{{ event.cover_image.path }}" alt="">{% elif event.hero_image_url %}<img class="pv-img" src="{{ event.hero_image_url }}" alt="">{% endif %}
+    {% if event.interest %}<section class="pv-section"><h2>Why this matters</h2><p>{{ event.interest|linebreaksbr }}</p></section>{% endif %}
+    {% if event.learning_outcomes %}
+      <section class="pv-section"><h2>You'll learn to</h2><ul class="pv-outcomes">{% for o in event.learning_outcomes %}<li>{{ o }}</li>{% endfor %}</ul></section>
+    {% endif %}
+    {% if event.decision %}<section class="pv-section"><h2>What you'll leave with</h2><p>{{ event.decision|linebreaksbr }}</p></section>{% endif %}
+    {% if hosts %}
+      <section class="pv-section"><h2>Your host{{ hosts|length|pluralize }}</h2>
+        <div class="pv-hosts">
+          {% for h in hosts %}
+            <div class="pv-host row" style="align-items:flex-start;gap:var(--s-3)">
+              {% if h.image_url %}<img src="{{ h.image_url }}" alt="">{% endif %}
+              <div><strong>{{ h.name }}</strong>{% if h.title %}<div class="small muted">{{ h.title }}</div>{% endif %}{% if h.bio %}<p class="small">{{ h.bio }}</p>{% endif %}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </section>
+    {% endif %}
+  </article>
+
+  <aside class="panel pv-form" aria-labelledby="pv-form-title">
+    <div class="panel-body">
+      <h2 id="pv-form-title" style="font-family:var(--font-display)">Save your seat</h2>
+      {% if event.action %}<p class="muted">{{ event.action }}</p>{% endif %}
+      <form aria-describedby="pv-disabled-note">
+        {% for f in schema.fields %}
+          <div class="field">
+            {% if f.type == "checkbox" %}
+              <label class="choice"><input type="checkbox" disabled> {{ f.label }}</label>
+            {% else %}
+              <label class="label" for="pv-{{ forloop.counter }}">{{ f.label }}{% if not f.required %} <span class="optional">(optional)</span>{% endif %}</label>
+              {% if f.help %}<p class="help">{{ f.help }}</p>{% endif %}
+              {% if f.type == "select" %}
+                <select class="select" id="pv-{{ forloop.counter }}" disabled><option>Choose…</option>{% for o in f.options %}<option>{{ o }}</option>{% endfor %}</select>
+              {% elif f.type == "textarea" %}
+                <textarea class="textarea" id="pv-{{ forloop.counter }}" disabled></textarea>
+              {% else %}
+                <input class="input" id="pv-{{ forloop.counter }}" type="{% if f.type == 'email' %}email{% elif f.type == 'tel' %}tel{% else %}text{% endif %}" disabled>
+              {% endif %}
+            {% endif %}
+          </div>
+        {% endfor %}
+        {% if schema.sms %}<p class="help" style="margin-top:var(--s-3)">{{ schema.sms.disclosureText }}</p>{% endif %}
+        <div class="form-actions"><button class="btn btn-primary btn-block btn-lg" type="submit" disabled>{{ event.cta.register }}</button></div>
+        <p class="help" id="pv-disabled-note">Form version {{ schema.formVersion }}. Returning visitors with nothing left to fill in see “{{ event.cta.confirm }}”. Registration is disabled in preview.</p>
+      </form>
+    </div>
+  </aside>
+</main>
+</body>
+</html>

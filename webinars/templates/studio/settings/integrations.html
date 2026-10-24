@@ -1,0 +1,43 @@
+{% extends "studio/base.html" %}
+{% block title %}Integrations{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Connect</p>
+    <h1>Integrations</h1>
+    <p class="lede">Send registrations and attendance to your email platform, CRM or any HTTPS webhook. Each integration only receives the events and data you choose.</p>
+  </div>
+  {% if can_add %}
+    <a class="btn btn-primary" href="{% url 'studio:integration-new' %}">{% include "studio/_icon.html" with name="plus" %} New integration</a>
+  {% endif %}
+</div>
+
+{% if rows %}
+<div class="panel">
+  <div class="table-wrap">
+    <table class="table">
+      <caption class="visually-hidden">Integrations</caption>
+      <thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Status</th><th scope="col">Signing secret</th><th scope="col" class="num">Events</th><th scope="col">Updated</th></tr></thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td class="primary-cell"><a href="{% url 'studio:integration-edit' pk=row.obj.pk %}">{{ row.obj.name }}</a></td>
+            <td>{{ row.obj.get_kind_display }}</td>
+            <td>{% if row.obj.enabled %}<span class="badge badge-success">Enabled</span>{% else %}<span class="badge badge-draft">Paused</span>{% endif %}</td>
+            <td>{% if row.has_secret %}Signing secret set{% else %}<span class="badge badge-warn">Not set</span>{% endif %}</td>
+            <td class="num">{{ row.event_count }}</td>
+            <td>{{ row.obj.updated_at|date:"M j, Y H:i" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="panel"><div class="empty">
+  <h2>No integrations yet</h2>
+  <p>Connect a webhook to push new registrations to your marketing tools as they happen.</p>
+  {% if can_add %}<a class="btn btn-primary" href="{% url 'studio:integration-new' %}">Create your first integration</a>{% endif %}
+</div></div>
+{% endif %}
+{% endblock %}

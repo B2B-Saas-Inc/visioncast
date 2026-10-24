@@ -1,0 +1,9 @@
+{% extends "studio/base.html" %}
+{% block title %}Not allowed{% endblock %}
+{% block content %}
+<div class="panel"><div class="empty">
+  <h1 class="display">Not available for your role</h1>
+  <p>{{ message }}</p>
+  <a class="btn" href="{% url 'studio:dashboard' %}">Back to the dashboard</a>
+</div></div>
+{% endblock %}

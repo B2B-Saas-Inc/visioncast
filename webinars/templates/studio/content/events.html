@@ -1,0 +1,42 @@
+{% extends "studio/base.html" %}
+{% block title %}Events{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Content</p>
+    <h1>Events</h1>
+    <p class="lede">Each event is a landing page with one or more scheduled sessions.</p>
+  </div>
+  {% if can_add_event %}
+    <a class="btn btn-primary" href="{% url 'studio:event-new' %}">{% include "studio/_icon.html" with name="plus" %} New event</a>
+  {% endif %}
+</div>
+
+{% if events %}
+  <div class="panel table-wrap">
+    <table class="table">
+      <caption class="visually-hidden">All events</caption>
+      <thead><tr><th scope="col">Event</th><th scope="col">Status</th><th scope="col">Next session</th><th scope="col" class="num">Sessions</th></tr></thead>
+      <tbody>
+        {% for event in events %}
+          <tr>
+            <td class="primary-cell">
+              <a href="{% url 'studio:event-edit' event.pk %}">{{ event.public_title }}</a>
+              <div class="small muted">{{ event.internal_name }} · /{{ event.slug }}</div>
+            </td>
+            <td><span class="badge badge-{{ event.visibility }}">{{ event.get_visibility_display }}</span></td>
+            <td>{% if event.next_session %}{{ event.next_session.local_label }} <span class="small muted">{{ event.next_session.timezone }}</span>{% else %}<span class="muted">None scheduled</span>{% endif %}</td>
+            <td class="num">{{ event.session_count }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="panel empty">
+    <h2>No events yet</h2>
+    <p>Start from a template: feature launch, hands-on workshop or expert interview. Every word is editable.</p>
+    {% if can_add_event %}<a class="btn btn-primary" href="{% url 'studio:event-new' %}">Create your first event</a>{% endif %}
+  </div>
+{% endif %}
+{% endblock %}

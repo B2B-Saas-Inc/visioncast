@@ -1,0 +1,67 @@
+{% extends "studio/base.html" %}
+{% block title %}Embed · {{ event.internal_name }}{% endblock %}
+{% block breadcrumbs %}<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="{% url 'studio:events' %}">Events</a> / <a href="{% url 'studio:event-edit' event.pk %}">{{ event.internal_name }}</a> / <a href="{% url 'studio:session' occ.pk %}">Session</a> / <span aria-current="page">Embed</span></nav>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Session · {{ occ.timezone }}</p>
+    <h1>Embed on your site</h1>
+    <p class="lede">{{ event.public_title }}</p>
+  </div>
+  <a class="btn btn-ghost" href="{% url 'studio:session' occ.pk %}">Back to session</a>
+</div>
+
+<p class="callout" role="note">Nothing is deployed to your site automatically. You paste this markup into your own page and run the first-party proxy on your own server.</p>
+
+<div class="layout-split">
+  <div class="stack">
+    <section class="panel" aria-labelledby="snippet-title">
+      <div class="panel-head">
+        <h2 id="snippet-title">Form snippet</h2>
+        <button class="btn btn-ghost btn-sm" type="button" data-copy="#embed-snippet">{% include "studio/_icon.html" with name="copy" size=16 %} Copy</button>
+      </div>
+      <div class="panel-body stack-sm">
+        <p class="help">Generated from form version {{ form_version }} and this event's button labels ("{{ cta.register }}" / "{{ cta.confirm }}"). It contains no keys or private links. Regenerate it if you change the form version.</p>
+        <pre class="reveal-value" style="white-space:pre;overflow:auto;max-height:32rem"><code id="embed-snippet">{{ snippet }}</code></pre>
+      </div>
+    </section>
+  </div>
+
+  <aside class="stack">
+    <section class="panel" aria-labelledby="ids-title">
+      <div class="panel-head"><h2 id="ids-title">Identifiers</h2></div>
+      <div class="panel-body stack-sm">
+        <div class="field">
+          <span class="label" id="occ-id-label">Occurrence ID</span>
+          <div class="row">
+            <code class="reveal-value grow" id="occ-id" aria-labelledby="occ-id-label">{{ occ.pk }}</code>
+            <button class="btn btn-ghost btn-sm" type="button" data-copy="#occ-id">{% include "studio/_icon.html" with name="copy" size=16 %} Copy</button>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label">Form version</span>
+          <code class="reveal-value">{{ form_version }}</code>
+        </div>
+        <div class="field">
+          <span class="label">SDK script</span>
+          <code class="reveal-value">{{ script_url }}</code>
+          <p class="help">You can also host this exact file on your own origin or CDN.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="setup-title">
+      <div class="panel-head"><h2 id="setup-title">Before it works</h2></div>
+      <div class="panel-body">
+        <ol class="small stack-sm">
+          <li><strong>Serve the proxy same-origin.</strong> The form only talks to <code>/webinar-api/*</code> on your own site. Your server must route those paths to the first-party proxy (the example in <code>sdk/proxy/server.js</code>, or an equivalent same-origin route in your app).</li>
+          <li><strong>Create a proxy key.</strong> An administrator creates a key with the <code>proxy</code> scope in Studio › API keys. Put it only in the proxy's server-side environment as <code>PROXY_API_KEY</code>, never in the page, GTM or this snippet.</li>
+          <li><strong>Configure origins.</strong> Set <code>PROXY_BACKEND_URL</code> to this platform's origin and <code>PROXY_ALLOWED_ORIGINS</code> to the exact https origin(s) of the pages hosting the form. The proxy issues the <code>__Host-webinar_csrf</code> cookie and checks the <code>X-Webinar-CSRF</code> header, so the page must be served over https on that origin.</li>
+          <li><strong>Paste the snippet</strong> into the page (or a GTM Custom HTML tag) and test a registration.</li>
+        </ol>
+        <p class="help" style="margin-top:var(--s-4)">Full guide: <a href="{% url 'developers' %}">Developers</a> and <code>docs/browser-integration.md</code>.</p>
+      </div>
+    </section>
+  </aside>
+</div>
+{% endblock %}

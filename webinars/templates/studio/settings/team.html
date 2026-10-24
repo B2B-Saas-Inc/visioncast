@@ -1,0 +1,101 @@
+{% extends "studio/base.html" %}
+{% block title %}Team{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Workspace</p>
+    <h1>Team</h1>
+    <p class="lede">{% if is_superuser %}Invite teammates and choose what each person can do.{% else %}Everyone with access to the studio. Only superusers can invite people or change roles.{% endif %}</p>
+  </div>
+</div>
+
+{% include "studio/settings/_errors.html" %}
+
+<div class="layout-split">
+<div>
+<section class="panel">
+  <div class="panel-head"><h2>Members</h2></div>
+  <div class="table-wrap">
+    <table class="table">
+      <caption class="visually-hidden">Team members</caption>
+      <thead><tr><th scope="col">Username</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Access</th><th scope="col">Last sign-in</th></tr></thead>
+      <tbody>
+        {% for row in members %}
+          {% with u=row.obj %}
+          <tr>
+            <td class="primary-cell">{% if is_superuser and not u.is_superuser and u.pk != user.pk %}<a href="{% url 'studio:member-edit' pk=u.pk %}">{{ u.username }}</a>{% else %}{{ u.username }}{% endif %}</td>
+            <td>{{ u.email|default:"—" }}</td>
+            <td>{{ row.role }}</td>
+            <td>{% if u.is_active %}<span class="badge badge-success">Active</span>{% else %}<span class="badge badge-danger">Deactivated</span>{% endif %}</td>
+            <td>{% if u.last_login %}{{ u.last_login|date:"M j, Y" }}{% else %}Never{% endif %}</td>
+          </tr>
+          {% endwith %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel" style="margin-top:var(--s-5)">
+  <div class="panel-head"><h2>Invitations</h2></div>
+  {% if invites %}
+  <div class="table-wrap">
+    <table class="table">
+      <caption class="visually-hidden">Invitations</caption>
+      <thead><tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col">Expires</th><th scope="col">Invited by</th>{% if is_superuser %}<th scope="col"><span class="visually-hidden">Actions</span></th>{% endif %}</tr></thead>
+      <tbody>
+        {% for row in invites %}
+          {% with inv=row.obj %}
+          <tr>
+            <td>{{ inv.email }}</td>
+            <td>{{ inv.role }}</td>
+            <td><span class="badge badge-{{ row.badge }}">{{ row.status|capfirst }}</span></td>
+            <td>{{ inv.expires_at|date:"M j, H:i" }}</td>
+            <td>{{ inv.invited_by.username|default:"—" }}</td>
+            {% if is_superuser %}
+            <td>{% if row.status == "pending" %}
+              <form method="post" action="{% url 'studio:invitation-revoke' pk=inv.pk %}" data-confirm="Revoke the invitation for {{ inv.email }}?">{% csrf_token %}<button class="btn btn-danger btn-sm" type="submit">Revoke</button></form>
+            {% endif %}</td>
+            {% endif %}
+          </tr>
+          {% endwith %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="panel-body"><p class="help">No invitations sent yet.</p></div>
+  {% endif %}
+</section>
+</div>
+
+{% if is_superuser %}
+<aside>
+<section class="panel">
+  <div class="panel-head"><h2>Invite someone</h2></div>
+  <form method="post" action="{% url 'studio:team-invite' %}" class="panel-body" novalidate>
+    {% csrf_token %}
+    <div class="field">
+      <label class="label" for="f-email">Email address</label>
+      <input class="input" id="f-email" name="email" type="email" autocomplete="off" value="{{ email }}" required{% if errors.email %} aria-invalid="true" aria-describedby="invite-email-err"{% endif %}>
+      {% if errors.email %}<p class="field-error" id="invite-email-err">{{ errors.email|join:" " }}</p>{% endif %}
+    </div>
+    <fieldset class="fieldset" id="f-role" style="margin-top:var(--s-4)"{% if errors.role %} aria-describedby="invite-role-err"{% endif %}>
+      <legend>Role</legend>
+      {% if errors.role %}<p class="field-error" id="invite-role-err">{{ errors.role|join:" " }}</p>{% endif %}
+      {% for opt in role_options %}
+        <label class="choice-card" style="margin-bottom:var(--s-2)"><input type="radio" name="role" value="{{ opt.value }}"{% if opt.checked %} checked{% endif %}><span><strong>{{ opt.label }}</strong><br><span class="small">{{ opt.help }}</span></span></label>
+      {% endfor %}
+    </fieldset>
+    {% if mail_mode == "disabled" %}
+      <p class="callout callout-warn small">Email sending is off, so you'll need to share the invitation link yourself. It's shown once after you send the invite.</p>
+    {% elif mail_mode == "preview" %}
+      <p class="callout small">This is a preview environment: the invitation email goes to the Preview mailbox, not the person.</p>
+    {% endif %}
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Send invitation</button></div>
+  </form>
+</section>
+</aside>
+{% endif %}
+</div>
+{% endblock %}

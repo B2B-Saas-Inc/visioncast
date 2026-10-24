@@ -1,0 +1,48 @@
+/* Public waiting room. Same tokens as the studio (warm paper, ink, coral action, teal live). */
+:root {
+  --ink: #1c1a17; --text: #24211c; --muted: #6b645a; --paper: #faf8f4; --border: #e6dfd3;
+  --coral: #c2462e; --coral-dark: #a63a23; --coral-soft: #fdf1ec; --teal: #0f6b63; --teal-soft: #ebf7f5;
+  --warn: #8a5a00; --warn-soft: #fdf4e1; --danger: #a8281f; --danger-soft: #fcecea;
+  --display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: var(--ui); color: var(--text); line-height: 1.55;
+  background: radial-gradient(1200px 600px at 10% -10%, #f3e3d9 0%, transparent 60%), radial-gradient(900px 500px at 110% 110%, #dcefeb 0%, transparent 55%), var(--paper); min-height: 100vh; }
+.room { min-height: 100vh; display: grid; place-content: center; padding: 2rem 1rem; gap: 1rem; }
+.room-card { width: min(560px, calc(100vw - 2rem)); background: #fff; border: 1px solid var(--border); border-radius: 20px; padding: 2.25rem; box-shadow: 0 20px 60px -30px rgba(28, 26, 23, 0.35); }
+.room-foot { text-align: center; color: var(--muted); font-size: 0.8125rem; margin: 0; }
+.eyebrow { text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.75rem; font-weight: 700; color: var(--coral-dark); margin: 0 0 0.5rem; }
+h1 { font-family: var(--display); font-size: clamp(1.6rem, 4vw, 2.2rem); line-height: 1.15; margin: 0 0 0.5rem; }
+h2 { font-size: 1.125rem; margin: 0 0 0.5rem; }
+.hosts { color: var(--muted); margin: 0 0 1.5rem; }
+.status { border-radius: 14px; padding: 1.1rem 1.25rem; margin: 0 0 1.25rem; background: #f1ece4; }
+.status p { margin: 0; }
+.status-open { background: var(--teal-soft); color: #0b5650; }
+.status-hold, .status-preparing { background: var(--warn-soft); color: var(--warn); }
+.status-ended, .status-cancelled { background: var(--danger-soft); color: var(--danger); }
+[data-countdown] { font-variant-numeric: tabular-nums; }
+.panel { border-top: 1px solid var(--border); padding-top: 1.25rem; }
+.field { display: grid; gap: 0.3rem; margin: 0 0 1rem; }
+label { font-weight: 600; }
+.input { width: 100%; min-height: 44px; padding: 0.5rem 0.75rem; font: inherit; border: 1px solid #d8cfc1; border-radius: 8px; background: #fff; color: var(--text); }
+.input:focus { outline: none; border-color: var(--coral); box-shadow: 0 0 0 3px #f9dcd2; }
+.input[aria-invalid="true"] { border-color: var(--danger); }
+.input.code { font-size: 1.5rem; letter-spacing: 0.4em; text-align: center; max-width: 12rem; }
+.help { margin: 0; color: var(--muted); font-size: 0.875rem; }
+.field-error { margin: 0; color: var(--danger); font-weight: 600; font-size: 0.875rem; }
+.error-summary { border: 2px solid var(--danger); background: var(--danger-soft); border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 1rem; }
+.error-summary p { margin: 0; }
+.choice { display: flex; gap: 0.5rem; align-items: flex-start; font-weight: 400; margin: 0 0 1rem; }
+.choice input { margin-top: 0.3rem; accent-color: var(--coral); }
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 1.25rem; border-radius: 10px; border: 1px solid #d8cfc1; background: #fff; color: var(--text); font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
+.btn-primary { background: var(--coral); border-color: var(--coral); color: #fff; }
+.btn-primary:hover { background: var(--coral-dark); }
+.btn-lg { min-height: 52px; font-size: 1.0625rem; width: 100%; }
+.link-button { background: none; border: 0; padding: 0; font: inherit; color: var(--teal); text-decoration: underline; cursor: pointer; }
+.not-you { margin-top: 1.25rem; text-align: center; font-size: 0.875rem; }
+.notice { background: var(--warn-soft); color: var(--warn); padding: 0.75rem 1rem; border-radius: 10px; }
+.small { font-size: 0.875rem; } .muted { color: var(--muted); }
+:focus-visible { outline: 3px solid var(--coral); outline-offset: 2px; }
+@media (max-width: 480px) { .room-card { padding: 1.5rem; border-radius: 16px; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

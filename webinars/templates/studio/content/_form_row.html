@@ -1,0 +1,52 @@
+<li class="panel" id="row-{{ i }}" data-row style="margin-bottom:var(--s-3)">
+  <div class="panel-head">
+    <h3 class="label" data-row-title>Field {{ n }}</h3>
+    <div class="row" data-row-tools hidden style="gap:var(--s-1)">
+      <button class="icon-button" type="button" data-row-action="up" aria-label="Move field {{ n }} up">{% include "studio/_icon.html" with name="arrow-up" size=16 %}</button>
+      <button class="icon-button" type="button" data-row-action="down" aria-label="Move field {{ n }} down">{% include "studio/_icon.html" with name="arrow-down" size=16 %}</button>
+      <button class="icon-button" type="button" data-row-action="remove" aria-label="Remove field {{ n }}">{% include "studio/_icon.html" with name="trash" size=16 %}</button>
+    </div>
+  </div>
+  <div class="panel-body">
+    {% if row.error %}<p class="field-error" id="rows-{{ i }}-error" role="alert">{{ row.error }}</p>{% endif %}
+    <div class="grid-2">
+      <div class="field">
+        <label class="label" for="rows-{{ i }}-key">Field</label>
+        <select class="select" id="rows-{{ i }}-key" name="rows-{{ i }}-key" data-row-key{% if readonly %} disabled{% endif %}{% if row.error %} aria-invalid="true" aria-describedby="rows-{{ i }}-error"{% endif %}>
+          <option value="">— Leave empty to skip —</option>
+          {% for key, label in key_choices %}<option value="{{ key }}"{% if row.choice == key %} selected{% endif %}>{{ label }} ({{ key }})</option>{% endfor %}
+          <option value="{{ custom_choice }}"{% if row.choice == custom_choice %} selected{% endif %}>Custom field…</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="label" for="rows-{{ i }}-label">Label</label>
+        <input class="input" type="text" id="rows-{{ i }}-label" name="rows-{{ i }}-label" value="{{ row.label }}" maxlength="120"{% if readonly %} disabled{% endif %}>
+      </div>
+    </div>
+    <div class="grid-2" data-row-custom style="margin-top:var(--s-4)">
+      <div class="field">
+        <label class="label" for="rows-{{ i }}-custom_key">Custom field key</label>
+        <p class="help" id="rows-{{ i }}-custom_key-help">Custom fields only. Letters, digits and underscores, e.g. <code>favoriteTool</code>.</p>
+        <input class="input" type="text" id="rows-{{ i }}-custom_key" name="rows-{{ i }}-custom_key" value="{{ row.custom_key }}" aria-describedby="rows-{{ i }}-custom_key-help" autocapitalize="none" spellcheck="false"{% if readonly %} disabled{% endif %}>
+      </div>
+      <div class="field">
+        <label class="label" for="rows-{{ i }}-type">Custom field type</label>
+        <select class="select" id="rows-{{ i }}-type" name="rows-{{ i }}-type"{% if readonly %} disabled{% endif %}>
+          {% for t in custom_types %}<option value="{{ t }}"{% if row.type == t %} selected{% endif %}>{% if t == "text" %}Short text{% elif t == "textarea" %}Long text{% elif t == "select" %}Dropdown{% elif t == "checkbox" %}Checkbox{% else %}{{ t }}{% endif %}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="field" style="margin-top:var(--s-4)">
+      <label class="label" for="rows-{{ i }}-help">Help text <span class="optional">(optional)</span></label>
+      <input class="input" type="text" id="rows-{{ i }}-help" name="rows-{{ i }}-help" value="{{ row.help }}" maxlength="300"{% if readonly %} disabled{% endif %}>
+    </div>
+    <div class="field">
+      <label class="label" for="rows-{{ i }}-options">Options <span class="optional">(Company size and custom dropdowns only)</span></label>
+      <p class="help" id="rows-{{ i }}-options-help">One option per line.</p>
+      <textarea class="textarea" id="rows-{{ i }}-options" name="rows-{{ i }}-options" rows="3" aria-describedby="rows-{{ i }}-options-help"{% if readonly %} disabled{% endif %}>{{ row.options_text }}</textarea>
+    </div>
+    <div class="field">
+      <label class="choice" for="rows-{{ i }}-required"><input type="checkbox" id="rows-{{ i }}-required" name="rows-{{ i }}-required" value="on"{% if row.required %} checked{% endif %}{% if readonly %} disabled{% endif %}> Required <span class="small muted">(standard fields only; custom fields are always optional)</span></label>
+    </div>
+  </div>
+</li>

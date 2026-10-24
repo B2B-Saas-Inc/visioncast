@@ -1,0 +1,42 @@
+# Allow-list build context: ignore everything, then re-include only what the
+# image needs. Secrets (.env*), docs, SDK tooling, tests, run artefacts and
+# VCS metadata can therefore never enter the build context.
+*
+
+!manage.py
+!config/
+!webinars/
+!docker/
+!requirements.txt
+!requirements-dev.txt
+!LICENSE
+# Public guides served as MCP resources (webinars/mcp_resources.GUIDES).
+!README.md
+!docs/implementation-guide.md
+!docs/operations.md
+!docs/integration.md
+!docs/mcp.md
+!docs/management-api.md
+!docs/api-reference.md
+!docs/webhooks.md
+!docs/field-dictionary.md
+!docs/field-mapping.md
+!docs/waiting-room.md
+!docs/studio.md
+!docs/email.md
+!docs/browser-integration.md
+!docs/native-integrations.md
+!docs/security.md
+
+# Re-exclude junk inside allowed directories.
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.DS_Store
+**/*.sqlite3
+**/.env
+**/.env.*
+
+# Explicitly listed for reviewers (already excluded by "*" above):
+# sdk/ tests/ .runs/ examples/ .git/ .env .env.* compose.yaml, and every docs/*.md and
+# *.md not re-included above.

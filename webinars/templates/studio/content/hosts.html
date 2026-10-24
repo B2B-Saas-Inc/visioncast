@@ -1,0 +1,77 @@
+{% extends "studio/base.html" %}
+{% block title %}Hosts & topics{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Content</p>
+    <h1>Hosts &amp; topics</h1>
+    <p class="lede">Hosts appear on landing pages with their title and bio. Topics group events on your website.</p>
+  </div>
+</div>
+
+<div class="layout-split">
+  <section class="panel" aria-labelledby="hosts-title">
+    <div class="panel-head"><h2 id="hosts-title">Hosts</h2></div>
+    {% if hosts %}
+      <ul class="list-rows">
+        {% for h in hosts %}
+          <li>
+            {% include "studio/_icon.html" with name="user" %}
+            <div class="grow"><a href="{% url 'studio:host-edit' h.slug %}"><strong>{{ h.name }}</strong></a><p class="small muted" style="margin:0">{{ h.title|default:"No title yet" }}</p></div>
+            <span class="small muted">{{ h.event_count }} event{{ h.event_count|pluralize }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="empty"><h2>No hosts yet</h2><p>Add the people who present your sessions.</p></div>
+    {% endif %}
+  </section>
+
+  {% if can_add_host %}
+    <form method="post" action="{% url 'studio:hosts' %}" class="panel" novalidate aria-labelledby="add-host-title">
+      {% csrf_token %}
+      <input type="hidden" name="kind" value="host">
+      <div class="panel-head"><h2 id="add-host-title">Add a host</h2></div>
+      <div class="panel-body">
+        {% if host_form.errors %}<div class="error-summary" role="alert" tabindex="-1" autofocus><h2>The host wasn't added</h2><ul>{% for field in host_form %}{% for e in field.errors %}<li><a href="#id_{{ field.html_name }}">{{ field.label }}: {{ e }}</a></li>{% endfor %}{% endfor %}{% for e in host_form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+        {% include "studio/content/_field.html" with name="host-name" label="Name" value=host_form.name.value error=host_form.name.errors %}
+        {% include "studio/content/_field.html" with name="host-slug" label="Slug" value=host_form.slug.value error=host_form.slug.errors help="Lowercase with dashes, e.g. maya-okonkwo." %}
+        {% include "studio/content/_field.html" with name="host-title" label="Title" value=host_form.title.value error=host_form.title.errors optional=True help="Role and company, e.g. Group Product Manager, Fieldnote." %}
+        {% include "studio/content/_field.html" with name="host-bio" label="Bio" kind="textarea" value=host_form.bio.value error=host_form.bio.errors optional=True %}
+        {% include "studio/content/_field.html" with name="host-image_url" label="Photo URL" kind="url" value=host_form.image_url.value error=host_form.image_url.errors optional=True help="A square https:// image." %}
+      </div>
+      <div class="panel-foot form-actions" style="margin-top:0"><button class="btn btn-primary" type="submit">Add host</button></div>
+    </form>
+  {% endif %}
+</div>
+
+{% if topics is not None %}
+<div class="layout-split" id="topics" style="margin-top:var(--s-6)">
+  <section class="panel" aria-labelledby="topics-title">
+    <div class="panel-head"><h2 id="topics-title">Topics</h2></div>
+    {% if topics %}
+      <ul class="list-rows">
+        {% for t in topics %}
+          <li><div class="grow"><a href="{% url 'studio:topic-edit' t.slug %}"><strong>{{ t.name }}</strong></a> <span class="small muted">/{{ t.slug }}</span></div><span class="small muted">{{ t.event_count }} event{{ t.event_count|pluralize }}</span></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="empty"><h2>No topics yet</h2><p>Topics like “Product updates” help visitors find related sessions.</p></div>
+    {% endif %}
+  </section>
+  {% if can_add_topic %}
+    <form method="post" action="{% url 'studio:hosts' %}" class="panel" novalidate aria-labelledby="add-topic-title">
+      {% csrf_token %}
+      <input type="hidden" name="kind" value="topic">
+      <div class="panel-head"><h2 id="add-topic-title">Add a topic</h2></div>
+      <div class="panel-body">
+        {% if topic_form.errors %}<div class="error-summary" role="alert" tabindex="-1" autofocus><h2>The topic wasn't added</h2><ul>{% for field in topic_form %}{% for e in field.errors %}<li><a href="#id_{{ field.html_name }}">{{ field.label }}: {{ e }}</a></li>{% endfor %}{% endfor %}</ul></div>{% endif %}
+        {% include "studio/content/_field.html" with name="topic-name" label="Name" value=topic_form.name.value error=topic_form.name.errors %}
+        {% include "studio/content/_field.html" with name="topic-slug" label="Slug" value=topic_form.slug.value error=topic_form.slug.errors help="Lowercase with dashes, e.g. product-updates." %}
+      </div>
+      <div class="panel-foot form-actions" style="margin-top:0"><button class="btn btn-primary" type="submit">Add topic</button></div>
+    </form>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

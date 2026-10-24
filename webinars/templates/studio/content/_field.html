@@ -1,0 +1,13 @@
+{% comment %}
+Labelled text field. Params: name, label, value, help, error (list), kind (input|url|title|textarea|textarea-lg),
+readonly, optional, maxlength, prefix (id prefix, default "id_").
+{% endcomment %}{% with fid=prefix|default:"id_"|add:name %}<div class="field">
+  <label class="label" for="{{ fid }}">{{ label }}{% if optional %} <span class="optional">(optional)</span>{% endif %}</label>
+  {% if help %}<p class="help" id="{{ fid }}-help">{{ help }}</p>{% endif %}
+  {% if kind == "textarea" or kind == "textarea-lg" %}
+    <textarea class="textarea{% if kind == 'textarea-lg' %} textarea-lg{% endif %}" id="{{ fid }}" name="{{ name }}"{% if maxlength %} data-maxlength="{{ maxlength }}"{% endif %}{% if readonly %} disabled{% endif %}{% if error %} aria-invalid="true"{% endif %}{% if help or error %} aria-describedby="{% if help %}{{ fid }}-help{% endif %}{% if error %} {{ fid }}-error{% endif %}"{% endif %}>{{ value|default:"" }}</textarea>
+  {% else %}
+    <input class="input{% if kind == 'title' %} input-title{% endif %}" type="{% if kind == 'url' %}url{% else %}text{% endif %}" id="{{ fid }}" name="{{ name }}" value="{{ value|default:'' }}"{% if kind == 'url' %} inputmode="url" placeholder="https://"{% elif placeholder %} placeholder="{{ placeholder }}"{% endif %}{% if maxlength and kind != 'url' %} maxlength="{{ maxlength }}"{% endif %}{% if readonly %} disabled{% endif %}{% if error %} aria-invalid="true"{% endif %}{% if help or error %} aria-describedby="{% if help %}{{ fid }}-help{% endif %}{% if error %} {{ fid }}-error{% endif %}"{% endif %}>
+  {% endif %}
+  {% if error %}<p class="field-error" id="{{ fid }}-error">{{ error|join:" " }}</p>{% endif %}
+</div>{% endwith %}

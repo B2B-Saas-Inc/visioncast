@@ -1,0 +1,35 @@
+{% extends "studio/base.html" %}
+{% block title %}Preview mailbox{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Workspace</p>
+    <h1>Preview mailbox</h1>
+    <p class="lede">This environment doesn't send real email. Everything the platform would have sent — verification codes, invitations — lands here instead.</p>
+  </div>
+</div>
+{% if items %}
+<div class="panel">
+  <div class="table-wrap">
+    <table class="table">
+      <caption class="visually-hidden">Captured emails, newest first</caption>
+      <thead><tr><th scope="col">Received</th><th scope="col">To</th><th scope="col">Subject</th></tr></thead>
+      <tbody>
+        {% for m in items %}
+          <tr>
+            <td>{{ m.created_at|date:"M j, H:i:s" }}</td>
+            <td>{{ m.to }}</td>
+            <td class="primary-cell"><a href="{% url 'studio:mailbox-message' pk=m.pk %}">{{ m.subject|default:"(no subject)" }}</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="panel"><div class="empty">
+  <h2>The mailbox is empty</h2>
+  <p>Try verifying an email in a waiting room or inviting a teammate; the message will show up here.</p>
+</div></div>
+{% endif %}
+{% endblock %}

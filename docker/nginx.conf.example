@@ -1,0 +1,199 @@
+# Example nginx edge for the webinar platform: TLS, trusted forwarding headers
+# and per-client rate limits.
+#
+# UNTESTED EXAMPLE. It has not been run against this project. Review every
+# value, test it on staging and tune the limits for your traffic before use.
+# It contains no secrets; certificate paths and host names are placeholders.
+#
+# Install: include this file inside the `http { }` block (for example as
+# /etc/nginx/conf.d/webinars.conf). `limit_req_zone`, `map` and `log_format`
+# are only valid in the http context.
+#
+# Pair it with these .env settings on the platform:
+#   DJANGO_ALLOWED_HOSTS=webinars.example.com
+#   CSRF_TRUSTED_ORIGINS=https://webinars.example.com
+#   DJANGO_TRUST_X_FORWARDED_PROTO=1   # safe ONLY because every proxied request
+#                                      # below overwrites X-Forwarded-Proto
+#
+# The application has no rate limiting, no TLS and no admin MFA of its own.
+
+# ---------------------------------------------------------------------------
+# Client address
+# ---------------------------------------------------------------------------
+# Rate limits key on $binary_remote_addr. If nginx sits behind a load balancer
+# or CDN, $remote_addr is the balancer and every visitor would share one
+# bucket. In that case restore the real client address from a header that ONLY
+# your balancer sets, and trust ONLY the balancer's address ranges:
+#
+#   set_real_ip_from 10.0.0.0/8;          # your load balancer range(s) only
+#   real_ip_header   X-Forwarded-For;
+#   real_ip_recursive on;
+#
+# Never trust X-Forwarded-For from arbitrary clients: it is attacker-controlled.
+
+# ---------------------------------------------------------------------------
+# Rate-limit keys and zones
+# ---------------------------------------------------------------------------
+# An empty key is not counted, so these maps limit only the methods that matter
+# (POST for registration/reset/login, GET for the profile lookup).
+map $request_method $wp_post_client {
+    POST    $binary_remote_addr;
+    default "";
+}
+map $request_method $wp_get_client {
+    GET     $binary_remote_addr;
+    default "";
+}
+
+# Starting points only; corporate NAT can put many real visitors behind one IP.
+limit_req_zone $wp_post_client zone=wp_register:10m rate=10r/m;   # registrations, reset
+limit_req_zone $wp_get_client  zone=wp_profile:10m  rate=30r/m;   # profile lookups
+limit_req_zone $wp_post_client zone=wp_login:10m    rate=5r/m;    # admin login attempts
+limit_req_zone $binary_remote_addr zone=wp_api:10m  rate=300r/m;  # server-to-server API
+
+limit_req_status 429;
+limit_req_log_level warn;
+
+# Access log without query strings, cookies, referrer or user agent ($uri has no
+# query string). Client IPs are still logged here; drop $remote_addr if your
+# privacy policy requires it.
+log_format webinars_min '$time_iso8601 $remote_addr "$request_method $uri" $status $body_bytes_sent $request_time';
+
+upstream webinar_app {
+    server 127.0.0.1:8000;   # compose.yaml binds the web container here
+    keepalive 16;
+}
+
+# ---------------------------------------------------------------------------
+# HTTP -> HTTPS
+# ---------------------------------------------------------------------------
+server {
+    listen 80;
+    listen [::]:80;
+    server_name webinars.example.com;
+    return 301 https://$host$request_uri;
+}
+
+# ---------------------------------------------------------------------------
+# Platform host (Django: admin, APIs, same-origin /webinar-api/*)
+# ---------------------------------------------------------------------------
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name webinars.example.com;
+
+    ssl_certificate     /etc/ssl/webinars.example.com/fullchain.pem;
+    ssl_certificate_key /etc/ssl/webinars.example.com/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_cache   shared:webinars_tls:10m;
+    ssl_session_tickets off;
+
+    server_tokens off;
+    access_log /var/log/nginx/webinars.access.log webinars_min;
+    client_max_body_size 64k;
+
+    # HSTS, nosniff, referrer policy and secure cookies are set by Django.
+
+    # Forwarding headers. Defined once at server level; locations below inherit
+    # them because none of them sets its own proxy_set_header.
+    proxy_http_version 1.1;
+    proxy_set_header Connection        "";
+    proxy_set_header Host              $host;
+    proxy_set_header X-Forwarded-Proto https;          # overwrite, never pass the client's value
+    proxy_set_header X-Forwarded-For   $remote_addr;   # overwrite, do not append
+    proxy_set_header X-Forwarded-Host  "";
+    proxy_set_header X-Forwarded-Port  "";
+    proxy_read_timeout 35s;                            # gunicorn --timeout is 30s
+
+    # --- Admin --------------------------------------------------------------
+    # Django admin has passwords only. Require MFA/SSO in front of it, e.g. an
+    # identity-aware proxy via auth_request, or restrict it to a VPN range:
+    #
+    #   allow 10.20.0.0/16;   # your VPN / office range
+    #   deny  all;
+    location = /admin/login/ {
+        limit_req zone=wp_login burst=5 nodelay;
+        proxy_pass http://webinar_app;
+    }
+    location /admin/ {
+        proxy_pass http://webinar_app;
+    }
+
+    # --- Same-origin direct browser API (no API key) ------------------------
+    location = /webinar-api/registrations {
+        limit_req zone=wp_register burst=10 nodelay;
+        proxy_pass http://webinar_app;
+    }
+    location = /webinar-api/reset {
+        limit_req zone=wp_register burst=10 nodelay;
+        proxy_pass http://webinar_app;
+    }
+    location = /webinar-api/profile {
+        limit_req zone=wp_profile burst=20 nodelay;
+        proxy_pass http://webinar_app;
+    }
+
+    # --- Server-to-server API (keyed) --------------------------------------
+    # Requests from the first-party proxy or a CMS all arrive from that server's
+    # IP, so strict per-visitor limits here would throttle every visitor at once.
+    # Rate-limit visitors where they arrive (the /webinar-api/* locations above,
+    # or the marketing-origin block below) and keep this zone generous, or list
+    # your proxy/CMS addresses with allow/deny.
+    location /api/v1/ {
+        limit_req zone=wp_api burst=100 nodelay;
+        proxy_pass http://webinar_app;
+    }
+
+    location = /healthz {
+        access_log off;
+        proxy_pass http://webinar_app;
+    }
+
+    location / {
+        proxy_pass http://webinar_app;
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Optional: marketing origin running the example Node proxy (sdk/proxy/)
+# ---------------------------------------------------------------------------
+# Rate-limit visitors here, where their real address is known. The Node proxy
+# then calls the platform with its server-held key. Set
+# PROXY_TRUST_FORWARDED_FOR=1 on the Node proxy only with this overwrite in place.
+#
+# server {
+#     listen 443 ssl;
+#     server_name www.example.com;
+#     ssl_certificate     /etc/ssl/www.example.com/fullchain.pem;
+#     ssl_certificate_key /etc/ssl/www.example.com/privkey.pem;
+#
+#     location = /webinar-api/registrations {
+#         limit_req zone=wp_register burst=10 nodelay;
+#         include /etc/nginx/snippets/webinar-node-proxy.conf;
+#     }
+#     location = /webinar-api/reset {
+#         limit_req zone=wp_register burst=10 nodelay;
+#         include /etc/nginx/snippets/webinar-node-proxy.conf;
+#     }
+#     location = /webinar-api/profile {
+#         limit_req zone=wp_profile burst=20 nodelay;
+#         include /etc/nginx/snippets/webinar-node-proxy.conf;
+#     }
+#     location = /webinar-api/calendar.ics {
+#         limit_req zone=wp_profile burst=20 nodelay;
+#         include /etc/nginx/snippets/webinar-node-proxy.conf;
+#     }
+#     location /webinar-api/ {
+#         return 404;
+#     }
+# }
+#
+# where /etc/nginx/snippets/webinar-node-proxy.conf contains:
+#
+#     proxy_pass http://127.0.0.1:8787;                # path passed through unchanged
+#     proxy_http_version 1.1;
+#     proxy_set_header Host $host;
+#     proxy_set_header X-Forwarded-For $remote_addr;   # overwrite, do not append
+#     client_max_body_size 64k;
+#     proxy_buffering off;
+#     proxy_cache off;

@@ -1,0 +1,10 @@
+{% if summary %}
+<div class="error-summary" id="error-summary" role="alert" tabindex="-1" autofocus aria-labelledby="error-summary-title">
+  <h2 id="error-summary-title">Please fix {% if summary|length == 1 %}this problem{% else %}these {{ summary|length }} problems{% endif %}</h2>
+  <ul>
+    {% for row in summary %}
+      <li>{% if row.anchor %}<a href="#{{ row.anchor }}">{% if row.label %}{{ row.label }}: {% endif %}{{ row.message }}</a>{% else %}{{ row.message }}{% endif %}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}

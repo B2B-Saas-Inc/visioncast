@@ -1,0 +1,33 @@
+{% extends "studio/base.html" %}
+{% block title %}Registration forms{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Content</p>
+    <h1>Registration forms</h1>
+    <p class="lede">Forms are versioned. Once a version is used by a published event or a registration, edits are saved as a new version so earlier submissions stay consistent.</p>
+  </div>
+  {% if can_add %}<a class="btn btn-primary" href="{% url 'studio:form-new' %}">{% include "studio/_icon.html" with name="plus" %} New form</a>{% endif %}
+</div>
+{% if versions %}
+  <div class="panel table-wrap">
+    <table class="table">
+      <caption class="visually-hidden">Form versions</caption>
+      <thead><tr><th scope="col">Version</th><th scope="col">Status</th><th scope="col" class="num">Fields</th><th scope="col" class="num">Events</th><th scope="col">Created</th></tr></thead>
+      <tbody>
+        {% for fv in versions %}
+          <tr>
+            <td class="primary-cell"><a href="{% url 'studio:form-edit' fv.version %}">{{ fv.version }}</a>{% if fv.description %}<div class="small muted">{{ fv.description }}</div>{% endif %}</td>
+            <td>{% if fv.locked %}<span class="badge badge-accent">In use</span>{% endif %} {% if fv.is_active %}<span class="badge badge-public">Active</span>{% else %}<span class="badge badge-draft">Inactive</span>{% endif %}</td>
+            <td class="num">{{ fv.field_count }}</td>
+            <td class="num">{{ fv.event_count }}</td>
+            <td class="nowrap">{{ fv.created_at|date:"j M Y" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="panel empty"><h2>No forms yet</h2><p>Start with the standard B2B form: work email, name, company, job title and company size.</p>{% if can_add %}<a class="btn btn-primary" href="{% url 'studio:form-new' %}">Create a form</a>{% endif %}</div>
+{% endif %}
+{% endblock %}

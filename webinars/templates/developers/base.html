@@ -1,0 +1,24 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Developers{% endblock %} · Webinar Platform</title>
+  <link rel="stylesheet" href="{% static 'studio/studio.css' %}">
+  <style>.method{display:inline-block;min-width:4.2em;font-family:var(--font-mono);font-weight:700;font-size:var(--fs-sm)}.method-GET{color:var(--teal-700)}.method-POST{color:var(--coral-700)}.method-PATCH,.method-DELETE{color:var(--warn-700)}.endpoint{padding:var(--s-4) var(--s-5);border-bottom:1px solid var(--border)}.endpoint:last-child{border-bottom:0}.devnav{display:flex;gap:var(--s-4);flex-wrap:wrap;margin-bottom:var(--s-5)}</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<main class="content" id="main">
+  <p class="eyebrow">Developers</p>
+  <nav class="devnav" aria-label="Developer docs">
+    <a href="{% url 'developers' %}">Overview</a>
+    <a href="{% url 'developers-api' %}">API reference</a>
+    <a href="{% url 'developers-mcp' %}">MCP for coding agents</a>
+    <a href="{% url 'openapi-json' %}">openapi.json</a>
+    <a href="/studio/">Studio</a>
+  </nav>
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

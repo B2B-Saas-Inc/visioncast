@@ -1,0 +1,33 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
+  <title>{% if rate_limited %}Too many attempts{% else %}Invitation not available{% endif %} · Webinar Studio</title>
+  <link rel="stylesheet" href="{% static 'studio/studio.css' %}">
+</head>
+<body>
+<main class="auth" id="main">
+  <div class="auth-art">
+    <span class="brand"><span class="brand-mark" aria-hidden="true">W</span> Studio</span>
+    <blockquote>Every great webinar starts with a <span class="accent">good team</span>.</blockquote>
+  </div>
+  <div class="auth-form">
+    <div class="panel">
+      <div class="panel-body">
+        {% if rate_limited %}
+          <h1>Too many attempts</h1>
+          <p>Please wait a minute, then try again.</p>
+        {% else %}
+          <h1>This invitation link doesn't work</h1>
+          <p>It may have expired, been used already, or been replaced by a newer invitation. Ask the person who invited you to send a new one.</p>
+          <p><a href="{% url 'studio:login' %}">Already have an account? Sign in</a></p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>

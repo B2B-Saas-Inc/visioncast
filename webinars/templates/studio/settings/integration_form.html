@@ -1,0 +1,297 @@
+{% extends "studio/base.html" %}
+{% block title %}{% if destination %}{{ destination.name }}{% else %}New integration{% endif %}{% endblock %}
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="{% url 'studio:integrations' %}">Integrations</a> <span aria-hidden="true">/</span> <span aria-current="page">{% if destination %}{{ destination.name }}{% else %}New{% endif %}</span></nav>
+{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{% if destination %}{{ destination.name }}{% else %}New integration{% endif %}</h1>
+    <p class="lede">We POST a signed JSON message to your endpoint for each event you pick. Failed deliveries are retried with back-off.</p>
+  </div>
+</div>
+
+{% include "studio/settings/_errors.html" %}
+
+<div class="layout-split">
+<div>
+<form method="post" action="{% if destination %}{% url 'studio:integration-edit' pk=destination.pk %}{% else %}{% url 'studio:integration-new' %}{% endif %}" novalidate>
+  {% csrf_token %}
+  <fieldset class="fieldset" {% if not can_edit %}disabled{% endif %}>
+  <legend class="visually-hidden">Integration settings</legend>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Endpoint</h2></div>
+    <div class="panel-body">
+      <div class="field">
+        <label class="label" for="f-name">Name</label>
+        <input class="input" id="f-name" name="name" value="{{ state.name }}" maxlength="200" required aria-describedby="f-name-help{% if errors.name %} f-name-err{% endif %}"{% if errors.name %} aria-invalid="true"{% endif %}>
+        <p class="help" id="f-name-help">For your team, e.g. “HubSpot – webinar leads”.</p>
+        {% if errors.name %}<p class="field-error" id="f-name-err">{{ errors.name|join:" " }}</p>{% endif %}
+      </div>
+      <div class="field">
+        <label class="label" for="f-provider">Provider</label>
+        <select class="select" id="f-provider" name="provider" aria-describedby="f-provider-help{% if errors.provider %} f-provider-err{% endif %}"{% if errors.provider %} aria-invalid="true"{% endif %}>
+          {% for value, label in provider_choices %}<option value="{{ value }}"{% if value == state.provider %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <p class="help" id="f-provider-help">Pick a native provider to send directly to its API with credentials stored here, or keep the generic signed webhook. After changing provider, save to load its settings.</p>
+        {% if errors.provider %}<p class="field-error" id="f-provider-err">{{ errors.provider|join:" " }}</p>{% endif %}
+      </div>
+      <div class="field">
+        <label class="label" for="f-kind">Destination type</label>
+        <select class="select" id="f-kind" name="kind"{% if errors.kind %} aria-invalid="true" aria-describedby="f-kind-err"{% endif %}>
+          {% for value, label in kinds %}<option value="{{ value }}"{% if value == state.kind %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        {% if errors.kind %}<p class="field-error" id="f-kind-err">{{ errors.kind|join:" " }}</p>{% endif %}
+      </div>
+      <div class="field">
+        <label class="label" for="f-url">Endpoint URL</label>
+        <input class="input" id="f-url" name="url" type="url" inputmode="url" value="{{ state.url }}" maxlength="1000"{% if state.provider %} readonly{% else %} required{% endif %} placeholder="https://hooks.example.com/webinars" aria-describedby="f-url-help{% if errors.url %} f-url-err{% endif %}"{% if errors.url %} aria-invalid="true"{% endif %}>
+        <p class="help" id="f-url-help">{% if state.provider %}Set from the provider and region; credentials are only sent to the provider's official API host.{% else %}HTTPS only. The host must be on the platform's webhook allowlist.{% endif %}</p>
+        {% if errors.url %}<p class="field-error" id="f-url-err">{{ errors.url|join:" " }}</p>{% endif %}
+      </div>
+      <div class="field" id="f-enabled">
+        <label class="switch"><input type="checkbox" name="enabled" value="on"{% if state.enabled %} checked{% endif %} aria-describedby="f-enabled-help"><span class="switch-track" aria-hidden="true"></span> Send deliveries</label>
+        <p class="help" id="f-enabled-help">While off, nothing is queued for this integration.{% if state.provider %} Provider integrations can only be enabled once the settings and credentials validate.{% endif %}</p>
+        {% if errors.enabled %}<p class="field-error">{{ errors.enabled|join:" " }}</p>{% endif %}
+      </div>
+      <div class="field">
+        <label class="label" for="f-max_attempts">Maximum attempts</label>
+        <input class="input" id="f-max_attempts" name="max_attempts" type="number" min="1" max="50" inputmode="numeric" value="{{ state.max_attempts }}" style="max-width:8rem" aria-describedby="f-max-help{% if errors.max_attempts %} f-max-err{% endif %}"{% if errors.max_attempts %} aria-invalid="true"{% endif %}>
+        <p class="help" id="f-max-help">After this many failed attempts a delivery is dead-lettered and can be retried from Deliveries.</p>
+        {% if errors.max_attempts %}<p class="field-error" id="f-max-err">{{ errors.max_attempts|join:" " }}</p>{% endif %}
+      </div>
+    </div>
+  </section>
+
+  {% if state.provider %}
+  <section class="panel">
+    <div class="panel-head"><h2 id="f-native">{{ provider_label }} settings</h2></div>
+    <div class="panel-body">
+      <p class="help">Supported events: {% for e in native_event_types %}<code>{{ e }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}. Only registrations with a verified identity are sent; organizations are matched only by verified IDs, never by company name.</p>
+      {% for f in native_fields %}{% if not f.secret %}
+        {% with err_key="native-"|add:f.name %}
+        <div class="field">
+          <label class="label" for="native-{{ f.name }}">{{ f.label }}{% if not f.required %} <span class="small">(optional)</span>{% endif %}</label>
+          {% if f.choices %}
+            <select class="select" id="native-{{ f.name }}" name="native-{{ f.name }}" aria-describedby="native-{{ f.name }}-help">
+              {% for value, label in f.choices %}<option value="{{ value }}"{% if value == f.value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+          {% else %}
+            <input class="input" id="native-{{ f.name }}" name="native-{{ f.name }}" value="{{ f.value }}" maxlength="200" spellcheck="false" aria-describedby="native-{{ f.name }}-help">
+          {% endif %}
+          <p class="help" id="native-{{ f.name }}-help">{{ f.help }}</p>
+          {% for k, msgs in errors.items %}{% if k == err_key %}<p class="field-error">{{ msgs|join:" " }}</p>{% endif %}{% endfor %}
+        </div>
+        {% endwith %}
+      {% endif %}{% endfor %}
+      {% if not native_fields %}<p class="help">Save to load this provider's settings.</p>{% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="panel">
+    <div class="panel-head"><h2>What to send</h2></div>
+    <div class="panel-body">
+      <fieldset class="fieldset" id="f-event_types" aria-describedby="f-et-help{% if errors.event_types %} f-et-err{% endif %}">
+        <legend>Events to send</legend>
+        <p class="help" id="f-et-help">Pick at least one, or nothing is ever sent.</p>
+        {% if errors.event_types %}<p class="field-error" id="f-et-err">{{ errors.event_types|join:" " }}</p>{% endif %}
+        <div class="choice-grid">
+          {% for opt in event_type_options %}
+            <label class="choice-card"><input type="checkbox" name="event_types" value="{{ opt.value }}"{% if opt.checked %} checked{% endif %}><span><strong>{{ opt.label }}</strong><br><span class="small">{{ opt.help }}</span></span></label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <fieldset class="fieldset" id="f-allowed_groups" style="margin-top:var(--s-5)" aria-describedby="f-ag-help{% if errors.allowed_groups %} f-ag-err{% endif %}">
+        <legend>Data to include</legend>
+        <p class="help" id="f-ag-help">Only the groups you tick leave the platform. Send the least you need.</p>
+        {% if errors.allowed_groups %}<p class="field-error" id="f-ag-err">{{ errors.allowed_groups|join:" " }}</p>{% endif %}
+        <div class="choice-grid">
+          {% for opt in group_options %}
+            <label class="choice-card"><input type="checkbox" name="allowed_groups" value="{{ opt.value }}"{% if opt.checked %} checked{% endif %}><span><strong>{{ opt.label }}</strong><br><span class="small">{{ opt.help }}</span></span></label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <fieldset class="fieldset" id="f-required_consents" style="margin-top:var(--s-5)" aria-describedby="f-rc-help{% if errors.required_consents %} f-rc-err{% endif %}">
+        <legend>Required consent</legend>
+        <p class="help" id="f-rc-help">People who haven't granted every ticked consent are skipped for this integration.</p>
+        {% if errors.required_consents %}<p class="field-error" id="f-rc-err">{{ errors.required_consents|join:" " }}</p>{% endif %}
+        {% for opt in consent_options %}
+          <label class="choice"><input type="checkbox" name="required_consents" value="{{ opt.value }}"{% if opt.checked %} checked{% endif %}><span><strong>{{ opt.label }}</strong> — {{ opt.help }}</span></label>
+        {% endfor %}
+      </fieldset>
+
+      <div class="field" id="f-include_private_links" style="margin-top:var(--s-5)">
+        <label class="switch"><input type="checkbox" name="include_private_links" value="on"{% if state.include_private_links %} checked{% endif %} aria-describedby="f-pl-help"><span class="switch-track" aria-hidden="true"></span> Include private links</label>
+        <div class="callout callout-warn" id="f-pl-help" style="margin-top:var(--s-2)">
+          {% include "studio/_icon.html" with name="alert" size=16 %} Private links let anyone who holds them join a session as that registrant. Only turn this on for a system you trust to send personal emails, such as your email platform. Sessions with the managed waiting room on never send the provider link; this system gets the waiting-room link instead.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2 id="f-field_mapping">Field mapping</h2></div>
+    <div class="panel-body">
+      <p class="help" id="f-map-help">Optional. Rename our fields to match the receiver, e.g. <code>email</code> → <code>Email</code>. Leave both boxes empty to remove a row.</p>
+      {% if errors.field_mapping %}<p class="field-error">{{ errors.field_mapping|join:" " }}</p>{% endif %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th scope="col">Our field</th><th scope="col">Their field</th></tr></thead>
+          <tbody>
+            {% for row in mapping_rows %}
+              <tr>
+                <td><label class="visually-hidden" for="map-{{ forloop.counter0 }}-source">Our field, row {{ forloop.counter }}</label><input class="input" id="map-{{ forloop.counter0 }}-source" name="map-{{ forloop.counter0 }}-source" value="{{ row.source }}" aria-describedby="f-map-help"></td>
+                <td><label class="visually-hidden" for="map-{{ forloop.counter0 }}-target">Their field, row {{ forloop.counter }}</label><input class="input" id="map-{{ forloop.counter0 }}-target" name="map-{{ forloop.counter0 }}-target" value="{{ row.target }}"></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="help">Need more rows? Save, and three new empty rows appear.</p>
+    </div>
+  </section>
+  </fieldset>
+
+  {% if can_edit %}
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit">{% if destination %}Save changes{% else %}Create integration{% endif %}</button>
+    <a class="btn btn-ghost" href="{% url 'studio:integrations' %}">Cancel</a>
+  </div>
+  {% else %}
+  <p class="callout">Your role can view this integration but not change it.</p>
+  {% endif %}
+</form>
+</div>
+
+{% if destination %}
+<aside>
+  {% if not credentials_readable %}
+  <div class="callout callout-warn">Stored credentials can't be decrypted. Re-enter them; deliveries fail until then.</div>
+  {% endif %}
+  {% if stored_provider %}
+  <section class="panel">
+    <div class="panel-head"><h2>{{ stored_provider_label }} credentials</h2></div>
+    <div class="panel-body">
+      {% for f in secret_fields %}
+        <p>{{ f.label }}: {% if f.is_set %}<span class="badge badge-success">Set</span>{% else %}<span class="badge badge-warn">Not set</span>{% endif %}</p>
+      {% endfor %}
+      {% if can_edit %}
+        <form method="post" action="{% url 'studio:integration-credentials' pk=destination.pk %}">
+          {% csrf_token %}<input type="hidden" name="action" value="native">
+          <p class="help" id="native-secret-help">Values are encrypted, used only by the server to call the provider, and never shown again. Leave a box empty to keep the stored value.</p>
+          {% for f in secret_fields %}
+            <div class="field">
+              <label class="label" for="secret-{{ f.name }}">{{ f.label }}</label>
+              <input class="input" type="password" autocomplete="off" spellcheck="false" id="secret-{{ f.name }}" name="secret-{{ f.name }}" aria-describedby="secret-{{ f.name }}-help native-secret-help">
+              <p class="help" id="secret-{{ f.name }}-help">{{ f.help }}</p>
+            </div>
+          {% endfor %}
+          <div class="form-actions"><button class="btn btn-sm" type="submit">Save credentials</button></div>
+        </form>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Check before enabling</h2></div>
+    <div class="panel-body">
+      {% if native_readiness %}
+        <p><span class="badge badge-warn">Not ready</span></p>
+        <ul>{% for m in native_readiness %}<li>{{ m }}</li>{% endfor %}</ul>
+      {% else %}
+        <p><span class="badge badge-success">Configuration valid</span></p>
+        <p class="help">Checked without contacting {{ stored_provider_label }}. Credentials and workspace schema are only proven by a real delivery.</p>
+      {% endif %}
+      {% if native_preview %}
+        <h3>Preview (sample person, secrets redacted)</h3>
+        {% for call in native_preview %}
+          <p><code>{{ call.method }} {{ call.url }}</code></p>
+          <pre class="small" style="white-space:pre-wrap;max-height:16rem;overflow:auto">{{ call.body_json }}</pre>
+        {% endfor %}
+      {% endif %}
+    </div>
+  </section>
+  {% else %}
+  <section class="panel">
+    <div class="panel-head"><h2>Signing secret</h2></div>
+    <div class="panel-body">
+      {% if has_secret %}
+        <p><span class="badge badge-success">Signing secret set</span></p>
+        <p class="help">The value is encrypted and can't be shown. Replacing it breaks verification until the receiver is updated.</p>
+      {% else %}
+        <p><span class="badge badge-warn">No signing secret</span></p>
+        <p class="help">Receivers use the secret to check that requests really come from us.</p>
+      {% endif %}
+      {% if can_edit %}
+        <form method="post" action="{% url 'studio:integration-secret' pk=destination.pk %}"{% if has_secret %} data-confirm="Replace the current signing secret? The receiver must be updated."{% endif %}>
+          {% csrf_token %}<input type="hidden" name="action" value="generate">
+          <button class="btn btn-teal btn-sm" type="submit">{% include "studio/_icon.html" with name="key" size=16 %} Generate a new secret</button>
+        </form>
+        <form method="post" action="{% url 'studio:integration-secret' pk=destination.pk %}" style="margin-top:var(--s-4)">
+          {% csrf_token %}<input type="hidden" name="action" value="set">
+          <div class="field">
+            <label class="label" for="signing_secret">Or paste a secret from the receiver</label>
+            <input class="input" type="password" id="signing_secret" name="signing_secret" autocomplete="off" spellcheck="false" aria-describedby="signing-secret-help">
+            <p class="help" id="signing-secret-help">At least 32 characters. It is stored encrypted and never shown again.</p>
+          </div>
+          <div class="form-actions"><button class="btn btn-sm" type="submit">Save pasted secret</button></div>
+        </form>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="panel">
+    <div class="panel-head"><h2>{% if stored_provider %}Extra credentials{% else %}Credentials{% endif %}</h2></div>
+    <div class="panel-body">
+      {% if generic_credential_names %}
+        <p>Stored: {% for n in generic_credential_names %}<code>{{ n }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+      {% else %}
+        <p class="help">No credentials stored. Use these for headers like an API token the receiver expects.</p>
+      {% endif %}
+      {% if can_edit %}
+        <form method="post" action="{% url 'studio:integration-credentials' pk=destination.pk %}" data-confirm="Saving replaces all stored credentials. Continue?">
+          {% csrf_token %}
+          <p class="help" id="cred-help">Saving replaces the whole set{% if stored_provider %} of extra credentials (provider credentials are kept){% endif %}. Values are never shown, so re-enter every value you want to keep; rows without a value are dropped.</p>
+          {% for n in generic_credential_names %}
+            <div class="grid-2">
+              <div class="field"><label class="label" for="cred-{{ forloop.counter0 }}-name">Name</label><input class="input" id="cred-{{ forloop.counter0 }}-name" name="cred-{{ forloop.counter0 }}-name" value="{{ n }}"></div>
+              <div class="field"><label class="label" for="cred-{{ forloop.counter0 }}-value">Value</label><input class="input" type="password" autocomplete="off" id="cred-{{ forloop.counter0 }}-value" name="cred-{{ forloop.counter0 }}-value" aria-describedby="cred-help"></div>
+            </div>
+          {% endfor %}
+          {% with base=generic_credential_names|length %}
+            {% for i in "012" %}
+              {% with idx=base|add:i %}
+              <div class="grid-2">
+                <div class="field"><label class="label" for="cred-{{ idx }}-name">Name</label><input class="input" id="cred-{{ idx }}-name" name="cred-{{ idx }}-name" placeholder="api_token"></div>
+                <div class="field"><label class="label" for="cred-{{ idx }}-value">Value</label><input class="input" type="password" autocomplete="off" id="cred-{{ idx }}-value" name="cred-{{ idx }}-value" aria-describedby="cred-help"></div>
+              </div>
+              {% endwith %}
+            {% endfor %}
+          {% endwith %}
+          <div class="form-actions"><button class="btn btn-sm" type="submit">Save credentials</button></div>
+        </form>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if can_delete %}
+  <section class="panel">
+    <div class="panel-head"><h2>Delete</h2></div>
+    <div class="panel-body">
+      <p class="help">Deletes this integration and every queued or past delivery for it.</p>
+      <form method="post" action="{% url 'studio:integration-delete' pk=destination.pk %}" data-confirm="Delete “{{ destination.name }}” and its delivery history?">
+        {% csrf_token %}
+        <button class="btn btn-danger btn-sm" type="submit">{% include "studio/_icon.html" with name="trash" size=16 %} Delete integration</button>
+      </form>
+    </div>
+  </section>
+  {% endif %}
+</aside>
+{% endif %}
+</div>
+{% endblock %}

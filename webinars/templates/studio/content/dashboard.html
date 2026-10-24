@@ -1,0 +1,70 @@
+{% extends "studio/base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Overview</p>
+    <h1>Welcome back{% if user.first_name %}, {{ user.first_name }}{% endif %}</h1>
+    <p class="lede">What's coming up, and what's left to set up.</p>
+  </div>
+  {% if can_add_event %}
+    <a class="btn btn-primary" href="{% url 'studio:event-new' %}">{% include "studio/_icon.html" with name="plus" %} New event</a>
+  {% endif %}
+</div>
+
+<div class="grid-3" style="margin-bottom:var(--s-6)">
+  <div class="panel"><div class="panel-body stat"><span class="stat-value">{{ stats.events }}</span><span class="stat-label">Events ({{ stats.published }} published)</span></div></div>
+  <div class="panel"><div class="panel-body stat"><span class="stat-value">{{ stats.upcoming }}</span><span class="stat-label">Upcoming sessions</span></div></div>
+  <div class="panel"><div class="panel-body stat">
+    {% if stats.registrations is not None %}<span class="stat-value">{{ stats.registrations }}</span><span class="stat-label">Active registrations</span>
+    {% else %}<span class="stat-value">—</span><span class="stat-label">Registrations (not available to your role)</span>{% endif %}
+  </div></div>
+</div>
+
+<div class="layout-split">
+  <section class="panel" aria-labelledby="upcoming-title">
+    <div class="panel-head"><h2 id="upcoming-title">Upcoming sessions</h2></div>
+    {% if upcoming %}
+      <ul class="list-rows">
+        {% for occ in upcoming %}
+          <li>
+            {% include "studio/_icon.html" with name="calendar" %}
+            <div class="grow">
+              <a href="{% url 'studio:session' occ.pk %}"><strong>{{ occ.event.public_title }}</strong></a>
+              <p class="small muted" style="margin:0">{{ occ.local_label }} · {{ occ.timezone }} · {{ occ.registered }} registered</p>
+            </div>
+            {% if occ.room_state %}
+              <span class="badge badge-{{ occ.room_state }}">Room: {{ occ.room_state_label }}</span>
+            {% else %}
+              <span class="badge badge-plain">No waiting room</span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="empty">
+        <h2>Nothing scheduled yet</h2>
+        <p>Open an event and add a session with a date, time zone and join link.</p>
+        {% if perms.webinars.view_event %}<a class="btn btn-ghost" href="{% url 'studio:events' %}">Go to events</a>{% endif %}
+      </div>
+    {% endif %}
+  </section>
+
+  <aside class="panel" aria-labelledby="setup-title">
+    <div class="panel-head"><h2 id="setup-title">Setup checklist</h2><span class="badge badge-plain">{{ steps_done }} of {{ steps_total }}</span></div>
+    <div class="panel-body">
+      <ol class="steps">
+        {% for step in steps %}
+          <li data-done="{% if step.done %}true{% else %}false{% endif %}">
+            <div>
+              <span class="step-title">{{ step.title }}</span>{% if step.done %}<span class="visually-hidden"> (done)</span>{% endif %}
+              <p class="help">{{ step.detail }}</p>
+            </div>
+            {% if not step.done and step.url %}<a class="btn btn-sm btn-ghost" href="{{ step.url }}">Start<span class="visually-hidden">: {{ step.title }}</span></a>{% else %}<span></span>{% endif %}
+          </li>
+        {% endfor %}
+      </ol>
+    </div>
+  </aside>
+</div>
+{% endblock %}

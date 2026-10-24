@@ -1,0 +1,54 @@
+{% extends "studio/base.html" %}
+{% block title %}Registrations · {{ event.internal_name }}{% endblock %}
+{% block breadcrumbs %}<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="{% url 'studio:events' %}">Events</a> / <a href="{% url 'studio:event-edit' event.pk %}">{{ event.internal_name }}</a> / <a href="{% url 'studio:session' occ.pk %}">{{ occ.local_label }}</a> / <span aria-current="page">Registrations</span></nav>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Registrations</p>
+    <h1>{{ event.public_title }}</h1>
+    <p class="lede">{{ occ.local_label }} ({{ occ.timezone }}) · {{ counts.registered }} registered · {{ counts.checked_in }} checked in</p>
+  </div>
+</div>
+{% if not show_pii %}<p class="callout" role="note">Names and emails are hidden (•••) because your role can't view personal data.</p>{% endif %}
+
+{% if rows %}
+  <div class="panel table-wrap">
+    <table class="table">
+      <caption class="visually-hidden">Registrations for this session</caption>
+      <thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Company</th><th scope="col">Registered</th><th scope="col">Checked in</th><th scope="col">Attendance</th>{% if can_record %}<th scope="col">Record</th>{% endif %}</tr></thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ row.name }}{% if row.reg.status == "cancelled" %} <span class="badge badge-cancelled">Cancelled</span>{% endif %}</td>
+            <td>{{ row.email }}</td>
+            <td>{{ row.company }}</td>
+            <td class="nowrap">{{ row.reg.created_at|date:"j M, H:i" }}</td>
+            <td class="nowrap">{% if row.check_in %}{{ row.check_in.checked_in_at|date:"j M, H:i" }}{% if row.check_in.late %} <span class="badge badge-warn">Late</span>{% endif %}{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td><span class="badge {% if row.reg.attendance == 'attended' %}badge-success{% elif row.reg.attendance == 'no_show' %}badge-danger{% else %}badge-plain{% endif %}">{{ row.reg.get_attendance_display }}</span></td>
+            {% if can_record %}
+              <td>
+                <form method="post" action="{% url 'studio:registration-attendance' row.reg.pk %}" class="row" style="gap:var(--s-1);flex-wrap:wrap">
+                  {% csrf_token %}
+                  <input type="hidden" name="page" value="{{ page.number }}">
+                  <button class="btn btn-ghost btn-sm" type="submit" name="kind" value="attended" aria-label="Mark registration {{ forloop.counter }} as attended">Attended</button>
+                  <button class="btn btn-ghost btn-sm" type="submit" name="kind" value="no_show" aria-label="Mark registration {{ forloop.counter }} as no-show">No-show</button>
+                  <button class="btn btn-ghost btn-sm" type="submit" name="kind" value="follow_up" aria-label="Request follow-up for registration {{ forloop.counter }}">Follow up</button>
+                </form>
+              </td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page.has_other_pages %}
+    <nav class="form-actions" aria-label="Pages">
+      {% if page.has_previous %}<a class="btn btn-ghost btn-sm" href="?page={{ page.previous_page_number }}">Previous</a>{% endif %}
+      <span class="small muted">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+      {% if page.has_next %}<a class="btn btn-ghost btn-sm" href="?page={{ page.next_page_number }}">Next</a>{% endif %}
+    </nav>
+  {% endif %}
+{% else %}
+  <div class="panel empty"><h2>No registrations yet</h2><p>Once people register for this session they appear here, with check-ins from the waiting room.</p></div>
+{% endif %}
+{% endblock %}

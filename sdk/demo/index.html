@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Webinar RSVP demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+    [data-webinar-field] { margin: 0 0 1rem; }
+    label { display: block; font-weight: 600; }
+    input, select { font: inherit; padding: .4rem; width: 100%; box-sizing: border-box; }
+    input[type="checkbox"] { width: auto; }
+    [aria-invalid="true"] { outline: 2px solid #b00020; }
+    [data-webinar-field-error] { color: #b00020; display: block; }
+    [data-webinar-error]:not(:empty) { color: #b00020; border: 2px solid #b00020; padding: .5rem; margin-bottom: 1rem; }
+    [data-webinar-status]:not(:empty) { margin-top: 1rem; }
+    button { font: inherit; padding: .5rem 1rem; margin-right: .5rem; }
+    :focus-visible { outline: 3px solid #1a73e8; outline-offset: 2px; }
+    .consent { border: 1px solid #ccc; padding: 1rem; margin-bottom: 2rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Building accessible forms — live webinar</h1>
+
+    <section class="consent" aria-labelledby="consent-heading">
+      <h2 id="consent-heading">Demo consent banner</h2>
+      <p>Stand-in for your consent management platform. Nothing is collected until you choose.</p>
+      <button type="button" id="consent-all">Accept analytics &amp; advertising</button>
+      <button type="button" id="consent-analytics">Analytics only</button>
+      <button type="button" id="consent-none">Reject all</button>
+      <p id="consent-state" role="status" aria-live="polite"></p>
+    </section>
+
+    <form data-webinar-form data-occurrence-id="occ_demo_2026_11_05" data-form-version="v1" action="#" method="post">
+      <h2>Reserve your seat</h2>
+      <div data-webinar-error></div>
+
+      <div data-webinar-field>
+        <label for="wf-email">Work email</label>
+        <input id="wf-email" name="email" type="email" autocomplete="email" required>
+      </div>
+      <div data-webinar-field>
+        <label for="wf-first">First name</label>
+        <input id="wf-first" name="firstName" autocomplete="given-name" required>
+      </div>
+      <div data-webinar-field>
+        <label for="wf-last">Last name</label>
+        <input id="wf-last" name="lastName" autocomplete="family-name" required>
+      </div>
+      <div data-webinar-field>
+        <label for="wf-company">Company</label>
+        <input id="wf-company" name="company" autocomplete="organization" required>
+      </div>
+      <div data-webinar-field>
+        <label for="wf-title">Job title</label>
+        <input id="wf-title" name="jobTitle" autocomplete="organization-title" required>
+      </div>
+      <div data-webinar-field>
+        <label for="wf-size">Company size (optional)</label>
+        <select id="wf-size" name="companySize">
+          <option value="">Choose…</option>
+          <option>1-10</option>
+          <option>11-50</option>
+          <option>51-200</option>
+          <option>201-1000</option>
+          <option>1000+</option>
+        </select>
+      </div>
+      <div data-webinar-field>
+        <label for="wf-topic">What do you most want to learn? (optional)</label>
+        <input id="wf-topic" name="custom.topic">
+      </div>
+      <div>
+        <input id="wf-sms" name="consents.sms" type="checkbox" value="yes" data-disclosure-version="sms-demo-2026-10">
+        <label for="wf-sms" style="display:inline">Text me event reminders (optional). Message rates may apply; reply STOP to opt out.</label>
+      </div>
+
+      <p><button type="submit">Register</button></p>
+      <div data-webinar-status></div>
+    </form>
+  </main>
+
+  <script>
+    // GTM-equivalent configuration. No secrets: the proxy holds the backend key.
+    window.WebinarFormConfig = { proxyBase: '/webinar-api', consent: { analytics: false, advertising: false } };
+  </script>
+  <script src="/webinar-form.js"></script>
+  <script>
+    (function () {
+      var out = document.getElementById('consent-state');
+      function set(c, label) { window.WebinarForm.setConsent(c); out.textContent = 'Consent: ' + label; }
+      document.getElementById('consent-all').addEventListener('click', function () { set({ analytics: true, advertising: true }, 'analytics and advertising'); });
+      document.getElementById('consent-analytics').addEventListener('click', function () { set({ analytics: true, advertising: false }, 'analytics only'); });
+      document.getElementById('consent-none').addEventListener('click', function () { set({ analytics: false, advertising: false }, 'none'); });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+{% extends "studio/base.html" %}
+{% block title %}API keys{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Connect</p>
+    <h1>API keys</h1>
+    <p class="lede">Keys let your website, servers and AI assistants use the platform. Give each key only the scopes it needs, and revoke keys you no longer use. See the <a href="{% url 'developers' %}">developer docs</a> for details.</p>
+  </div>
+</div>
+
+{% include "studio/settings/_errors.html" %}
+
+<div class="layout-split">
+<div>
+{% if rows %}
+<div class="panel">
+  <div class="table-wrap">
+    <table class="table">
+      <caption class="visually-hidden">API keys</caption>
+      <thead><tr><th scope="col">Name</th><th scope="col">Prefix</th><th scope="col">Scopes</th><th scope="col">Last used</th><th scope="col">Status</th>{% if can_revoke %}<th scope="col"><span class="visually-hidden">Actions</span></th>{% endif %}</tr></thead>
+      <tbody>
+        {% for row in rows %}
+          {% with k=row.obj %}
+          <tr>
+            <td class="primary-cell">{{ k.name }}</td>
+            <td><code>{{ k.prefix }}…</code></td>
+            <td>{% for s in row.scope_labels %}<span class="badge badge-plain">{{ s }}</span> {% endfor %}</td>
+            <td>{% if k.last_used_at %}{{ k.last_used_at|date:"M j, Y H:i" }}{% else %}Never{% endif %}</td>
+            <td>{% if k.revoked_at %}<span class="badge badge-revoked">Revoked {{ k.revoked_at|date:"M j" }}</span>{% else %}<span class="badge badge-success">Active</span>{% endif %}</td>
+            {% if can_revoke %}
+            <td>{% if not k.revoked_at %}
+              <form method="post" action="{% url 'studio:api-key-revoke' pk=k.pk %}" data-confirm="Revoke “{{ k.name }}”? Anything using it stops working immediately.">{% csrf_token %}<button class="btn btn-danger btn-sm" type="submit">Revoke</button></form>
+            {% endif %}</td>
+            {% endif %}
+          </tr>
+          {% endwith %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="panel"><div class="empty">
+  <h2>No API keys yet</h2>
+  <p>Create a key to connect your website or an AI assistant through MCP.</p>
+</div></div>
+{% endif %}
+</div>
+
+{% if can_add %}
+<aside>
+<section class="panel">
+  <div class="panel-head"><h2>Create a key</h2></div>
+  <form method="post" action="{% url 'studio:api-key-new' %}" class="panel-body" novalidate>
+    {% csrf_token %}
+    <div class="field">
+      <label class="label" for="f-name">Key name</label>
+      <input class="input" id="f-name" name="name" value="{{ name }}" maxlength="200" required aria-describedby="key-name-help{% if errors.name %} key-name-err{% endif %}"{% if errors.name %} aria-invalid="true"{% endif %}>
+      <p class="help" id="key-name-help">Say where it's used, e.g. “Marketing site” or “Claude MCP”.</p>
+      {% if errors.name %}<p class="field-error" id="key-name-err">{{ errors.name|join:" " }}</p>{% endif %}
+    </div>
+    <fieldset class="fieldset" id="f-scopes" style="margin-top:var(--s-4)"{% if errors.scopes %} aria-describedby="scopes-err"{% endif %}>
+      <legend>Scopes</legend>
+      {% if errors.scopes %}<p class="field-error" id="scopes-err">{{ errors.scopes|join:" " }}</p>{% endif %}
+      {% for opt in scope_options %}
+        <label class="choice-card" style="margin-bottom:var(--s-2)"><input type="checkbox" name="scopes" value="{{ opt.value }}"{% if opt.checked %} checked{% endif %}><span><strong>{{ opt.label }}</strong>{% if opt.mcp %} <span class="badge badge-accent badge-plain">MCP</span>{% endif %}<br><span class="small">{{ opt.help }}</span></span></label>
+      {% endfor %}
+      <p class="help">Scopes marked MCP also work with the MCP server at <code>/mcp</code>, so assistants like Claude can read events, draft content, record attendance or pull reports. <a href="{% url 'developers' %}">How to connect</a>.</p>
+    </fieldset>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">{% include "studio/_icon.html" with name="key" size=16 %} Create key</button></div>
+  </form>
+</section>
+</aside>
+{% endif %}
+</div>
+{% endblock %}

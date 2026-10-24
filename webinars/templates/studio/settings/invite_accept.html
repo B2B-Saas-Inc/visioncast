@@ -1,0 +1,50 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="same-origin">
+  <title>Join the studio · Webinar Studio</title>
+  <link rel="stylesheet" href="{% static 'studio/studio.css' %}">
+</head>
+<body>
+<main class="auth" id="main">
+  <div class="auth-art">
+    <span class="brand"><span class="brand-mark" aria-hidden="true">W</span> Studio</span>
+    <blockquote>You've been invited to help run <span class="accent">great webinars</span>.</blockquote>
+    <p class="small">Invitation for {{ invitation.email }} · {{ invitation.role }}</p>
+  </div>
+  <div class="auth-form">
+    <div class="panel">
+      <div class="panel-body">
+        <h1>Join the studio</h1>
+        <p class="lede">You'll join as <strong>{{ invitation.role }}</strong>. {{ role_help }}</p>
+        {% include "studio/settings/_errors.html" %}
+        <form method="post" novalidate>
+          {% csrf_token %}
+          <div class="field">
+            <label class="label" for="f-username">Username</label>
+            <input class="input" id="f-username" name="username" value="{{ username }}" autocomplete="username" maxlength="150" required aria-describedby="u-help{% if errors.username %} u-err{% endif %}"{% if errors.username %} aria-invalid="true"{% endif %}>
+            <p class="help" id="u-help">Letters, digits and @ . + - _ only. You'll sign in with this.</p>
+            {% if errors.username %}<p class="field-error" id="u-err">{{ errors.username|join:" " }}</p>{% endif %}
+          </div>
+          <div class="field">
+            <label class="label" for="f-password">Password</label>
+            <input class="input" id="f-password" name="password" type="password" autocomplete="new-password" required aria-describedby="p-help{% if errors.password %} p-err{% endif %}"{% if errors.password %} aria-invalid="true"{% endif %}>
+            <p class="help" id="p-help">At least 12 characters works best. Avoid anything you use elsewhere.</p>
+            {% if errors.password %}<p class="field-error" id="p-err">{{ errors.password|join:" " }}</p>{% endif %}
+          </div>
+          <div class="field">
+            <label class="label" for="f-password_confirm">Confirm password</label>
+            <input class="input" id="f-password_confirm" name="password_confirm" type="password" autocomplete="new-password" required{% if errors.password_confirm %} aria-invalid="true" aria-describedby="pc-err"{% endif %}>
+            {% if errors.password_confirm %}<p class="field-error" id="pc-err">{{ errors.password_confirm|join:" " }}</p>{% endif %}
+          </div>
+          <div class="form-actions"><button class="btn btn-primary btn-lg" type="submit">Create my account</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>

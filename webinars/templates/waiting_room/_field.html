@@ -1,0 +1,20 @@
+{% load waiting_room_tags %}{% with err=errors|lookup:f.key val=values|lookup:f.key %}
+<div class="field">
+  {% if f.type == "checkbox" %}
+    <label class="choice"><input type="checkbox" name="{{ f.key }}" id="f-{{ f.key|slugify }}"{% if val %} checked{% endif %}> <span>{{ f.label }}</span></label>
+  {% else %}
+    <label for="f-{{ f.key|slugify }}">{{ f.label }}{% if not f.required %} <span class="muted">(optional)</span>{% endif %}</label>
+    {% if f.help %}<p class="help" id="f-{{ f.key|slugify }}-help">{{ f.help }}</p>{% endif %}
+    {% if f.type == "select" %}
+      <select class="input" id="f-{{ f.key|slugify }}" name="{{ f.key }}"{% if f.required %} required{% endif %}{% if err %} aria-invalid="true"{% endif %} aria-describedby="{% if f.help %}f-{{ f.key|slugify }}-help {% endif %}{% if err %}f-{{ f.key|slugify }}-error{% endif %}">
+        <option value="">Choose…</option>
+        {% for o in f.options %}<option value="{{ o }}"{% if val == o %} selected{% endif %}>{{ o }}</option>{% endfor %}
+      </select>
+    {% elif f.type == "textarea" %}
+      <textarea class="input" rows="3" id="f-{{ f.key|slugify }}" name="{{ f.key }}"{% if err %} aria-invalid="true"{% endif %} aria-describedby="{% if f.help %}f-{{ f.key|slugify }}-help {% endif %}{% if err %}f-{{ f.key|slugify }}-error{% endif %}">{{ val|default:"" }}</textarea>
+    {% else %}
+      <input class="input" id="f-{{ f.key|slugify }}" name="{{ f.key }}" type="{% if f.type == 'email' %}email{% elif f.type == 'tel' %}tel{% else %}text{% endif %}"{% if f.autocomplete %} autocomplete="{{ f.autocomplete }}"{% endif %}{% if f.required %} required{% endif %} value="{{ val|default:'' }}"{% if err %} aria-invalid="true"{% endif %} aria-describedby="{% if f.help %}f-{{ f.key|slugify }}-help {% endif %}{% if err %}f-{{ f.key|slugify }}-error{% endif %}">
+    {% endif %}
+  {% endif %}
+  {% if err %}<p class="field-error" id="f-{{ f.key|slugify }}-error">{{ err }}</p>{% endif %}
+</div>{% endwith %}

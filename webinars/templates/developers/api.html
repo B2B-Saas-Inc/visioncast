@@ -1,0 +1,18 @@
+{% extends "developers/base.html" %}
+{% block title %}API reference{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ info.title }} reference</h1><p class="lede">{{ info.description }} Download the full schema as <a href="{% url 'openapi-json' %}">OpenAPI 3.1 JSON</a>.</p></div></div>
+{% for tag, ops in groups %}
+<section class="panel">
+  <div class="panel-head"><h2 id="{{ tag|slugify }}">{{ tag }}</h2></div>
+  {% for op in ops %}
+  <div class="endpoint">
+    <p style="margin:0"><span class="method method-{{ op.method }}">{{ op.method }}</span> <code>{{ op.path }}</code> <span class="badge badge-plain">{{ op.auth }}</span></p>
+    <p style="margin:var(--s-1) 0 0"><strong>{{ op.summary }}</strong></p>
+    {% if op.description %}<p class="muted small" style="margin:var(--s-1) 0 0">{{ op.description }}</p>{% endif %}
+    <p class="small muted" style="margin:var(--s-1) 0 0">Responses: {% for code, r in op.responses %}<code>{{ code }}</code> {{ r.description }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>
+  </div>
+  {% endfor %}
+</section>
+{% endfor %}
+{% endblock %}

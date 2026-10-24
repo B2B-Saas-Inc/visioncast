@@ -1,0 +1,112 @@
+{% extends "studio/base.html" %}
+{% load static %}
+{% block title %}{% if fv %}Form {{ fv.version }}{% else %}New form{% endif %}{% endblock %}
+{% block breadcrumbs %}<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="{% url 'studio:forms' %}">Registration forms</a> / <span aria-current="page">{% if fv %}{{ fv.version }}{% else %}New form{% endif %}</span></nav>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Registration form</p>
+    <h1>{% if fv %}{{ fv.version }}{% else %}New form{% endif %}</h1>
+    <p class="lede">Choose the fields, in the order people see them. Email is always required: it is how registrations are matched to people.</p>
+  </div>
+</div>
+
+{% include "studio/content/_error_summary.html" with items=error_summary %}
+{% if readonly %}<p class="callout" role="note">Your role can view this form but not change it.</p>{% endif %}
+
+<form method="post" action="{% if fv %}{% url 'studio:form-edit' fv.version %}{% else %}{% url 'studio:form-new' %}{% endif %}" novalidate data-form-builder>
+  {% csrf_token %}
+  <div class="layout-split">
+    <div>
+      {% if locked %}
+        <div class="callout callout-warn" role="note">
+          <p><strong>This version is in use; saving creates a new version.</strong></p>
+          <p class="small">Registrations or published events already rely on “{{ fv.version }}”. Your changes are saved under the name below; switch events to it in the event editor.</p>
+        </div>
+      {% endif %}
+      {% if locked or not fv %}
+        <section class="panel" style="margin-bottom:var(--s-5)">
+          <div class="panel-body">
+            {% include "studio/content/_field.html" with name="version" label="Version name" value=version_value error=errors.version readonly=readonly help="Used by your website and integrations as formVersion, e.g. standard-v2. Letters, digits, dots, dashes, underscores." %}
+          </div>
+        </section>
+      {% endif %}
+
+      <h2 id="fields-title">Fields</h2>
+      <ol class="stack-sm" style="list-style:none;padding:0;margin:var(--s-3) 0 0" data-rows aria-labelledby="fields-title">
+        {% for row in rows %}
+          {% include "studio/content/_form_row.html" with i=forloop.counter0 n=forloop.counter row=row %}
+        {% endfor %}
+      </ol>
+      <input type="hidden" name="rows-count" value="{{ rows|length }}" data-rows-count>
+      {% if not readonly %}
+        <p class="help" data-no-js-hint>Need more fields? Save, and two more empty rows appear.</p>
+        <button class="btn btn-ghost" type="button" data-add-row hidden>{% include "studio/_icon.html" with name="plus" size=16 %} Add field</button>
+        <template data-row-template>
+          {% include "studio/content/_form_row.html" with i="__N__" n="" row=row_template %}
+        </template>
+      {% endif %}
+    </div>
+
+    <aside class="stack">
+      <section class="panel" aria-labelledby="settings-title">
+        <div class="panel-head"><h2 id="settings-title">Settings</h2></div>
+        <div class="panel-body">
+          {% include "studio/content/_field.html" with name="description" label="Description" value=meta.description error=errors.description readonly=readonly optional=True help="For your team, e.g. “Standard B2B form”." %}
+          {% include "studio/content/_field.html" with name="default_phone_region" label="Default phone region" value=meta.default_phone_region error=errors.default_phone_region readonly=readonly optional=True help="Two-letter country code (e.g. US, GB) used to read phone numbers typed without +country." %}
+          <div class="field">
+            <label class="choice" for="id_is_active"><input type="checkbox" id="id_is_active" name="is_active" value="on"{% if meta.is_active %} checked{% endif %}{% if readonly %} disabled{% endif %}> Active (offered when creating events)</label>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="sms-title">
+        <div class="panel-head"><h2 id="sms-title">SMS consent</h2></div>
+        <div class="panel-body">
+          <p class="help">If you text reminders, show this disclosure next to the phone field. Leave empty to skip SMS consent.</p>
+          {% include "studio/content/_field.html" with name="sms_disclosure_version" label="Disclosure version" value=meta.sms_disclosure_version error=errors.sms_disclosure_version readonly=readonly optional=True help="Stored with each consent, e.g. sms-2026-01." %}
+          {% include "studio/content/_field.html" with name="sms_disclosure_text" label="Disclosure text" kind="textarea" value=meta.sms_disclosure_text error=errors.sms_disclosure_text readonly=readonly optional=True help="Exactly what people agree to." %}
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="mapping-title">
+        <div class="panel-head"><h2 id="mapping-title">Field name aliases</h2></div>
+        <div class="panel-body">
+          <p class="help" id="mapping-help">If your website form sends a different name (e.g. <code>work_email</code>), map it to a standard field.</p>
+          {% if errors.field_mapping %}<p class="field-error" id="id_field_mapping">{{ errors.field_mapping|join:" " }}</p>{% endif %}
+          {% for alias in aliases %}
+            <div class="grid-2" style="margin-top:var(--s-3)">
+              <div class="field">
+                <label class="label" for="alias-{{ forloop.counter0 }}-name">Incoming name</label>
+                <input class="input" type="text" id="alias-{{ forloop.counter0 }}-name" name="alias-{{ forloop.counter0 }}-name" value="{{ alias.name }}" autocapitalize="none" spellcheck="false"{% if readonly %} disabled{% endif %}>
+              </div>
+              <div class="field">
+                <label class="label" for="alias-{{ forloop.counter0 }}-target">Maps to</label>
+                <select class="select" id="alias-{{ forloop.counter0 }}-target" name="alias-{{ forloop.counter0 }}-target"{% if readonly %} disabled{% endif %}>
+                  <option value="">—</option>
+                  {% for key, label in key_choices %}<option value="{{ key }}"{% if alias.target == key %} selected{% endif %}>{{ label }}</option>{% endfor %}
+                </select>
+              </div>
+            </div>
+          {% endfor %}
+          <input type="hidden" name="alias-count" value="{{ aliases|length }}">
+        </div>
+      </section>
+
+      {% if fv and in_use %}
+        <section class="panel" aria-labelledby="used-title">
+          <div class="panel-head"><h2 id="used-title">Used by</h2></div>
+          <ul class="list-rows">{% for e in in_use %}<li><a href="{% url 'studio:event-edit' e.pk %}">{{ e.internal_name }}</a> <span class="badge badge-{{ e.visibility }}">{{ e.get_visibility_display }}</span></li>{% endfor %}</ul>
+        </section>
+      {% endif %}
+    </aside>
+  </div>
+  {% if not readonly %}
+    <div class="sticky-actions form-actions">
+      <button class="btn btn-primary btn-lg" type="submit">{% if locked %}Save as new version{% elif fv %}Save form{% else %}Create form{% endif %}</button>
+      <a class="btn btn-ghost" href="{% url 'studio:forms' %}">Cancel</a>
+    </div>
+  {% endif %}
+</form>
+{% endblock %}
+{% block scripts %}<script src="{% static 'studio/form-builder.js' %}" defer></script>{% endblock %}

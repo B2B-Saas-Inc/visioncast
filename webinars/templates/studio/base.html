@@ -1,0 +1,63 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>{% block title %}Studio{% endblock %} · Webinar Studio</title>
+  <link rel="stylesheet" href="{% static 'studio/studio.css' %}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="shell">
+  <div class="scrim" data-scrim hidden></div>
+  <nav class="sidebar" id="studio-nav" aria-label="Studio">
+    <a class="brand" href="{% url 'studio:dashboard' %}"><span class="brand-mark" aria-hidden="true">W</span> Studio</a>
+    {% for section in studio_nav %}
+      <div>
+        <p class="nav-section-title">{{ section.title }}</p>
+        <ul class="nav-list">
+          {% for item in section.items %}
+            <li><a class="nav-link" href="{{ item.url }}"{% if item.active %} aria-current="page"{% endif %}>{% include "studio/_icon.html" with name=item.icon %}{{ item.label }}</a></li>
+          {% endfor %}
+          {% if section.title == "Connect" %}
+            <li><a class="nav-link" href="{% url 'developers' %}">{% include "studio/_icon.html" with name="code" %}Developer docs</a></li>
+          {% endif %}
+        </ul>
+      </div>
+    {% endfor %}
+    {% if user.is_authenticated %}
+      <div class="sidebar-foot">
+        <p class="small" style="margin:0 0 var(--s-2)">Signed in as <strong>{{ user.get_username }}</strong><br>{{ studio_role }}</p>
+        <form method="post" action="{% url 'studio:logout' %}">{% csrf_token %}<button class="link-button" type="submit">Sign out</button></form>
+      </div>
+    {% endif %}
+  </nav>
+  <div class="main">
+    <header class="topbar">
+      <a class="brand" href="{% url 'studio:dashboard' %}"><span class="brand-mark" aria-hidden="true">W</span> Studio</a>
+      <button class="icon-button" type="button" data-nav-toggle aria-controls="studio-nav" aria-expanded="false">
+        {% include "studio/_icon.html" with name="menu" %}<span class="visually-hidden">Open navigation</span>
+      </button>
+    </header>
+    {% if email_mode == "preview" %}
+      <p class="preview-banner" role="note">Preview environment: emails are not sent. Superusers can read them in the Preview mailbox.</p>
+    {% endif %}
+    <main class="content" id="main" tabindex="-1">
+      {% block breadcrumbs %}{% endblock %}
+      {% if messages %}
+        <ul class="flash-list" role="status" aria-live="polite">
+          {% for message in messages %}
+            <li class="flash flash-{% if message.tags == 'error' %}error{% elif message.tags == 'warning' %}warning{% elif message.tags == 'success' %}success{% else %}info{% endif %}">{{ message }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+<script src="{% static 'studio/studio.js' %}" defer></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,232 @@
+{% extends "studio/base.html" %}
+{% block title %}{{ event.public_title|default:event.internal_name }}{% endblock %}
+{% block breadcrumbs %}<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="{% url 'studio:events' %}">Events</a> / <span aria-current="page">{{ event.internal_name }}</span></nav>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Event · revision {{ event.revision }}</p>
+    <h1>{{ event.public_title|default:"Untitled event" }}</h1>
+  </div>
+  <a class="btn btn-ghost" href="{% url 'studio:event-preview' event.pk %}">{% include "studio/_icon.html" with name="eye" %} Preview</a>
+</div>
+
+{% include "studio/content/_error_summary.html" with items=error_summary %}
+{% if readonly %}<p class="callout" role="note">Your role can read this event but not change it.</p>{% endif %}
+
+<div class="layout-split">
+  <form method="post" action="{% url 'studio:event-edit' event.pk %}" enctype="multipart/form-data" novalidate id="event-form">
+    {% csrf_token %}
+    <section class="panel" aria-labelledby="basics-title">
+      <div class="panel-head"><h2 id="basics-title">Basics</h2></div>
+      <div class="panel-body">
+        {% include "studio/content/_field.html" with name="public_title" label="Public title" kind="title" value=values.public_title error=errors.public_title readonly=readonly help="The headline on the landing page and in calendar invites." %}
+        <div class="grid-2" style="margin-top:var(--s-4)">
+          {% include "studio/content/_field.html" with name="slug" label="URL slug" value=values.slug error=errors.slug readonly=readonly help="Used in the page address. Changing it breaks old links." %}
+          {% include "studio/content/_field.html" with name="internal_name" label="Internal name" value=values.internal_name error=errors.internal_name readonly=readonly help="Only your team sees this." %}
+        </div>
+        {% include "studio/content/_field.html" with name="summary" label="Summary" kind="textarea" value=values.summary error=errors.summary readonly=readonly optional=True maxlength=300 help="One or two sentences for listings and link previews." %}
+        <fieldset class="fieldset" style="margin-top:var(--s-4)" id="id_cover_upload-group">
+          <legend>Cover image <span class="optional muted small">(optional)</span></legend>
+          {% if cover %}
+            <p class="help">Current upload ({{ cover.width }}×{{ cover.height }}):</p>
+            <img src="{{ cover.path }}" alt="Current cover image" style="max-width:100%;max-height:200px;border-radius:var(--r-md)">
+            {% if not readonly %}<label class="choice"><input type="checkbox" name="remove_cover"> Remove the uploaded image</label>{% endif %}
+          {% endif %}
+          {% if not readonly %}
+            <div class="field">
+              <label class="label" for="id_cover_upload">Upload a cover image</label>
+              <p class="help" id="id_cover_upload-help">PNG, JPEG or WebP, up to {{ cover_max_mb }} MB and {{ cover_max_side }}px per side. SVG isn't accepted. Images are re-encoded and their metadata (such as location) is removed.</p>
+              <input class="input" type="file" id="id_cover_upload" name="cover_upload" accept="image/png,image/jpeg,image/webp" aria-describedby="id_cover_upload-help{% if errors.cover_upload %} id_cover_upload-error{% endif %}"{% if errors.cover_upload %} aria-invalid="true"{% endif %}>
+              {% if errors.cover_upload %}<p class="field-error" id="id_cover_upload-error">{{ errors.cover_upload|join:" " }}</p>{% endif %}
+            </div>
+          {% endif %}
+          {% include "studio/content/_field.html" with name="hero_image_url" label="…or an image URL" kind="url" value=values.hero_image_url error=errors.hero_image_url readonly=readonly optional=True help="An https:// image at least 1600px wide. Use either an upload or a URL, not both." %}
+        </fieldset>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="copy-title" style="margin-top:var(--s-5)">
+      <div class="panel-head"><h2 id="copy-title">Page copy</h2><span class="small muted">Attention, Interest, Decision, Action</span></div>
+      <div class="panel-body">
+        {% include "studio/content/_field.html" with name="attention" label="Attention" kind="textarea" value=values.attention error=errors.attention readonly=readonly help="The hook: one sentence naming a problem your audience feels today." %}
+        {% include "studio/content/_field.html" with name="interest" label="Interest" kind="textarea-lg" value=values.interest error=errors.interest readonly=readonly help="Why it matters now and what the session covers." %}
+        {% include "studio/content/_field.html" with name="decision" label="Decision" kind="textarea" value=values.decision error=errors.decision readonly=readonly help="Proof and what changes for the attendee afterwards." %}
+        {% include "studio/content/_field.html" with name="action" label="Action" kind="textarea" value=values.action error=errors.action readonly=readonly help="The specific ask, right above the form." %}
+        <fieldset class="fieldset" style="margin-top:var(--s-5)" aria-describedby="outcomes-help{% if errors.learning_outcomes %} outcomes-error{% endif %}">
+          <legend>Learning outcomes <span class="optional muted small">(optional)</span></legend>
+          <p class="help" id="outcomes-help">What attendees will be able to do afterwards. Empty rows are ignored.</p>
+          {% for outcome in outcomes %}
+            <div class="field" style="margin-top:var(--s-2)">
+              <label class="visually-hidden" for="outcome-{{ forloop.counter }}">Outcome {{ forloop.counter }}</label>
+              <input class="input" type="text" id="outcome-{{ forloop.counter }}" name="learning_outcomes" value="{{ outcome }}"{% if readonly %} disabled{% endif %}>
+            </div>
+          {% endfor %}
+          {% if errors.learning_outcomes %}<p class="field-error" id="outcomes-error">{{ errors.learning_outcomes|join:" " }}</p>{% endif %}
+        </fieldset>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="people-title" style="margin-top:var(--s-5)">
+      <div class="panel-head"><h2 id="people-title">Hosts, topics and form</h2></div>
+      <div class="panel-body">
+        <fieldset class="fieldset" id="id_hosts">
+          <legend>Hosts</legend>
+          {% if hosts %}
+            <div class="choice-grid">
+              {% for h in hosts %}
+                <label class="choice-card"><input type="checkbox" name="hosts" value="{{ h.pk }}"{% if h.checked %} checked{% endif %}{% if readonly %} disabled{% endif %}><span><strong>{{ h.name }}</strong>{% if h.title %}<br><span class="small muted">{{ h.title }}</span>{% endif %}</span></label>
+              {% endfor %}
+            </div>
+          {% else %}<p class="help">No hosts yet. {% if perms.webinars.view_host %}<a href="{% url 'studio:hosts' %}">Add one</a>.{% endif %}</p>{% endif %}
+          {% if errors.hosts %}<p class="field-error">{{ errors.hosts|join:" " }}</p>{% endif %}
+        </fieldset>
+        <fieldset class="fieldset" id="id_topics" style="margin-top:var(--s-5)">
+          <legend>Topics</legend>
+          {% if topics %}
+            <div class="choice-grid">
+              {% for t in topics %}
+                <label class="choice-card"><input type="checkbox" name="topics" value="{{ t.pk }}"{% if t.checked %} checked{% endif %}{% if readonly %} disabled{% endif %}><span>{{ t.name }}</span></label>
+              {% endfor %}
+            </div>
+          {% else %}<p class="help">No topics yet.</p>{% endif %}
+          {% if errors.topics %}<p class="field-error">{{ errors.topics|join:" " }}</p>{% endif %}
+        </fieldset>
+        <div class="field" style="margin-top:var(--s-5)">
+          <label class="label" for="id_form_version">Registration form</label>
+          <p class="help" id="id_form_version-help">Which fields people fill in. {% if perms.webinars.view_formversion %}<a href="{% url 'studio:forms' %}">Manage forms</a>{% endif %}</p>
+          <select class="select" id="id_form_version" name="form_version" aria-describedby="id_form_version-help{% if errors.form_version %} id_form_version-error{% endif %}"{% if readonly %} disabled{% endif %}>
+            {% for fv in form_versions %}<option value="{{ fv.pk }}"{% if fv.selected %} selected{% endif %}>{{ fv.label }}{% if not fv.active %} (inactive){% endif %}</option>{% endfor %}
+          </select>
+          {% if errors.form_version %}<p class="field-error" id="id_form_version-error">{{ errors.form_version|join:" " }}</p>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="thanks-title" style="margin-top:var(--s-5)">
+      <div class="panel-head"><h2 id="thanks-title">After registering</h2></div>
+      <div class="panel-body">
+        <fieldset class="fieldset" id="id_thank_you_mode">
+          <legend>What should people see?</legend>
+          <label class="choice"><input type="radio" name="thank_you_mode" value="message"{% if values.thank_you_mode != "redirect" %} checked{% endif %}{% if readonly %} disabled{% endif %}> Show a thank-you message</label>
+          <label class="choice"><input type="radio" name="thank_you_mode" value="redirect"{% if values.thank_you_mode == "redirect" %} checked{% endif %}{% if readonly %} disabled{% endif %}> Send them to another page</label>
+        </fieldset>
+        {% include "studio/content/_field.html" with name="thank_you_message" label="Thank-you message" kind="textarea" value=values.thank_you_message error=errors.thank_you_message readonly=readonly optional=True help="Shown when the message option is selected." %}
+        {% include "studio/content/_field.html" with name="thank_you_url" label="Redirect URL" kind="url" value=values.thank_you_url error=errors.thank_you_url readonly=readonly optional=True help="Required when sending people to another page." %}
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="cta-title" style="margin-top:var(--s-5)">
+      <div class="panel-head"><h2 id="cta-title">Registration button</h2></div>
+      <div class="panel-body">
+        {% include "studio/content/_field.html" with name="register_label" label="Button text" value=values.register_label error=errors.register_label readonly=readonly optional=True maxlength=60 placeholder=default_register_label help="Leave blank to use “Register”. Up to 60 characters of plain text." %}
+        {% include "studio/content/_field.html" with name="confirm_label" label="Button text for returning visitors" value=values.confirm_label error=errors.confirm_label readonly=readonly optional=True maxlength=60 placeholder=default_confirm_label help="Shown when we already know everything the form asks for. Leave blank to use “Confirm my RSVP”." %}
+      </div>
+    </section>
+
+    {% if can_change %}
+      <div class="sticky-actions form-actions">
+        <button class="btn btn-primary btn-lg" type="submit">Save changes</button>
+        <span class="small muted">Saving creates a new revision. Published pages update immediately.</span>
+      </div>
+    {% endif %}
+  </form>
+
+  <aside class="stack">
+    <section class="panel" aria-labelledby="status-title">
+      <div class="panel-head"><h2 id="status-title">Status</h2><span class="badge badge-{{ event.visibility }}">{{ event.get_visibility_display }}</span></div>
+      <div class="panel-body stack-sm">
+        {% if event.visibility == "draft" %}
+          {% if problems %}
+            <div class="callout callout-warn">
+              <p><strong>Before you publish</strong></p>
+              <ul>{% for p in problems %}<li>{{ p }}</li>{% endfor %}</ul>
+            </div>
+          {% else %}
+            <p class="callout callout-teal">Ready to publish.</p>
+          {% endif %}
+          {% if can_change %}
+            <form method="post" action="{% url 'studio:event-publish' event.pk %}" class="form-actions" style="margin-top:0">
+              {% csrf_token %}
+              <button class="btn btn-teal" type="submit" name="visibility" value="public"{% if problems %} aria-describedby="status-title"{% endif %}>Publish</button>
+              <button class="btn btn-ghost" type="submit" name="visibility" value="unlisted">Publish unlisted</button>
+            </form>
+          {% endif %}
+        {% else %}
+          <p class="small">{% if event.visibility == "public" %}Listed and open for registration.{% else %}Unlisted: only people with the link can find it.{% endif %}</p>
+          <p class="small muted">Public API: <code>{{ api_path }}</code></p>
+          {% if can_change %}
+            <form method="post" action="{% url 'studio:event-publish' event.pk %}" class="form-actions" style="margin-top:0" data-confirm="Unpublish this event? The landing page stops working until you publish again.">
+              {% csrf_token %}
+              {% if event.visibility == "public" %}<button class="btn btn-ghost btn-sm" type="submit" name="visibility" value="unlisted">Make unlisted</button>{% else %}<button class="btn btn-ghost btn-sm" type="submit" name="visibility" value="public">Make public</button>{% endif %}
+              <button class="btn btn-danger btn-sm" type="submit" name="visibility" value="draft">Unpublish</button>
+            </form>
+          {% endif %}
+        {% endif %}
+        <a href="{% url 'studio:event-preview' event.pk %}">{% include "studio/_icon.html" with name="eye" size=16 %} Preview the landing page</a>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="sessions-title">
+      <div class="panel-head"><h2 id="sessions-title">Sessions</h2></div>
+      {% if sessions %}
+        <ul class="list-rows">
+          {% for s in sessions %}
+            <li>
+              <div class="grow">
+                <a href="{% url 'studio:session' s.pk %}"><strong>{{ s.local_label }}</strong></a>
+                <p class="small muted" style="margin:0">{{ s.timezone }} · {{ s.duration_minutes }} min · {{ s.registered }} registered</p>
+                <p class="small" style="margin:0"><a href="{% url 'studio:session' s.pk %}#room-title">Waiting room &amp; admission</a> · {% if s.waiting_room_enabled %}{% if s.join_url %}hosted room on{% else %}on, needs a join URL{% endif %}{% else %}off{% endif %} · <a href="{% url 'studio:session-embed' s.pk %}">Embed on your site</a></p>
+              </div>
+              {% if s.status == "cancelled" %}<span class="badge badge-cancelled">Cancelled</span>{% elif s.room_state %}<span class="badge badge-{{ s.room_state }}">{{ s.room_state_label }}</span>{% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="panel-body"><p class="help">No sessions yet. Add the first one below.</p></div>
+      {% endif %}
+      {% if can_add_session %}
+        <form method="post" action="{% url 'studio:session-new' event.pk %}" class="panel-body" novalidate aria-labelledby="add-session-title" style="border-top:1px solid var(--border)">
+          {% csrf_token %}
+          <h3 id="add-session-title">Add a session</h3>
+          {% include "studio/content/_error_summary.html" with items=session_summary summary_id="session-errors" heading="The session wasn't added" %}
+          <div class="field">
+            <label class="label" for="id_session_timezone">Time zone</label>
+            <select class="select" id="id_session_timezone" name="timezone"{% if session_errors.timezone %} aria-invalid="true" aria-describedby="id_session_timezone-error"{% endif %}>
+              {% for tz in timezones %}<option value="{{ tz }}"{% if tz == session_values.timezone %} selected{% endif %}>{{ tz }}</option>{% endfor %}
+            </select>
+            {% if session_errors.timezone %}<p class="field-error" id="id_session_timezone-error">{{ session_errors.timezone|join:" " }}</p>{% endif %}
+          </div>
+          <div class="field">
+            <label class="label" for="id_session_local_start">Starts (local time in that zone)</label>
+            <input class="input" type="datetime-local" id="id_session_local_start" name="local_start" value="{{ session_values.local_start }}"{% if session_errors.local_start %} aria-invalid="true" aria-describedby="id_session_local_start-error"{% endif %}>
+            {% if session_errors.local_start %}<p class="field-error" id="id_session_local_start-error">{{ session_errors.local_start|join:" " }}</p>{% endif %}
+          </div>
+          <div class="field">
+            <label class="label" for="id_session_duration_minutes">Duration (minutes)</label>
+            <input class="input" type="number" min="1" max="1440" id="id_session_duration_minutes" name="duration_minutes" value="{{ session_values.duration_minutes }}"{% if session_errors.duration_minutes %} aria-invalid="true" aria-describedby="id_session_duration_minutes-error"{% endif %}>
+            {% if session_errors.duration_minutes %}<p class="field-error" id="id_session_duration_minutes-error">{{ session_errors.duration_minutes|join:" " }}</p>{% endif %}
+          </div>
+          <div class="field">
+            <label class="label" for="id_session_join_url">Join URL <span class="optional">(optional)</span></label>
+            <p class="help" id="id_session_join_url-help">Your Zoom, Teams or Meet link. Never shown to attendees; you can add it later.</p>
+            <input class="input" type="url" inputmode="url" placeholder="https://" id="id_session_join_url" name="join_url" value="{{ session_values.join_url }}" aria-describedby="id_session_join_url-help{% if session_errors.join_url %} id_session_join_url-error{% endif %}"{% if session_errors.join_url %} aria-invalid="true"{% endif %}>
+            {% if session_errors.join_url %}<p class="field-error" id="id_session_join_url-error">{{ session_errors.join_url|join:" " }}</p>{% endif %}
+          </div>
+          <div class="form-actions"><button class="btn btn-primary btn-sm" type="submit">{% include "studio/_icon.html" with name="plus" size=16 %} Add session</button></div>
+        </form>
+      {% endif %}
+    </section>
+
+    {% if can_delete %}
+      <section class="panel" aria-labelledby="danger-title">
+        <div class="panel-head"><h2 id="danger-title">Delete draft</h2></div>
+        <form method="post" action="{% url 'studio:event-delete' event.pk %}" class="panel-body" data-confirm="Delete this draft event and its sessions? This can't be undone.">
+          {% csrf_token %}
+          <p class="help">Only drafts without registrations can be deleted.</p>
+          <button class="btn btn-danger btn-sm" type="submit">{% include "studio/_icon.html" with name="trash" size=16 %} Delete event</button>
+        </form>
+      </section>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

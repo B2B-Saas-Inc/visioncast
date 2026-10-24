@@ -1,0 +1,97 @@
+{% extends "waiting_room/base.html" %}
+{% load static %}
+{% block content %}
+<p class="eyebrow">Waiting room</p>
+<h1>{{ event.public_title }}</h1>
+{% if hosts %}<p class="hosts">With {% for h in hosts %}{{ h.name }}{% if h.title %}, {{ h.title }}{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+
+<section class="status status-{{ status.state }}" data-room-status data-status-url="/w/{{ occ.waiting_room_code }}/status" data-state="{{ status.state }}" data-opens-at="{{ status.opensAt }}" aria-live="polite">
+  {% if status.state == "cancelled" %}
+    <h2>This session was cancelled</h2><p>Sorry about that. Check your email for any update from the organisers.</p>
+  {% elif status.state == "ended" %}
+    <h2>This session has ended</h2><p>Thanks for stopping by. If a recording is published, registrants receive it by email.</p>
+  {% elif status.state == "hold" %}
+    <h2>{% if hosts|length == 1 %}The host is{% else %}The hosts are{% endif %} holding the doors</h2><p>Stay on this page: it updates by itself and lets you in as soon as they're ready.</p>
+  {% elif status.state == "preparing" %}
+    <h2>Almost ready</h2><p>{% if hosts|length == 1 %}The host is{% else %}The hosts are{% endif %} setting up. This page updates by itself.</p>
+  {% elif status.state == "open" %}
+    <h2>Doors are open</h2>
+  {% else %}
+    <h2>Doors open in <span data-countdown>{{ status.secondsUntilOpen }} seconds</span></h2>
+    <p>The session starts at <time datetime="{{ status.startsAt }}" data-local-time>{{ status.startsAt }}</time>.</p>
+  {% endif %}
+</section>
+
+{% if view == "registered" %}
+  <div class="panel">
+    <h2>You're on the list</h2>
+    {% if status.admit %}
+      <form method="post" action="/w/{{ occ.waiting_room_code }}/enter" data-enter-form>{% csrf_token %}
+        <button class="btn btn-primary btn-lg" type="submit">Join the session now</button>
+      </form>
+      <p class="small muted">You'll be taken to the live session.</p>
+    {% else %}
+      <p>Keep this tab open. When the doors open you'll be taken in automatically{% if status.state == "waiting" %}, or press Join when it appears{% endif %}.</p>
+      <form method="post" action="/w/{{ occ.waiting_room_code }}/enter" data-enter-form hidden>{% csrf_token %}
+        <button class="btn btn-primary btn-lg" type="submit">Join the session now</button>
+      </form>
+    {% endif %}
+  </div>
+{% elif view == "complete" %}
+  <div class="panel">
+    {% if fields %}
+      <h2>One more step</h2>
+      <p>Your email is confirmed. Tell us a little more to save your seat.</p>
+    {% else %}
+      <h2>Confirm your seat</h2>
+      <p>Your email is confirmed. You haven't registered for this session yet.</p>
+    {% endif %}
+    {% if errors %}<div class="error-summary" role="alert" tabindex="-1" data-focus-me><p>Please check the highlighted fields.</p>{% for k, v in errors.items %}{% if k == "_" %}<p>{{ v }}</p>{% endif %}{% endfor %}</div>{% endif %}
+    <form method="post" action="/w/{{ occ.waiting_room_code }}/register" novalidate>{% csrf_token %}
+      <input type="hidden" name="idempotency_key" value="{{ idempotency_key }}">
+      {% for f in fields %}
+        {% include "waiting_room/_field.html" with f=f %}
+      {% endfor %}
+      {% if sms and fields %}{% for f in fields %}{% if f.key == "phone" %}
+        <label class="choice"><input type="checkbox" name="sms_consent"> <span>{{ sms.disclosureText|default:"Text me reminders about this session." }}</span></label>
+      {% endif %}{% endfor %}{% endif %}
+      <button class="btn btn-primary btn-lg" type="submit">{% if fields %}Save my seat{% else %}Confirm my seat{% endif %}</button>
+    </form>
+  </div>
+{% elif view == "code" %}
+  <div class="panel">
+    <h2>Check your email</h2>
+    <p>If that address can join, we've sent it a 6-digit code and a sign-in link. Enter the code below on this device, or open the link.</p>
+    <form method="post" action="/w/{{ occ.waiting_room_code }}/verify" novalidate>{% csrf_token %}
+      <div class="field">
+        <label for="code">6-digit code</label>
+        <input class="input code" id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required{% if errors.code %} aria-invalid="true" aria-describedby="code-error"{% endif %} autofocus>
+        {% if errors.code %}<p class="field-error" id="code-error" role="alert">{{ errors.code }}</p>{% endif %}
+      </div>
+      <button class="btn btn-primary" type="submit">Continue</button>
+    </form>
+    <p class="small"><a href="/w/{{ occ.waiting_room_code }}/">Use a different email</a></p>
+  </div>
+{% elif status.state != "ended" and status.state != "cancelled" %}
+  <div class="panel">
+    <h2>Join with your email</h2>
+    <p>Registered already, or joining for the first time? Start with your email. We'll send a short code to confirm it's you.</p>
+    {% if email_disabled %}<p class="notice">Email sign-in isn't available on this site yet. Use the device you registered with, or contact the organisers.</p>{% endif %}
+    <form method="post" action="/w/{{ occ.waiting_room_code }}/identify" novalidate>{% csrf_token %}
+      <div class="field">
+        <label for="email">Email</label>
+        <input class="input" id="email" name="email" type="email" autocomplete="email" required value="{{ values.email|default:'' }}"{% if email_error %} aria-invalid="true" aria-describedby="email-error"{% endif %}>
+        {% if email_error %}<p class="field-error" id="email-error" role="alert">{{ email_error }}</p>{% endif %}
+      </div>
+      <button class="btn btn-primary" type="submit">Send my code</button>
+    </form>
+  </div>
+{% endif %}
+
+{% if view == "registered" or view == "complete" %}
+  <form method="post" action="/w/{{ occ.waiting_room_code }}/reset" class="not-you">{% csrf_token %}
+    <button class="link-button" type="submit">Not you? Sign out of this device</button>
+  </form>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{% static 'waiting_room/room.js' %}" defer></script>{% endblock %}

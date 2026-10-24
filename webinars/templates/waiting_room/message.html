@@ -1,0 +1,7 @@
+{% extends "waiting_room/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p>{{ message }}</p>
+{% if occ %}<a class="btn" href="/w/{{ occ.waiting_room_code }}/">Back to the waiting room</a>{% endif %}
+{% endblock %}

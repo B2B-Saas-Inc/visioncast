@@ -1,0 +1,1 @@
+../../webinars/static/webinar-sdk/webinar-form.js

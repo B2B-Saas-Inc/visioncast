@@ -1,0 +1,26 @@
+{% extends "studio/base.html" %}
+{% block title %}Invitation created{% endblock %}
+{% block head %}<meta name="referrer" content="no-referrer">{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Team</p>
+    <h1>Invitation created for {{ invitation.email }}</h1>
+    <p class="lede">
+      {% if email_sent and mail_mode == "smtp" %}We emailed the link to {{ invitation.email }}.
+      {% elif email_sent and mail_mode == "preview" %}The email was saved to the Preview mailbox (this environment doesn't send real email).
+      {% else %}The email wasn't sent because email delivery is turned off. Share the link below with them yourself.{% endif %}
+      The link works once, for the {{ invitation.role }} role, until {{ invitation.expires_at|date:"M j, H:i" }}.
+    </p>
+  </div>
+</div>
+<div class="reveal">
+  <p class="label" id="link-label">Invitation link</p>
+  <code class="reveal-value" id="invite-link" aria-labelledby="link-label">{{ accept_url }}</code>
+  <div class="form-actions">
+    <button class="btn btn-primary" type="button" data-copy="#invite-link">{% include "studio/_icon.html" with name="copy" size=16 %} Copy link</button>
+    <a class="btn btn-ghost" href="{% url 'studio:team' %}">Back to the team</a>
+  </div>
+</div>
+<p class="callout callout-warn" style="margin-top:var(--s-5)">{% include "studio/_icon.html" with name="alert" size=16 %} This link is shown only once. Anyone who has it can join as {{ invitation.role }}, so send it privately.</p>
+{% endblock %}

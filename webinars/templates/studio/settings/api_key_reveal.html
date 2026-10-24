@@ -1,0 +1,29 @@
+{% extends "studio/base.html" %}
+{% block title %}New API key{% endblock %}
+{% block head %}<meta name="referrer" content="no-referrer">{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">API keys</p>
+    <h1>“{{ key.name }}” is ready</h1>
+    <p class="lede">Copy the key now and store it in a password manager or your server's secret settings. We only keep a fingerprint, so it can't be shown again.</p>
+  </div>
+</div>
+<div class="reveal">
+  <p class="label" id="key-label">API key</p>
+  <code class="reveal-value" id="key-value" aria-labelledby="key-label">{{ raw_key }}</code>
+  <p class="small" style="margin-top:var(--s-3)">Scopes: {{ scope_labels|join:", " }}</p>
+  <div class="form-actions">
+    <button class="btn btn-primary" type="button" data-copy="#key-value">{% include "studio/_icon.html" with name="copy" size=16 %} Copy key</button>
+    <a class="btn btn-ghost" href="{% url 'studio:api-keys' %}">I've saved it — back to API keys</a>
+  </div>
+</div>
+<div class="callout callout-warn" style="margin-top:var(--s-5)">
+  {% include "studio/_icon.html" with name="alert" size=16 %} Treat this key like a password. Don't paste it into public code, chat or email. If it leaks, revoke it and create a new one.
+</div>
+{% if mcp_ready %}
+<div class="callout callout-teal" style="margin-top:var(--s-4)">
+  This key works with the MCP server at <code>/mcp</code>. Send it as a bearer token from your assistant's connector settings. <a href="{% url 'developers' %}">Setup guide</a>.
+</div>
+{% endif %}
+{% endblock %}

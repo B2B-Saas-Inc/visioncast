@@ -1,0 +1,8 @@
+# Development / test dependencies (exact pins).
+# These versions installed and ran in validation (artifacts/install.log). They are
+# not hash-locked yet; hash-locked files are generated as part of release validation.
+-r requirements.txt
+
+pytest==8.4.2
+pytest-django==4.11.1
+ruff==0.17.2

@@ -1,0 +1,24 @@
+{% extends "developers/base.html" %}
+{% block content %}
+<div class="page-head"><div><h1>Build on the webinar platform</h1>
+<p class="lede">Read published events, embed registration forms, manage content from your CMS or CI, and let coding agents work through MCP. Everything uses scoped API keys created in the studio.</p></div></div>
+<div class="grid-2">
+  <section class="panel"><div class="panel-body">
+    <h2>1. Create a key</h2>
+    <p>Administrators create keys in <a href="/studio/api-keys/">Studio → API keys</a>. The key is shown once; only its hash is stored. Send it as <code>Authorization: Bearer wbk_…</code>.</p>
+    <table class="table"><thead><tr><th>Scope</th><th>Allows</th></tr></thead><tbody>
+    {% for value, label in scopes %}<tr><td><code>{{ value }}</code></td><td>{{ label }}</td></tr>{% endfor %}
+    </tbody></table>
+  </div></section>
+  <section class="panel"><div class="panel-body stack">
+    <h2>2. Pick an interface</h2>
+    <p><strong><a href="{% url 'developers-api' %}">REST API</a></strong>: public catalogue, registration, management and waiting room. Machine-readable OpenAPI 3.1 at <a href="{% url 'openapi-json' %}"><code>/api/v1/openapi.json</code></a>.</p>
+    <p><strong><a href="{% url 'developers-mcp' %}">MCP server</a></strong> at <code>/mcp</code>: typed tools for agents (list/get events, form schema, create and schedule content) bound to the same key scopes.</p>
+    <p><strong>Form schema</strong>: <code>GET /api/v1/forms/&lt;version&gt;</code> returns canonical field keys, labels, types and options to render a registration form anywhere.</p>
+    <h3>Example</h3>
+<pre class="code-block"><code>curl -s https://YOUR-HOST/api/v1/events?when=upcoming
+curl -s -H "Authorization: Bearer $WEBINAR_KEY" https://YOUR-HOST/api/v1/manage/events</code></pre>
+  </div></section>
+</div>
+<div class="callout callout-teal" style="margin-top:var(--s-5)"><p style="margin:0"><strong>Privacy guarantees.</strong> No endpoint returns a session's provider join link or registrants' personal data. Join links are revealed only by redirect to an admitted attendee in the hosted waiting room, and to webhook destinations that explicitly opt in.</p></div>
+{% endblock %}

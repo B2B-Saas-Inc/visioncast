@@ -1,0 +1,20 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="same-origin">
+  <title>{% block title %}{{ event.public_title|default:"Waiting room" }}{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'waiting_room/room.css' %}">
+</head>
+<body>
+<main class="room" id="main">
+  <div class="room-card">
+    {% block content %}{% endblock %}
+  </div>
+  <p class="room-foot">Hosted waiting room · your link to the session appears only when doors open.</p>
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

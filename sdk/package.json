@@ -1,0 +1,17 @@
+{
+  "name": "@webinar-platform/browser-sdk",
+  "version": "1.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Dependency-free GTM progressive profiling script and stdlib-only first-party Node proxy for the webinar platform.",
+  "type": "commonjs",
+  "main": "src/webinar-form.js",
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "test": "node --test test/proxy.test.js test/webinar-form.test.js",
+    "proxy": "node proxy/server.js",
+    "demo": "node demo/demo-server.js"
+  }
+}

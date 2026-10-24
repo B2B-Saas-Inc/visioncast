@@ -1,0 +1,38 @@
+{% extends "developers/base.html" %}
+{% block title %}MCP{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>MCP for coding agents</h1>
+<p class="lede">A Model Context Protocol server over stateless Streamable HTTP. One JSON-RPC message per POST, JSON responses, no SSE stream and no session id. Supported protocol versions: {% for v in versions %}<code>{{ v }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}.</p></div></div>
+<div class="grid-2">
+<section class="panel"><div class="panel-body stack">
+  <h2>Connect</h2>
+  <p>Endpoint: <code>{{ endpoint }}</code>. Authenticate every request with an API key from the studio. Tools are filtered by the key's scopes.</p>
+<pre class="code-block"><code>{
+  "mcpServers": {
+    "webinars": {
+      "type": "http",
+      "url": "{{ endpoint }}",
+      "headers": { "Authorization": "Bearer ${WEBINAR_MCP_KEY}" }
+    }
+  }
+}</code></pre>
+  <p class="small muted">Keep keys in environment variables, never in committed config. Use <code>public_read</code> for read-only agents and <code>content_write</code> only where an agent should edit drafts.</p>
+</div></section>
+<section class="panel"><div class="panel-body stack">
+  <h2>Handshake</h2>
+<pre class="code-block"><code>curl -s {{ endpoint }} \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"cli","version":"1"}}}'
+
+# then: {"jsonrpc":"2.0","method":"notifications/initialized"}  -> 202
+#       {"jsonrpc":"2.0","id":2,"method":"tools/list"}
+#       {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_events","arguments":{"when":"upcoming"}}}</code></pre>
+  <p class="small">Errors: <code>-32700</code> parse, <code>-32600</code> invalid request (batches unsupported), <code>-32601</code> unknown method, <code>-32602</code> bad params / unknown tool / scope. HTTP 401 without a valid key, 405 for GET. Tool failures return <code>isError: true</code> with the API error body.</p>
+</div></section>
+</div>
+<section class="panel"><div class="panel-head"><h2>Tools</h2></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Tool</th><th>Scopes (any)</th><th>Arguments</th><th>What it does</th></tr></thead><tbody>
+{% for t in tools %}<tr><td><code>{{ t.name }}</code></td><td class="small">{{ t.scopes }}</td><td class="small"><code>{{ t.args|default:"—" }}</code></td><td>{{ t.description }}</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}

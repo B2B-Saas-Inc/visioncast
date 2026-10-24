@@ -1,0 +1,34 @@
+[project]
+name = "webinar-platform"
+version = "0.1.0"
+description = "Self-hosted single-tenant webinar registration platform (Django + PostgreSQL)"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+classifiers = [
+    "Framework :: Django",
+    "Framework :: Django :: 5.2",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Private :: Do Not Upload",
+]
+# Runtime dependencies are pinned in requirements.txt (deployment is via the
+# container image, not a published distribution).
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra"
+
+# Self-contained Ruff configuration (ruff is pinned in requirements-dev.txt).
+# A project config without `extend` means user-level settings such as
+# ~/.config/ruff/ruff.toml are never inherited, so results match on every machine.
+[tool.ruff]
+target-version = "py312"
+extend-exclude = [".runs", "artifacts"]
+
+[tool.ruff.lint]
+# Syntax/runtime errors and Pyflakes only; no style rules.
+select = ["E4", "E7", "E9", "F"]

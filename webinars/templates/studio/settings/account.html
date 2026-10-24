@@ -1,0 +1,61 @@
+{% extends "studio/base.html" %}
+{% block title %}Your account{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Workspace</p>
+    <h1>Your account</h1>
+    <p class="lede">Signed in as <strong>{{ user.get_username }}</strong> · {{ role }}</p>
+  </div>
+</div>
+
+{% include "studio/settings/_errors.html" %}
+
+<div class="grid-2">
+<form method="post" class="panel" novalidate>
+  {% csrf_token %}
+  <input type="hidden" name="action" value="email">
+  <div class="panel-head"><h2>Email address</h2></div>
+  <div class="panel-body">
+    <div class="field">
+      <label class="label" for="f-email">Email</label>
+      <input class="input" id="f-email" name="email" type="email" autocomplete="email" value="{{ email }}" required aria-describedby="email-help{% if email_errors.email %} email-err{% endif %}"{% if email_errors.email %} aria-invalid="true"{% endif %}>
+      <p class="help" id="email-help">Used for password resets and notifications from the studio.</p>
+      {% if email_errors.email %}<p class="field-error" id="email-err">{{ email_errors.email|join:" " }}</p>{% endif %}
+    </div>
+    <div class="field">
+      <label class="label" for="f-current_password">Current password</label>
+      <input class="input" id="f-current_password" name="current_password" type="password" autocomplete="current-password" required aria-describedby="cp-help{% if email_errors.current_password %} cp-err{% endif %}"{% if email_errors.current_password %} aria-invalid="true"{% endif %}>
+      <p class="help" id="cp-help">Confirms it's you before the address used for password resets changes.</p>
+      {% if email_errors.current_password %}<p class="field-error" id="cp-err">{{ email_errors.current_password|join:" " }}</p>{% endif %}
+    </div>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Update email</button></div>
+  </div>
+</form>
+
+<form method="post" class="panel" novalidate>
+  {% csrf_token %}
+  <input type="hidden" name="action" value="password">
+  <div class="panel-head"><h2>Password</h2></div>
+  <div class="panel-body">
+    <div class="field">
+      <label class="label" for="f-old_password">Current password</label>
+      <input class="input" id="f-old_password" name="old_password" type="password" autocomplete="current-password" required{% if password_errors.old_password %} aria-invalid="true" aria-describedby="old-err"{% endif %}>
+      {% if password_errors.old_password %}<p class="field-error" id="old-err">{{ password_errors.old_password|join:" " }}</p>{% endif %}
+    </div>
+    <div class="field">
+      <label class="label" for="f-new_password1">New password</label>
+      <input class="input" id="f-new_password1" name="new_password1" type="password" autocomplete="new-password" required aria-describedby="new-help{% if password_errors.new_password1 %} new1-err{% endif %}"{% if password_errors.new_password1 %} aria-invalid="true"{% endif %}>
+      <p class="help" id="new-help">Long and unique beats clever. A passphrase of a few unrelated words works well.</p>
+      {% if password_errors.new_password1 %}<p class="field-error" id="new1-err">{{ password_errors.new_password1|join:" " }}</p>{% endif %}
+    </div>
+    <div class="field">
+      <label class="label" for="f-new_password2">Confirm new password</label>
+      <input class="input" id="f-new_password2" name="new_password2" type="password" autocomplete="new-password" required{% if password_errors.new_password2 %} aria-invalid="true" aria-describedby="new2-err"{% endif %}>
+      {% if password_errors.new_password2 %}<p class="field-error" id="new2-err">{{ password_errors.new_password2|join:" " }}</p>{% endif %}
+    </div>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Change password</button></div>
+  </div>
+</form>
+</div>
+{% endblock %}

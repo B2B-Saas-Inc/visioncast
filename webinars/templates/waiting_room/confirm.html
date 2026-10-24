@@ -1,0 +1,20 @@
+{% extends "waiting_room/base.html" %}
+{% block content %}
+<p class="eyebrow">{{ event.public_title }}</p>
+{% if usable and same_browser %}
+  <h1>Confirm it's you</h1>
+  <p>Press the button to finish signing in to the waiting room on this device.</p>
+  <form method="post">{% csrf_token %}<button class="btn btn-primary" type="submit">Continue to the waiting room</button></form>
+{% elif usable %}
+  <h1>Is this your email address?</h1>
+  <p>This link signs this browser in to the waiting room as:</p>
+  <p class="confirm-email"><strong data-testid="verify-email">{{ email }}</strong></p>
+  <p>Only continue if this is your address. If someone sent you this link, choose “Not me”: anything you enter afterwards would be saved under their address.</p>
+  <form method="post">{% csrf_token %}<button class="btn btn-primary" type="submit" name="confirm" value="me">This is me, continue</button></form>
+  <p><a class="btn" href="/w/{{ occ.waiting_room_code }}/">Not me</a></p>
+{% else %}
+  <h1>This link has expired</h1>
+  <p>{{ message|default:"Sign-in links work once and expire after a few minutes. Request a new code from the waiting room." }}</p>
+  <a class="btn" href="/w/{{ occ.waiting_room_code }}/">Go to the waiting room</a>
+{% endif %}
+{% endblock %}
