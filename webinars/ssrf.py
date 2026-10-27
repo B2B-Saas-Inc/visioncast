@@ -438,13 +438,17 @@ def parse_retry_after(value, now=None):
     return max(0, min(seconds, MAX_RETRY_AFTER_SECONDS))
 
 
+# Request headers that carry vendor credentials (lower-case): such a request must name its hosts.
+CREDENTIAL_HEADERS = frozenset({"authorization", "api-key", "api-token", "x-api-token"})
+
+
 def _check_native_request(method, host, headers, allowed_hosts):
     if method not in NATIVE_METHODS:
         raise UnsafeDestination("Method not allowed")
     if allowed_hosts is not None:
         if host not in {_normalize_host(h) for h in allowed_hosts}:
             raise UnsafeDestination("Host is not an allowed vendor host")
-    elif any(k.lower() in {"authorization", "api-key"} for k in (headers or {})):
+    elif any(k.lower() in CREDENTIAL_HEADERS for k in (headers or {})):
         raise UnsafeDestination("Credentialed requests need an explicit vendor host")
 
 
