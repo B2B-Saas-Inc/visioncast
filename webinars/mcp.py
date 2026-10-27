@@ -40,6 +40,7 @@ from django.conf import settings
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
+from webinars import __version__
 from webinars import mcp_config, mcp_resources, ratelimit
 from webinars.api import management, queries, views
 from webinars.api.auth import api_key_from_request, has_scope
@@ -49,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 LATEST = SUPPORTED_VERSIONS[0]
-SERVER_INFO = {"name": "webinar-platform", "title": "Webinar Platform", "version": "1.0.0"}
+SERVER_INFO = {"name": "webinar-platform", "title": "Webinar Platform", "version": __version__}
 MAX_BODY = 64 * 1024
 
 READ = (ApiKey.Scope.PUBLIC_READ, ApiKey.Scope.CONTENT_WRITE)

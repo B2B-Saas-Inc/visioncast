@@ -163,9 +163,10 @@ Privileged scopes are granted only by a superuser (studio) or `manage.py create_
 
 ## Quick start (local build, Docker Compose)
 
-There is **no published registry image**: you build the image locally from this
-repository. Requirements: Docker with Compose v2, and Python 3 only for generating
-secrets.
+There is **no published registry image yet**: you build the image locally from this
+repository (`VERSION` is `0.2.0-pre`). Requirements: Docker with Compose v2, git, and
+Python 3 only for generating secrets. These commands were run end to end on
+2026-10-27 against the built image ([docs/validation.md](docs/validation.md)).
 
 ```sh
 cp .env.example .env && chmod 600 .env
@@ -176,27 +177,52 @@ python3 -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).de
 # Edit hosts/origins (DJANGO_ALLOWED_HOSTS, CSRF_TRUSTED_ORIGINS, PUBLIC_BASE_URL,
 # WEBINAR_ALLOWED_ORIGINS, THANK_YOU_REDIRECT_HOSTS, WEBHOOK_HOST_ALLOWLIST).
 
-docker compose build
+deploy/build-image.sh                                   # webinar-platform:<version>, OCI labels, evidence file
+echo "WEBINAR_IMAGE=webinar-platform:$(cat VERSION)" >> .env
 docker compose run --rm migrate
+docker compose run --rm web manage sync_roles
 docker compose run --rm web manage bootstrap_admin --username admin --email admin@example.com
 docker compose run --rm web manage create_api_key --name "site proxy" --scope proxy
 docker compose up -d
+docker compose ps                                       # web and worker "healthy"
 ```
 
+* `deploy/build-image.sh` builds the `production` target from the committed tree and
+  tags `webinar-platform:<version>` and `:<version>-<commit>`; `docker compose build`
+  (image `webinar-platform:local`, the default `WEBINAR_IMAGE`) also works but carries
+  no version labels.
 * `bootstrap_admin` prints a generated password once (or reads
   `BOOTSTRAP_ADMIN_PASSWORD`; remove it from `.env` afterwards).
 * The API key is printed once. Configure it in the first-party proxy
   (`sdk/proxy/`), never in GTM or page source.
-* The web port is bound to `127.0.0.1:8000`. The admin is at `/admin/`, the health
-  endpoint at `/healthz`.
+* The web port is bound to `127.0.0.1:8000`. The admin is at `/admin/`, the studio at
+  `/studio/`, the health endpoint at `/healthz` (`{"status": "ok", "version": "…"}`).
 * There are no default passwords; the stack refuses to start without the required
   secrets.
+* Upgrade later with `deploy/upgrade.sh --image webinar-platform:<new version>`
+  (backup, migrate, restart, `sync_roles`, health); back up with `deploy/backup.sh`,
+  restore with `deploy/restore.sh` — [docs/operations.md](docs/operations.md) §3–§5.
 
 Container roles (`docker/entrypoint.sh`): `web` (gunicorn), `worker`
 (`run_worker`), `migrate` (explicit, never automatic), `manage <args>` (pass-through).
-Other management commands: `run_worker`, `purge_personal_data --person <uuid> |
---older-than-days N [--dry-run]`, `set_destination_secret --destination <id> --generate`,
-`sync_roles`. Day-2 operations: [docs/operations.md](docs/operations.md).
+Other management commands: `show_version [--verbose]`, `run_worker`,
+`purge_personal_data --person <uuid> | --older-than-days N [--dry-run]`,
+`set_destination_secret --destination <id> --generate`, `sync_roles`,
+`seed_public_demo`. Day-2 operations: [docs/operations.md](docs/operations.md).
+
+### Publishing the image (prepared, not done)
+
+`.github/workflows/release.yml` builds linux/amd64 and linux/arm64 from the pinned
+bases on a `v<VERSION>` tag and pushes `ghcr.io/<owner>/<repo>:<version>` and
+`:<version>-<sha>` with OCI labels, an SBOM and provenance. **No tag has been pushed
+and no image published; doing so needs the owner's approval.** Once an image exists,
+deploy it instead of building:
+
+```sh
+docker pull ghcr.io/<owner>/<repo>:<version>
+# in .env:  WEBINAR_IMAGE=ghcr.io/<owner>/<repo>:<version>  and  WEBINAR_PULL_POLICY=never
+deploy/upgrade.sh --image ghcr.io/<owner>/<repo>:<version>     # or, first run: docker compose run --rm migrate && docker compose up -d
+```
 
 ## Production prerequisites
 
@@ -210,8 +236,9 @@ Before exposing the platform to the internet you must provide, at the edge:
 3. **MFA (or SSO/VPN) for `/admin/` and `/studio/`** — passwords only.
 
 [`docker/nginx.conf.example`](docker/nginx.conf.example) is a starting point for
-TLS, trusted forwarding headers and per-client rate limits. It has not been tested;
-tune and test it for your traffic. Also pin base images by digest and use the
+TLS, trusted forwarding headers and per-client rate limits. Its syntax and routing
+were checked in `nginx:stable` against an echo upstream (2026-10-27), not in front of
+the real application on an internet-facing host; tune and test it for your traffic. Also pin base images by digest and use the
 hash-locked requirements once generated (see [Supply chain](#supply-chain-notes)).
 
 ## Validation status
@@ -219,11 +246,16 @@ hash-locked requirements once generated (see [Supply chain](#supply-chain-notes)
 Test runs, image builds and their dates are recorded only in
 [docs/validation.md](docs/validation.md) (logs under `artifacts/`, not committed). This
 README claims no result: code changed after the last recorded run has not been tested
-until validation.md says so. The Compose stack and deployed image have no smoke test,
-and the platform is not production-certified.
+until validation.md says so. The platform is not production-certified.
 
-Compose ships `postgres:16-alpine`; PostgreSQL evidence so far was collected on
-PostgreSQL 15.
+The distribution entry of 2026-10-27 records, for the built image: Compose first run
+(migrate, `sync_roles`, `bootstrap_admin`, `create_api_key`, healthchecks, `/healthz`,
+OpenAPI, `/mcp`, studio login, seeded public list, `tests/image_smoke.py`), backup and
+restore into a fresh project with master-key checks, a retention dry run, the offline
+webhook-receiver contract, `nginx -t` plus routing checks on both edge examples, and an
+in-place upgrade from the previous release with image rollback. All of it ran on one
+developer machine (linux/arm64 image, PostgreSQL 16.15); no internet-facing host, no
+amd64 build and no registry publication have been exercised.
 
 ## Development and testing
 
@@ -284,17 +316,36 @@ node tests/browser-gtm.cjs       # site-wide GTM tag fixture + SDK in Chromium, 
 | [docs/browser-integration.md](docs/browser-integration.md), [docs/integration.md](docs/integration.md) | GTM script, consent, first-party proxy, error shapes, calendar flow |
 | [docs/webhooks.md](docs/webhooks.md) | Payloads, signatures, retries, receiver obligations |
 | [docs/security.md](docs/security.md), [docs/threat-model.md](docs/threat-model.md) | Security behaviour, threats, mitigations, residual risks |
-| [docs/operations.md](docs/operations.md) | Bootstrap, edge, key rotation, backup/restore, rollback, worker, retention, logging |
-| [docker/nginx.conf.example](docker/nginx.conf.example) | Untested example edge config: TLS, forwarding, rate limits |
+| [docs/operations.md](docs/operations.md) | Bootstrap, edge, key rotation, backup/restore, upgrade/rollback, worker, retention, logging |
+| `deploy/build-image.sh`, `deploy/backup.sh`, `deploy/restore.sh`, `deploy/upgrade.sh` | Versioned image build; Compose backup, restore and in-place upgrade (rehearsed, see validation.md) |
+| [.github/workflows/release.yml](.github/workflows/release.yml) | Prepared GHCR release workflow (`v*` tags); not yet run, publishing needs owner approval |
+| [docker/nginx.conf.example](docker/nginx.conf.example) | Example edge config: TLS, forwarding, rate limits (`nginx -t` and routing checked; not production-tuned) |
 | [examples/verify_webhook.py](examples/verify_webhook.py) | Replay-safe webhook signature verification |
 
 ## Supply chain notes
 
-* `requirements.txt` and `requirements-dev.txt` pin exact versions but are **not yet
-  hash-locked**; generating and checking a complete transitive lock remains a
-  release prerequisite.
-* Base images (`python:3.12-slim-bookworm`, `postgres:16-alpine`) are pinned by tag;
-  pin them by digest for production.
+* `requirements.txt` is a complete, hash-locked transitive lock generated from
+  `requirements.in` (`uv pip compile requirements.in --generate-hashes -o requirements.txt`);
+  the image build installs it with `pip --require-hashes`, so a tampered wheel fails the
+  build. `requirements-dev.txt` adds three exact tool pins (pytest, pytest-django, ruff)
+  that never enter the production image. `pip-audit` on the lock: no known
+  vulnerabilities (2026-10-27, pip-audit 2.10.1); rerun it on every release lock.
+* Base images are pinned by **digest**: `Dockerfile` `ARG PYTHON_IMAGE` and the `db`
+  service in `compose.yaml` (tag kept in the comment). The pins are multi-platform
+  index digests, so they resolve for linux/amd64 and linux/arm64. To refresh:
+
+  ```sh
+  docker buildx imagetools inspect python:3.12-slim-bookworm   # "Digest:" line = index digest
+  docker buildx imagetools inspect postgres:16-alpine
+  ```
+
+  Paste the new `sha256:` into the two files, update the date comments, rebuild
+  (`deploy/build-image.sh`), rerun the Compose first run, and record both digests in
+  `docs/validation.md`.
+* The image carries OCI labels (`org.opencontainers.image.version/revision/created/source`)
+  and reports its version at `/healthz`, `manage.py show_version` and the MCP
+  `serverInfo`; `deploy/build-image.sh` writes the image ID and tarball SHA-256 to
+  `artifacts/image-<version>.sha256`.
 * The image runs as uid 10001 with a read-only root filesystem, `cap_drop: ALL` and
   `no-new-privileges`. The build context is an allow-list (`.dockerignore`).
 

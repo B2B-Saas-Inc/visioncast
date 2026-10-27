@@ -4,9 +4,12 @@ All commands assume the repository root, Docker Compose v2 and a filled-in `.env
 `docker compose run --rm web manage <command>` runs `python manage.py <command>` in a
 throwaway container from the same image (ports are not published by `run`).
 
-> None of the procedures below have been rehearsed against a running deployment at
-> the time of writing. Rehearse backup/restore and rollback on a staging copy before
-> relying on them.
+> Sections 1, 3, 4 and 5 were rehearsed on 2026-10-27 with the built image in
+> disposable Compose projects (first run, backup, restore into a fresh database,
+> in-place upgrade from the previous release and image rollback; see
+> [validation.md](validation.md)). They have **not** been run on a production host or
+> against a production-sized database. Rehearse them on a staging copy of your own
+> deployment before relying on them.
 
 ## 1. First run
 
@@ -19,17 +22,29 @@ python3 -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).de
 # Set DJANGO_ALLOWED_HOSTS, CSRF_TRUSTED_ORIGINS, PUBLIC_BASE_URL, WEBINAR_ALLOWED_ORIGINS,
 # THANK_YOU_REDIRECT_HOSTS, WEBHOOK_HOST_ALLOWLIST for your domains.
 
-docker compose build
+deploy/build-image.sh                    # webinar-platform:<version> and :<version>-<commit>, OCI labels,
+                                         # evidence in artifacts/image-<version>.sha256
+echo "WEBINAR_IMAGE=webinar-platform:$(cat VERSION)" >> .env   # compose.yaml runs this image
 docker compose run --rm migrate          # creates schema and the Administrator/Editor/Analyst groups
+docker compose run --rm web manage sync_roles
 docker compose run --rm web manage bootstrap_admin --username admin --email admin@example.com
 docker compose run --rm web manage create_api_key --name "marketing-site proxy" --scope proxy
 docker compose up -d
 docker compose ps                        # web and worker should become "healthy"
+curl -s -H 'Host: <your DJANGO_ALLOWED_HOSTS entry>' -H 'X-Forwarded-Proto: https' http://127.0.0.1:8000/healthz
+# {"status": "ok", "version": "0.2.0-pre"}
+docker compose exec web python manage.py show_version --verbose   # version, git revision, build time
 ```
 
+* `deploy/build-image.sh` builds the `production` target from the committed tree
+  (`--allow-dirty` to build uncommitted changes; the revision is then suffixed
+  `-dirty`). `docker compose build` still works and produces `webinar-platform:local`
+  (the default `WEBINAR_IMAGE`) but without version labels. To run a pulled image
+  instead, see README "Publishing the image" (none is published yet).
 * `bootstrap_admin` creates the first Administrator. If you used
   `BOOTSTRAP_ADMIN_PASSWORD` for a non-interactive run, remove it from `.env`
-  immediately afterwards and change the password at first login.
+  immediately afterwards and change the password at first login. The command refuses
+  to run a second time unless `--force-additional` is given.
 * The raw API key is printed **once**. Put it in the proxy's secret store
   (`PROXY_API_KEY`, see `docs/browser-integration.md`); never in GTM or page source.
 * Put a TLS-terminating reverse proxy in front of `127.0.0.1:8000`, forward
@@ -92,17 +107,32 @@ Never store the master key in the same place as database backups.
 The database is the only stateful component (plus `.env`/secrets).
 
 ```sh
+deploy/backup.sh                              # -> backups/webinars-<UTC ts>.dump, mode 0600
+deploy/backup.sh /srv/backups                 # another directory
+deploy/backup.sh --encrypt-to age1<recipient> # age-encrypts and shreds the plain dump
+```
+
+`deploy/backup.sh` runs `pg_dump --format=custom --no-owner` inside the `db`
+container with its own credentials, checks the `PGDMP` magic and that `pg_restore
+--list` can read the archive, and prints only the file name and size. It honours
+`COMPOSE_PROJECT_NAME` / `COMPOSE_FILE` like any `docker compose` call. The manual
+equivalent:
+
+```sh
 ts=$(date -u +%Y%m%dT%H%M%SZ)
 docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom --no-owner' \
   > "webinars-$ts.dump"
-# Encrypt before it leaves the host, e.g. with age:
 age -r <recipient-public-key> -o "webinars-$ts.dump.age" "webinars-$ts.dump" && shred -u "webinars-$ts.dump"
 ```
 
 * Copy the encrypted file off-host; restrict access; set an expiry consistent with
   your retention policy (backups contain PII that `purge_personal_data` cannot reach).
 * Test restores regularly (section 4) and record the result.
-* Back up `.env` separately via your secret manager, not alongside the dump.
+* Back up `.env` separately via your secret manager, not alongside the dump. A dump
+  without the `INTEGRATION_MASTER_KEY` restores schema, people and events, but
+  destination credentials and signing secrets stay undecryptable (verified: a
+  different key is rejected with `DecryptionError`).
+* Schedule it from host cron, e.g. `15 2 * * * cd /srv/webinar-platform && deploy/backup.sh --encrypt-to age1… /srv/backups >> /var/log/webinar-backup.log 2>&1`.
 
 ## 4. Restore
 
@@ -110,17 +140,33 @@ Restore into a **fresh, empty** database, then apply migrations of the image you
 running.
 
 ```sh
+age -d -i <identity-file> -o restore.dump webinars-<ts>.dump.age   # if encrypted
+deploy/restore.sh restore.dump              # empty target only
+deploy/restore.sh --force restore.dump      # drop + recreate a non-empty target first
+deploy/restore.sh --no-start restore.dump   # restore + migrate, leave web/worker stopped
+shred -u restore.dump
+```
+
+`deploy/restore.sh` stops `web`/`worker`, waits for `db`, **refuses a non-empty
+target database unless `--force`** (which terminates connections, drops and
+recreates it), runs `pg_restore --no-owner --exit-on-error`, then `docker compose
+run --rm migrate` with `WEBINAR_IMAGE` and `docker compose up -d web worker`.
+Restoring into a second Compose project (`COMPOSE_PROJECT_NAME=<other>`, its own
+volume) is the way to rehearse without touching the live stack. The manual
+equivalent:
+
+```sh
 docker compose stop web worker
-age -d -i <identity-file> -o restore.dump webinars-<ts>.dump.age
 docker compose exec -T db sh -c 'dropdb -U "$POSTGRES_USER" --if-exists "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
 docker compose exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --exit-on-error' < restore.dump
-shred -u restore.dump
 docker compose run --rm migrate     # brings an older dump up to the current schema
 docker compose up -d web worker
 ```
 
 * The `.env` used must contain the `INTEGRATION_MASTER_KEY` (or keep it in
   `INTEGRATION_MASTER_KEY_PREVIOUS`) that was current when the dump was taken.
+* After a restore, log in once (studio) and check the outbox; then run `sync_roles`
+  if the restored dump predates the running image.
 * After restoring an old backup, re-run `purge_personal_data` for any erasure
   requests processed after the backup date (keep a list of erased person IDs outside
   the database for this purpose).
@@ -129,31 +175,60 @@ docker compose up -d web worker
 
 ## 5. Upgrade and rollback
 
-Tag every image you deploy so you can go back:
+Every deployed image carries a version tag (`deploy/build-image.sh` →
+`webinar-platform:<version>` and `:<version>-<commit>`), and `compose.yaml` runs
+whatever `WEBINAR_IMAGE` names. Keep the previous version's image on the host until
+the new one has run cleanly for as long as your rollback window.
+
+Upgrade (verified 2026-10-27: previous release `da04cc7` → current image, same
+project and volume, data, destination secrets and admin login intact):
 
 ```sh
-docker tag webinar-platform:local webinar-platform:$(date -u +%Y%m%d)-<git-sha>
+git pull                                   # or check out the release tag
+deploy/build-image.sh                      # or: docker pull ghcr.io/<owner>/<repo>:<version>  (once published)
+deploy/upgrade.sh --image webinar-platform:<version>
 ```
 
-Upgrade:
+`deploy/upgrade.sh` does, in order: `deploy/backup.sh` (**always back up before
+`migrate`**; `--skip-backup` only if you just did), `docker compose run --rm migrate`,
+`docker compose up -d web worker` on the new image, `manage sync_roles`, waits for both
+healthchecks and prints `show_version --verbose`. It then tells you to put
+`WEBINAR_IMAGE=<new>` (and `WEBINAR_PULL_POLICY=never` for a pulled image) into `.env`
+so later `docker compose` calls keep using it. Without `--image` it rebuilds
+`webinar-platform:local` from the checked-out tree. The manual equivalent:
 
-1. Take a backup (section 3). **Always back up before `migrate`.**
-2. `docker compose build`
-3. `docker compose run --rm migrate`
-4. `docker compose up -d web worker`, then `docker compose run --rm web manage sync_roles`.
-5. Check `docker compose ps` health and the admin outbox for failures.
+```sh
+deploy/backup.sh
+export WEBINAR_IMAGE=webinar-platform:<version>
+docker compose run --rm migrate
+docker compose up -d web worker
+docker compose run --rm web manage sync_roles
+docker compose ps                                # both healthy
+docker compose exec web python manage.py show_version --verbose
+```
+
+Then check the admin outbox for failures. `docker compose run --rm web manage
+showmigrations webinars` lists what is applied; `manage migrate --check` exits
+non-zero while anything is pending.
 
 Rollback:
 
-* **No schema change in the release**: retag the previous image as
-  `webinar-platform:local` and `docker compose up -d web worker`.
-* **Schema changed**: Django migrations can be reversed with
-  `docker compose run --rm web manage migrate webinars <previous_migration>` **using the
-  new image** (the old image does not contain the newer migration files). Reversal is
-  only safe when every migration in between is reversible and does not drop data; data
-  migrations and column drops may be irreversible. When in doubt, restore the pre-upgrade
-  backup (section 4) with the old image, accepting loss of registrations taken since.
-* Run the worker and web from the same image version at all times.
+* **No schema change in the release** (verified: `WEBINAR_IMAGE` switched back to the
+  previous image, web/worker healthy, data intact):
+  `WEBINAR_IMAGE=webinar-platform:<previous> docker compose up -d web worker`, and
+  set that value in `.env`. If the previous image was only ever tagged `:local`, retag
+  it first (`docker tag <image id> webinar-platform:<previous>`).
+* **Schema changed** (not rehearsed; every release note must say whether it applies):
+  the old image does not contain the newer migration files, so reverse the migration
+  **with the new image** before switching:
+  `docker compose run --rm web manage migrate webinars <last migration of the previous release>`,
+  then switch `WEBINAR_IMAGE` back as above. Reversal is only safe when every migration
+  in between is reversible and drops no data; data migrations and column drops may be
+  irreversible, and registrations taken in the meantime may reference rows the old
+  code cannot read. When in doubt, restore the pre-upgrade backup (section 4) with
+  the old image, accepting loss of registrations taken since the backup.
+* Run the worker and web from the same image version at all times (`upgrade.sh` and
+  the rollback command above recreate both).
 
 ## 6. Worker operations
 

@@ -1,7 +1,7 @@
 # Docker Compose deployment for a single host.
 #
 #   cp .env.example .env    # then fill in every secret (see comments in the file)
-#   docker compose build
+#   deploy/build-image.sh   # or: docker compose build  (no version labels)
 #   docker compose run --rm migrate
 #   docker compose up -d
 #
@@ -9,12 +9,21 @@
 # The database is reachable only on the internal `backend` network and has no
 # published port. The web port is bound to 127.0.0.1: put a TLS-terminating
 # reverse proxy (with rate limiting) in front of it.
+#
+# Image selection (both variables may live in .env; Compose reads it for interpolation):
+#   WEBINAR_IMAGE        image used by migrate/web/worker. Default webinar-platform:local,
+#                        which `docker compose build` produces. deploy/build-image.sh tags
+#                        webinar-platform:<version>; deploy with WEBINAR_IMAGE=webinar-platform:<version>.
+#   WEBINAR_PULL_POLICY  for the `migrate` service only (the one with a `build:` section).
+#                        Default "build" (build locally). Set "never" together with a pulled
+#                        image (`docker pull ghcr.io/<owner>/<repo>:<version>` first) so
+#                        nothing is built. No image has been published yet; see README.
 
 name: webinar-platform
 
 x-app-hardening: &app-hardening
-  image: webinar-platform:local
-  pull_policy: never          # built locally by the `migrate` service; never pulled
+  image: ${WEBINAR_IMAGE:-webinar-platform:local}
+  pull_policy: never          # web/worker never pull: the image is built locally or pulled explicitly
   env_file: [.env]
   read_only: true
   tmpfs:
@@ -26,7 +35,9 @@ x-app-hardening: &app-hardening
 
 services:
   db:
-    image: postgres:16-alpine   # pin by digest for production (postgres:16-alpine@sha256:...)
+    # postgres:16-alpine (PostgreSQL 16.15), index digest resolved 2026-10-27.
+    # Refresh: docker buildx imagetools inspect postgres:16-alpine  (README "Supply chain notes")
+    image: postgres:16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
     restart: unless-stopped
     env_file: [.env]            # uses POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD
     volumes:
@@ -47,7 +58,12 @@ services:
       context: .
       dockerfile: Dockerfile
       target: production
-    pull_policy: build
+      args:
+        # Optional label inputs; deploy/build-image.sh is the labelled, tagged build path.
+        WEBINAR_VERSION: ${WEBINAR_VERSION:-}
+        WEBINAR_REVISION: ${WEBINAR_REVISION:-}
+        WEBINAR_CREATED: ${WEBINAR_CREATED:-}
+    pull_policy: ${WEBINAR_PULL_POLICY:-build}
     command: ["migrate"]
     restart: "no"
     healthcheck:
