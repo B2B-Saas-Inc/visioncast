@@ -1114,7 +1114,9 @@ class NativeContext:
         self._post, self._request, self._renew, self._check = post, request, renew, check
         self.calls = 0
 
-    def call(self, step, method, url, payload, headers, read):
+    def call(self, step, method, url, payload, headers, read, *, encode=None):
+        """One vendor call. ``payload`` is JSON-encoded (``_encode``) unless ``encode`` is given
+        (e.g. ``urlencode`` for an OAuth token request); GET sends no body."""
         if self.calls >= MAX_CALLS:
             raise _Stop(Outcome("dead", "native_max_calls_exceeded"))
         if self.calls:
@@ -1126,7 +1128,7 @@ class NativeContext:
             if stop is not None:
                 raise _Stop(stop)
         self.calls += 1
-        body = _encode(payload)
+        body = b"" if method == "GET" else (encode(payload) if encode else _encode(payload))
         try:
             if read or method != "POST":
                 result = self._request(method, url, body, headers)
@@ -1386,7 +1388,7 @@ class _PreviewContext:
         self.calls = []
         self._responder = responder
 
-    def call(self, step, method, url, payload, headers, read):
+    def call(self, step, method, url, payload, headers, read, *, encode=None):
         self.calls.append(
             {
                 "step": step,
