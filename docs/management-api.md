@@ -10,7 +10,7 @@ Send the key as `Authorization: Bearer wbk_<prefix>_<secret>`. `X-Api-Key` also 
 |---|---|
 | `content_write` | events (content), hosts, topics, form versions, occurrences, cancellation |
 | `publication` | event visibility changes (also needs `content_write`) and recording publication; confirmed, see [Authentication](api-reference.md#authentication) and below |
-| `attendance_write` | `POST /api/v1/manage/registrations/<id>/attendance` only |
+| `attendance_write` | `POST /api/v1/manage/registrations/<id>/attendance` and the attendance import routes under `/api/v1/manage/occurrences/<id>/attendance/imports` (reads also with `config_read`) |
 | `config_read` | **read-only**: `GET` on `/api/v1/manage/events`, `/events/<id>`, `/occurrences/<id>` and `/occurrences/<id>/waiting-room` (see below) |
 
 **Read-only access (`config_read`).** The scope is checked per method: `config_read` is
@@ -173,6 +173,24 @@ Form version rules:
 - Attendance is never inferred.
 - Response: `{"registrationId","occurrenceId","attendance"}` only.
 
+#### Attendance imports (`attendance_write`; reads also `config_read`)
+
+Bulk attendance from the hosting provider or a report, reviewed and applied explicitly
+([hosting.md → Attendance import](hosting.md#attendance-import)). Base path
+`/api/v1/manage/occurrences/<uuid>/attendance/imports`:
+
+| Method | Path | Body / effect |
+|---|---|---|
+| GET | `…/imports` | imports of the session: counts and state, no rows |
+| POST | `…/imports` | `{"source":"provider"}` (one read-only pull from the linked Zoom/Riverside session; 409 when the provider has no `attendanceImport`, the session is not linked or the account is disabled; a failed pull is returned as 201 with `state: failed`, safe to retry) or `{"source":"file","rows":[{email,name,externalId,joinedAt,leftAt,durationSeconds}]}` (max 5,000 rows). Rows are matched (provider id, then email) and merged per person; nothing is recorded yet. |
+| GET | `…/imports/<importId>` | the import with its rows: `match` (`matched`/`unmatched`/`ambiguous`/`ignored`/`resolved`), `emailMasked`, `name`, `registrationId` |
+| POST | `…/imports/<importId>/apply` | `{}`; first call 428 with a preview and a single-use `confirmToken` bound to the import's state, then repeat with `Webinar-Confirm-Token`. Records `attended` (`record_attendance`, `source="import:<source>"`) for matched/resolved rows whose registration is not already attended; re-applying records nothing new. |
+| POST | `…/imports/<importId>/rows/<rowId>/resolve` | `{"registrationId": …}` (active registration of this session; recorded at once) or `{"ignore": true}`; 409 for rows already matched/resolved/ignored |
+| POST | `…/imports/<importId>/no-shows` | `{}`; 428 + confirm as for apply. Only after apply and after the session ended; marks remaining active registrations `no_show`, never those who checked in through the waiting room (`noShows.refused`). |
+
+Unknown and other-session import/row ids are 404. Responses never contain full email
+addresses, join links or provider payloads.
+
 ## Audit
 
 Every write is recorded in `AuditLog` with `actor_api_key`, the object id and field names only:
@@ -181,6 +199,7 @@ Every write is recorded in `AuditLog` with `actor_api_key`, the object id and fi
 - `host.saved`, `topic.saved`, `formversion.saved`
 - `occurrence.api_write`
 - `attendance.api_write`
+- `attendance_import.created|pull_started|pull_finished|lost|late_outcome|applied|row_resolved|no_shows` (ids and counts only)
 
 The shared scheduling functions also write their own entries (`occurrence.cancelled|rescheduled`, `recording.published`, `attendance.recorded`) with no actor, because `webinars/scheduling.py` does not accept an API key.
 

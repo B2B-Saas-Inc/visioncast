@@ -12,7 +12,7 @@ Auth: API keys (`Authorization: Bearer wbk_...`). `tools/list` shows only tools 
 |---|---|---|
 | public_read | public read tools, non-secret resources, form resources | Administrator (studio), keys_admin key holding it, owner shell |
 | content_write | catalogue/event content/session/form/waiting-room/cover/CTA/series writes, draft delete (gated). **No visibility changes.** | same |
-| attendance_write | record_attendance, finalize_attendance (gated) | same |
+| attendance_write | record_attendance, finalize_attendance (gated); attendance imports: list, import (provider pull or rows), apply, resolve rows, mark no-shows (gated) | same |
 | reporting | get_report_summary (aggregates) | same |
 | config_read | redacted readiness, provisioning instructions, catalogue listing, redacted destinations, delivery counts, `webinar://config/current`. Over REST (not MCP): read-only `GET` on management events (drafts included), sessions and waiting rooms, with `waitingRoom.url` null ([management-api.md](management-api.md)) | same |
 | publication | set_event_visibility, publish_recording (gated); REST visibility changes and recordings | **superuser (studio) or `manage.py create_api_key` only** |
@@ -57,6 +57,8 @@ Publishing a not-ready event (no upcoming session, Attention/summary or Action) 
 | list_catalog | config_read or content_write | |
 | record_attendance | attendance_write | |
 | finalize_attendance | attendance_write | yes |
+| list_attendance_imports | attendance_write or config_read | |
+| import_session_attendance, apply_attendance_import, resolve_attendance_row, mark_session_no_shows | attendance_write | yes |
 | get_report_summary | reporting | |
 | get_configuration_readiness, get_host_provisioning_instructions | config_read | |
 | list_destinations, get_delivery_status | config_read or delivery_admin | |
@@ -79,6 +81,8 @@ Publishing a not-ready event (no upcoming session, Attention/summary or Action) 
 | create_hosting_account, update_hosting_account | hosting_admin | yes |
 
 Ticket and hosting tools call the same handlers as the REST routes in [tickets.md](tickets.md) and [hosting.md](hosting.md), with the same field validation; input schemas are generated from those handlers' schemas (no free-form payload). Confirmation state: hosting accounts bind a digest of name/enabled/config and the credential ciphertext; reconcile and manual link bind the session state and schedule generation; order actions bind order status and `paidAt`. Previews never echo secrets: credentials appear only as the names being set, manual links only as hosts. `mark_order_refunded` records a refund you already made in Stripe; `release_unpaid_order` re-checks Stripe and refuses if the checkout was paid. `list_session_registrants` returns stalled Riverside registrants of one session as registration IDs and state only (no names, emails or links; no provider call). `reconcile_session_registrant` records what you verified in Riverside (`created` with that registrant's own join link, which is set-only and never echoed; or `not_created`). Its token binds the exact arguments and the registrant's state, attempt and update time. Other-session IDs are refused as not found, and non-Riverside or non-stalled registrants as conflicts. Nothing is sent to Riverside (see hosting.md).
+
+Attendance imports ([hosting.md](hosting.md#attendance-import)) share the REST handlers in `webinars/api/attendance_imports.py`. `import_session_attendance` with `source: "provider"` makes one read-only pull from the session's linked hosting provider (Zoom, Riverside; refused for providers without `attendanceImport` and when the account is disabled); its dry run shows the request with credentials redacted and writes nothing. With `source: "file"` and `rows` the dry run returns the matching counts without storing anything. Nothing is recorded until `apply_attendance_import` is confirmed (its token binds the import's state); re-applying or re-importing the same list records nothing new. `resolve_attendance_row` maps one unmatched/ambiguous row to a registration of that session (recorded at once) or ignores it; `mark_session_no_shows` runs only after apply and after the session ended, and never marks a registrant who checked in through the waiting room. `list_attendance_imports` returns counts and state, or one import's rows with masked emails and display names; full addresses, join links and provider payloads are never returned.
 
 `send_test_delivery` queues one fixed synthetic payload (`eventType: webhook.test`, no person, no links) for an existing **enabled** destination; the worker delivers it through the normal path (SSRF-pinned signed webhook, or the destination's native provider). No URL, header or payload is accepted. Invitation links are delivered by email only and never returned.
 

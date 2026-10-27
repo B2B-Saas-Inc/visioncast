@@ -178,10 +178,65 @@ def _tickets_and_hosting_paths():
                            **std})},
         "/api/v1/manage/occurrences/{id}/hosting/manual-link": {"parameters": occ, "post": _op("Manual link (StreamYard; no outbound calls)",
             HOSTING_TAG, security=KEY, body=hosting.MANUAL_LINK_INPUT_SCHEMA, responses={"200": _json(_ref("HostedSession")), **std})},
+        **_attendance_import_paths(),
+    }
+
+
+ATTENDANCE_TAG = "Management (attendance import)"
+
+
+def _attendance_import_paths():
+    """Attendance import endpoints (docs/hosting.md, "Attendance import")."""
+    from webinars.api import attendance_imports as ai
+
+    occ = [_path_param("id", "uuid")]
+    imp = occ + [_path_param("importId", "uuid")]
+    row = imp + [_path_param("rowId", "uuid")]
+    std = _errors(400, 401, 403, 404, 409)
+    note = ("Scope: attendance_write. The first call returns 428 with a preview and a single-use confirmToken bound to "
+            "this key and the import's state; repeat with Webinar-Confirm-Token. ")
+    base = "/api/v1/manage/occurrences/{id}/attendance/imports"
+    return {
+        base: {"parameters": occ,
+            "get": _op("Attendance imports of a session", ATTENDANCE_TAG, security=KEY,
+                       description="Scope: attendance_write or config_read. Counts and state only (no rows).",
+                       responses={"200": _json({"type": "object", "properties": {"occurrenceId": _UUID_S,
+                                                "results": {"type": "array", "items": _ref("AttendanceImport")}}}),
+                                  **_errors(401, 403, 404)}),
+            "post": _op("Create an import: provider pull or supplied rows", ATTENDANCE_TAG, security=KEY,
+                        body=ai.CREATE_INPUT_SCHEMA,
+                        description="Scope: attendance_write. source=provider makes one read-only, durable pull from the "
+                                    "linked hosting provider (Zoom, Riverside; refused for providers without "
+                                    "attendanceImport, and when the account is disabled). source=file stores the given "
+                                    "rows (max 5000). Rows are matched (provider id, then email) and deduplicated; nothing "
+                                    "is recorded until the import is applied. A failed pull is returned with state=failed "
+                                    "(safe to retry).",
+                        responses={"201": _json(_ref("AttendanceImport")), **std})},
+        base + "/{importId}": {"parameters": imp,
+            "get": _op("Attendance import with its rows (masked emails)", ATTENDANCE_TAG, security=KEY,
+                       description="Scope: attendance_write or config_read. Never full emails or links.",
+                       responses={"200": _json(_ref("AttendanceImport")), **_errors(401, 403, 404)})},
+        base + "/{importId}/apply": {"parameters": imp,
+            "post": _op("Apply an import (confirmed)", ATTENDANCE_TAG, security=KEY, body=ai.EMPTY_INPUT_SCHEMA,
+                        description=note + "Records attended for every matched row whose registration is not already "
+                                           "attended (attendance.recorded once per registration); re-applying records nothing new.",
+                        responses={"200": _json(_ref("AttendanceImport")), "428": _json(CONFIRMATION, "Confirmation required"), **std})},
+        base + "/{importId}/rows/{rowId}/resolve": {"parameters": row,
+            "post": _op("Resolve an unmatched/ambiguous row", ATTENDANCE_TAG, security=KEY, body=ai.RESOLVE_INPUT_SCHEMA,
+                        description="Scope: attendance_write. registrationId (active registration of this session: attendance "
+                                    "is recorded at once) or ignore=true. Rows already matched, resolved or ignored are 409.",
+                        responses={"200": _json({"type": "object", "properties": {"importId": _UUID_S, "row": _ref("AttendanceImportRow")}}),
+                                   **std})},
+        base + "/{importId}/no-shows": {"parameters": imp,
+            "post": _op("Mark remaining registrations no_show (confirmed)", ATTENDANCE_TAG, security=KEY, body=ai.EMPTY_INPUT_SCHEMA,
+                        description=note + "Only after the import is applied and the session has ended. Registrants who "
+                                           "checked in through the waiting room are never marked no_show (reported as refused).",
+                        responses={"200": _json(_ref("AttendanceImport")), "428": _json(CONFIRMATION, "Confirmation required"), **std})},
     }
 
 
 def _tickets_and_hosting_schemas():
+    from webinars.api import attendance_imports as ai
     from webinars.api import hosting
 
     n_int = {"type": ["integer", "null"]}
@@ -219,6 +274,8 @@ def _tickets_and_hosting_schemas():
             "lastError": n_str, "lastSyncedAt": n_str, "outOfDate": {"type": "boolean"}, "capabilities": {"type": ["object", "null"]},
             "contract": n_str, "operations": {"type": "array", "items": _OBJ}}},
         "ProviderRegistrant": hosting.REGISTRANT_SCHEMA,
+        "AttendanceImport": ai.IMPORT_SCHEMA,
+        "AttendanceImportRow": ai.ROW_SCHEMA,
         "Availability": {"type": "object", "description": "Present only when the session has a seat limit.",
             "properties": {"remaining": {**n_int, "description": "null unless the organiser shows remaining seats"}, "soldOut": {"type": "boolean"}}},
         "PublicTicket": {"type": "object", "description": "Present only for paid sessions.",

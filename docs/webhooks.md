@@ -12,7 +12,14 @@ Deliveries come from a PostgreSQL transactional outbox processed by the
 `attendance.recorded`, `attendance.checked_in`, `follow_up.requested`.
 
 Occurrence-level events (cancel, reschedule, recording) are fanned out **per
-registration**, so each delivery describes one registrant. A destination receives
+registration**, so each delivery describes one registrant.
+
+`attendance.recorded` is emitted by every explicit attendance write: the management API,
+waiting-room finalization, and attendance imports (provider pull or report file; see
+[hosting.md](hosting.md#attendance-import)). The payload is the same in every case; the
+origin is kept on the registration's `AttendanceEvent.source` (`api`, `waiting_room`,
+`import:zoom`, `import:riverside`, `import:file`) and is not part of the payload. An import
+records each registration at most once, so re-importing the same list never re-sends. A destination receives
 an event only if it is `enabled`, lists the type in `event_types`, and every purpose
 in `required_consents` is currently granted for the person (latest consent record
 per purpose is `granted` and not withdrawn). People who have been erased receive no

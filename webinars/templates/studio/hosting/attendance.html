@@ -1,0 +1,131 @@
+{% extends "studio/base.html" %}
+{% block title %}Attendance · {{ event.public_title }}{% endblock %}
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="{% url 'studio:events' %}">Events</a> <span aria-hidden="true">/</span> <a href="{% url 'studio:session' pk=occ.pk %}">{{ event.public_title }}</a> <span aria-hidden="true">/</span> <a href="{% url 'studio:session-hosting' pk=occ.pk %}">Hosting</a> <span aria-hidden="true">/</span> <span aria-current="page">Attendance</span></nav>
+{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Attendance import</h1>
+    <p class="lede">Bring in who attended from the hosting provider or from a report file, check the matches, then apply. Nothing is recorded until you apply, and registrants are only ever marked once.</p>
+  </div>
+</div>
+
+{% if errors.items %}
+<div class="callout callout-warn" role="alert">
+  <ul>{% for k, msgs in errors.items %}{% for m in msgs %}<li>{{ m }}</li>{% endfor %}{% endfor %}</ul>
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><h2>Get attendance</h2></div>
+  <div class="panel-body">
+    <h3>From the hosting provider</h3>
+    {% if pull.problems %}
+      <ul class="help">{% for p in pull.problems %}<li>{{ p }}</li>{% endfor %}</ul>
+    {% else %}
+      <p class="help">One read-only request to {{ pull.provider }} for session <code>{{ pull.externalId }}</code>:</p>
+      {% for plan in pull.plans %}<p><code>{{ plan.method }} {{ plan.url }}</code> <span class="small">(credentials redacted)</span></p>{% endfor %}
+      <form method="post" action="{% url 'studio:session-attendance' pk=occ.pk %}" data-confirm="Fetch the attendee list from the provider now? Nothing is recorded until you apply.">
+        {% csrf_token %}<input type="hidden" name="op" value="pull">
+        <button class="btn btn-sm" type="submit">Pull from provider</button>
+      </form>
+    {% endif %}
+
+    <h3 style="margin-top:var(--s-4)">From a report file</h3>
+    <p class="help">CSV with columns such as <code>email</code>, <code>name</code>, <code>join time</code>, <code>leave time</code>, <code>duration</code> (Zoom, Wistia and StreamYard exports work as they are). Up to 1 MB and 5,000 rows; the file is parsed here and never stored.</p>
+    <form method="post" action="{% url 'studio:session-attendance' pk=occ.pk %}" enctype="multipart/form-data">
+      {% csrf_token %}<input type="hidden" name="op" value="upload">
+      <div class="field"><label class="label" for="a-file">CSV file</label><input class="input" type="file" id="a-file" name="file" accept=".csv,text/csv" required></div>
+      <div class="form-actions"><button class="btn btn-sm" type="submit">Upload and match</button></div>
+    </form>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Imports</h2></div>
+  <div class="panel-body">
+  {% if imports %}
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th scope="col">When</th><th scope="col">Source</th><th scope="col">State</th><th scope="col">Rows</th><th scope="col">Matched</th><th scope="col">To review</th><th scope="col">Applied</th><th scope="col"></th></tr></thead>
+      <tbody>{% for i in imports %}<tr>
+        <td>{{ i.createdAt }}</td><td>{{ i.source }}</td>
+        <td><span class="badge{% if i.state == 'applied' %} badge-success{% elif i.state == 'failed' or i.state == 'needs_review' %} badge-warn{% endif %}">{{ i.state }}</span>{% if not i.complete %} <span class="small">(incomplete)</span>{% endif %}</td>
+        <td>{{ i.counts.rows }}</td><td>{{ i.counts.matched }}</td><td>{{ i.counts.unmatched }} + {{ i.counts.ambiguous }}</td><td>{{ i.counts.applied }}</td>
+        <td><a href="{% url 'studio:session-attendance' pk=occ.pk %}?import={{ i.id }}">Open</a></td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+  {% else %}
+    <p class="help">No imports yet.</p>
+  {% endif %}
+  </div>
+</section>
+
+{% if selected %}
+<section class="panel">
+  <div class="panel-head"><h2>Import {{ selected.import.createdAt }} ({{ selected.import.source }})</h2></div>
+  <div class="panel-body">
+    <p>State: <span class="badge{% if selected.import.state == 'applied' %} badge-success{% elif selected.import.state == 'failed' or selected.import.state == 'needs_review' %} badge-warn{% endif %}">{{ selected.import.state }}</span>
+      · Rows: {{ selected.import.counts.rows }} · Matched: {{ selected.import.counts.matched }} · Unmatched: {{ selected.import.counts.unmatched }} · Ambiguous: {{ selected.import.counts.ambiguous }} · Ignored: {{ selected.import.counts.ignored }} · Applied: {{ selected.import.counts.applied }}</p>
+    {% if selected.import.lastError %}<p class="help">{{ selected.import.lastError }}</p>{% endif %}
+
+    <h3>Apply</h3>
+    {% if selected.apply.problems %}
+      <ul class="help">{% for p in selected.apply.problems %}<li>{{ p }}</li>{% endfor %}</ul>
+    {% else %}
+      <p class="help">Marks {{ selected.apply.toApply }} registration(s) attended; {{ selected.apply.alreadyAttended }} already attended are skipped. Unmatched and ambiguous rows stay below for review.</p>
+      <form method="post" action="{% url 'studio:session-attendance' pk=occ.pk %}" data-confirm="Record attendance for {{ selected.apply.toApply }} registration(s) now?">
+        {% csrf_token %}<input type="hidden" name="op" value="apply"><input type="hidden" name="import" value="{{ selected.import.id }}"><input type="hidden" name="state_token" value="{{ selected.apply_token }}">
+        <button class="btn btn-primary btn-sm" type="submit"{% if selected.apply.toApply == 0 %} disabled{% endif %}>Apply attendance</button>
+      </form>
+    {% endif %}
+
+    <h3 style="margin-top:var(--s-4)">No-shows</h3>
+    {% if selected.import.noShows.markedAt %}
+      <p class="help">Marked {{ selected.import.noShows.marked }} no-show(s) on {{ selected.import.noShows.markedAt }}; {{ selected.import.noShows.refused }} refused because they checked in through the waiting room.</p>
+    {% elif selected.no_shows.problems %}
+      <ul class="help">{% for p in selected.no_shows.problems %}<li>{{ p }}</li>{% endfor %}</ul>
+    {% else %}
+      <p class="help">{{ selected.no_shows.remaining }} active registration(s) still have no attendance; {{ selected.no_shows.checkedIn }} of them checked in through the waiting room and will not be marked no-show.</p>
+      <form method="post" action="{% url 'studio:session-attendance' pk=occ.pk %}" data-confirm="Mark every remaining registration without attendance as a no-show?">
+        {% csrf_token %}<input type="hidden" name="op" value="no_shows"><input type="hidden" name="import" value="{{ selected.import.id }}"><input type="hidden" name="state_token" value="{{ selected.no_shows_token }}">
+        <button class="btn btn-sm" type="submit">Mark no-shows</button>
+      </form>
+    {% endif %}
+
+    <h3 style="margin-top:var(--s-4)">Rows</h3>
+    {% if selected.rows %}
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th scope="col">Participant</th><th scope="col">Joined</th><th scope="col">Duration</th><th scope="col">Match</th><th scope="col">Registration</th><th scope="col">Review</th></tr></thead>
+      <tbody>{% for r in selected.rows %}<tr>
+        <td><span class="small">{{ r.row.emailMasked|default:"—" }}</span>{% if r.row.name %}<br><span class="small">{{ r.row.name }}</span>{% endif %}{% if r.row.externalId %}<br><code class="small">{{ r.row.externalId }}</code>{% endif %}</td>
+        <td class="small">{{ r.row.joinedAt|default:"—" }}</td>
+        <td class="small">{% if r.row.durationSeconds != None %}{{ r.row.durationSeconds }} s{% else %}—{% endif %}</td>
+        <td><span class="badge{% if r.row.match == 'matched' or r.row.match == 'resolved' %} badge-success{% elif r.row.match == 'ignored' %}{% else %} badge-warn{% endif %}">{{ r.row.match }}</span>{% if r.row.appliedAt %}<br><span class="small">applied</span>{% endif %}</td>
+        <td><code class="small">{{ r.row.registrationId|default:"—" }}</code></td>
+        <td>
+          {% if r.reviewable %}
+          <form method="post" action="{% url 'studio:session-attendance' pk=occ.pk %}" data-confirm="Mark this registration attended?">
+            {% csrf_token %}<input type="hidden" name="op" value="resolve"><input type="hidden" name="import" value="{{ selected.import.id }}"><input type="hidden" name="row" value="{{ r.row.id }}"><input type="hidden" name="state_token" value="{{ r.token }}">
+            <div class="field"><label class="label" for="reg-{{ forloop.counter }}">Registration</label>
+              <select class="select" id="reg-{{ forloop.counter }}" name="registration" required>
+                <option value="">Choose…</option>
+                {% for reg in selected.registrations %}<option value="{{ reg.id }}">{{ reg.label }}</option>{% endfor %}
+              </select></div>
+            <button class="btn btn-sm" type="submit">Attended</button>
+          </form>
+          <form method="post" action="{% url 'studio:session-attendance' pk=occ.pk %}" style="margin-top:var(--s-3)">
+            {% csrf_token %}<input type="hidden" name="op" value="ignore"><input type="hidden" name="import" value="{{ selected.import.id }}"><input type="hidden" name="row" value="{{ r.row.id }}"><input type="hidden" name="state_token" value="{{ r.token }}">
+            <button class="btn btn-ghost btn-sm" type="submit">Ignore</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+    {% else %}
+    <p class="help">This import has no rows.</p>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

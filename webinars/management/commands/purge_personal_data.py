@@ -17,6 +17,8 @@ Erasing a person (in one transaction, person row locked):
 * OutboxMessage for the person: undelivered -> ``cancelled``; every payload
   (delivered or not) replaced with ``{"purged": true}``.
 * IdempotencyRecord rows for the person's registrations deleted.
+* AttendanceImportRow: email key, masked email, display name and provider id blanked for
+  rows matched to the person's registrations or carrying their email key.
 * ``audit("person.purged")`` with the person id and counts only.
 
 Housekeeping (always runs): IdempotencyRecord older than ``IDEMPOTENCY_TTL_HOURS``
@@ -41,6 +43,7 @@ from django.utils import timezone
 from webinars.audit import audit
 from webinars.delivery import PERSON_LINKED_KEYS
 from webinars.models import (
+    AttendanceImportRow,
     AttributionTouch,
     BrowserCapability,
     ConsentRecord,
@@ -120,6 +123,14 @@ def erase_person(person_id, *, user=None):
         if original_email_key:
             orders |= Q(email_key=original_email_key)
         TicketOrder.objects.filter(orders).update(pending_payload={}, email_key="", updated_at=now)
+        # Attendance import rows (email key, masked email, display name) for this person:
+        # by matched registration and by the normalised email of unmatched rows.
+        from webinars.attendance_import import purge_rows
+
+        rows = Q(registration__person=person)
+        if original_email_key:
+            rows |= Q(email_key=original_email_key)
+        counts["attendance_rows"] = purge_rows(AttendanceImportRow.objects.filter(rows), now)
 
         audit("person.purged", user=user, obj=person, **counts)
     return counts
@@ -161,8 +172,13 @@ def housekeeping(dry_run=False):
     ticket_payloads = TicketOrder.objects.exclude(Q(pending_payload={}) & Q(email_key="")).filter(
         ~Q(status__in=TicketOrder.HOLDING) | Q(created_at__lt=old_cutoff)
     )
+    # Attendance import rows keep an email key / masked email / display name only for review;
+    # after retention they are blanked (the import's counts and match states stay).
+    attendance_rows = AttendanceImportRow.objects.filter(created_at__lt=old_cutoff).exclude(
+        email_key="", email_masked="", display_name="", external_id="")
     if dry_run:
         return {
+            "attendance_rows_purged": attendance_rows.count(),
             "ticket_payloads_purged": ticket_payloads.count(),
             "idempotency_deleted": idem.count(),
             "outbox_payloads_purged": outbox.count(),
@@ -187,7 +203,10 @@ def housekeeping(dry_run=False):
         purged = outbox.update(payload=PURGED)
         # Note: this bumps updated_at, which also restarts the sweep's recheck timer.
         tickets_purged = ticket_payloads.update(pending_payload={}, email_key="", updated_at=now)
+        attendance_purged = attendance_rows.update(email_key="", email_masked="", display_name="", external_id="",
+                                                   updated_at=now)
     return {
+        "attendance_rows_purged": attendance_purged,
         "ticket_payloads_purged": tickets_purged,
         "idempotency_deleted": deleted,
         "outbox_payloads_purged": purged,

@@ -255,6 +255,113 @@ def session_registrants(request, pk):
                   status=400 if errors else 200)
 
 
+_ATTENDANCE_SALT = "webinars.studio.attendance"
+
+
+def _attendance_material(request, occ, imp, op):
+    from webinars import attendance_import as pipeline
+
+    return {"u": request.user.pk, "o": str(occ.pk), "i": str(imp.pk), "s": pipeline.import_state(imp), "x": op}
+
+
+def _attendance_token(request, occ, imp, op):
+    """Signed proof that this user saw this import in exactly this state, for action ``op``."""
+    from django.core import signing
+
+    return signing.dumps(_attendance_material(request, occ, imp, op), salt=_ATTENDANCE_SALT)
+
+
+@studio_view(perm=("webinars.view_occurrence", "webinars.change_occurrence"))
+def session_attendance(request, pk):
+    """Attendance imports of one session (Administrators / superusers only).
+
+    GET lists imports and the selected import's rows with masked emails; it never calls a
+    provider. POST ops: ``pull`` (one read-only provider call), ``upload`` (CSV parsed here,
+    never stored), ``apply`` / ``no_shows`` / ``resolve`` / ``ignore`` (signed state token)."""
+    from django.core import signing
+
+    from webinars import attendance_import as pipeline
+    from webinars.api import attendance_imports as api
+    from webinars.api.management import _Invalid
+    from webinars.models import AttendanceImport, Registration
+
+    denied = _admin_only(request)
+    if denied:
+        return denied
+    occ = get_object_or_404(Occurrence.objects.select_related("event"), pk=pk)
+    pipeline.recover_stale_imports()
+    errors = {}
+    selected_id = request.GET.get("import", "")
+    if request.method == "POST":
+        op = request.POST.get("op", "")
+        selected_id = request.POST.get("import", "")
+        try:
+            if op == "pull":
+                imp = pipeline.pull_from_provider(occ, user=request.user)
+            elif op == "upload":
+                upload = request.FILES.get("file")
+                if upload is None:
+                    raise ValidationError({"file": ["Choose a CSV file."]})
+                if upload.size > pipeline.MAX_FILE_BYTES:
+                    raise ValidationError({"file": ["The file is larger than 1 MB."]})
+                rows = pipeline.parse_csv(upload.read(pipeline.MAX_FILE_BYTES + 1))
+                imp = pipeline.create_file_import(occ, rows, user=request.user)
+            elif op in ("apply", "no_shows", "resolve", "ignore"):
+                imp = api.import_target(occ, selected_id)
+                try:
+                    data = signing.loads(request.POST.get("state_token", ""), salt=_ATTENDANCE_SALT,
+                                         max_age=CONFIRM_MAX_AGE_SECONDS)
+                except signing.BadSignature:
+                    raise _Invalid(None, "This page is out of date; reload it and try again.")
+                token_op = op if op in ("apply", "no_shows") else f"resolve:{request.POST.get('row', '')}"
+                if data != _attendance_material(request, occ, imp, token_op):
+                    raise _Invalid(None, "The import changed since this page loaded; reload and check again.")
+                state = pipeline.import_state(imp)
+                if op == "apply":
+                    pipeline.apply_import(imp, user=request.user, expected_state=state)
+                elif op == "no_shows":
+                    pipeline.mark_no_shows(imp, user=request.user, expected_state=state)
+                else:
+                    row = api.row_target(imp, request.POST.get("row", ""))
+                    registration = None
+                    if op == "resolve":
+                        rid = request.POST.get("registration", "")
+                        registration = Registration.objects.filter(pk=rid, occurrence_id=occ.pk).first() if _is_uuid(rid) else None
+                        if registration is None:
+                            raise ValidationError({"registration": ["Choose a registration of this session."]})
+                    pipeline.resolve_row(imp, row, registration=registration, ignore=(op == "ignore"), user=request.user,
+                                         expected_state=state)
+            else:
+                raise ValidationError({"op": ["Unknown action."]})
+            return redirect(f"{request.path}?import={imp.pk}")
+        except ValidationError as exc:
+            errors = _errors(exc)
+        except _Invalid as exc:
+            errors = {"__all__": [exc.message, *((exc.fields or {}).values())]}
+    imports = list(AttendanceImport.objects.filter(occurrence_id=occ.pk).order_by("-created_at")[:50])
+    selected = next((i for i in imports if str(i.pk) == selected_id), imports[0] if imports else None)
+    pull = pipeline.pull_preview(occ)
+    ctx = {"occ": occ, "event": occ.event, "errors": errors, "pull": pull,
+           "imports": [pipeline.serialize_import(i) for i in imports], "selected": None}
+    if selected is not None:
+        registrations = [
+            {"id": str(reg.pk), "label": _mask_email(reg.person.email)}
+            for reg in Registration.objects.filter(occurrence_id=occ.pk, status=Registration.Status.REGISTERED)
+            .select_related("person").order_by("created_at")[:2000]
+        ]
+        rows = []
+        for row in selected.rows.all()[:pipeline.MAX_ROWS]:
+            rows.append({"row": pipeline.serialize_row(row), "reviewable": row.match in pipeline.REVIEWABLE,
+                         "token": _attendance_token(request, occ, selected, f"resolve:{row.pk}")})
+        ctx["selected"] = {
+            "import": pipeline.serialize_import(selected), "rows": rows, "registrations": registrations,
+            "apply": pipeline.apply_preview(selected), "no_shows": pipeline.no_show_preview(selected),
+            "apply_token": _attendance_token(request, occ, selected, "apply"),
+            "no_shows_token": _attendance_token(request, occ, selected, "no_shows"),
+        }
+    return render(request, T + "attendance.html", ctx, status=400 if errors else 200)
+
+
 def _is_uuid(value):
     import uuid
 

@@ -239,6 +239,15 @@ Stalled Riverside registrants:
 - **Refusals:** other-session IDs get 404; non-Riverside or non-stalled registrants get 409.
 - No provider call is made. See [hosting.md](hosting.md#reconciling-stalled-registrants).
 
+Attendance imports (`attendance_write`; reads also `config_read`), base
+`/api/v1/manage/occurrences/<id>/attendance/imports`:
+- **Create:** `POST …/imports` with `{source: "provider"}` (one read-only pull from the linked Zoom/Riverside session; refused for providers without `attendanceImport`) or `{source: "file", rows: [...]}` (max 5,000 rows). Rows are matched by provider id, then email; nothing is recorded yet.
+- **Read:** `GET …/imports` (counts) and `GET …/imports/<importId>` (rows with masked emails).
+- **Apply:** `POST …/imports/<importId>/apply` — 428 with a single-use `confirmToken`, then repeat with `Webinar-Confirm-Token`. Records `attended` once per registration; re-applying records nothing new.
+- **Review:** `POST …/imports/<importId>/rows/<rowId>/resolve` `{registrationId}` or `{ignore: true}`.
+- **No-shows:** `POST …/imports/<importId>/no-shows` (428 + confirm), only after apply and after the session ended; waiting-room check-ins are never marked no-show.
+- See [hosting.md](hosting.md#attendance-import) and [management-api.md](management-api.md).
+
 ## Proxy-target endpoints (`proxy` scope)
 
 The first-party proxy (`sdk/proxy/`) maps `/webinar-api/*` on the marketing site to

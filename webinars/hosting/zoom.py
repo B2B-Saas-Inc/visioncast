@@ -8,7 +8,13 @@ Contract (documented-unverified, needs sandbox verification):
   start_time (UTC ...Z), duration, timezone, settings}``; needs a Zoom Webinars licence on
   the host user. Response ``id``, ``join_url`` (attendee), ``start_url`` (PRIVATE host link);
 * update: ``PATCH https://api.zoom.us/v2/webinars/{id}`` (204);
-* attach/verify: ``GET https://api.zoom.us/v2/webinars/{id}``.
+* attach/verify: ``GET https://api.zoom.us/v2/webinars/{id}``;
+* attendance (read-only): ``GET https://api.zoom.us/v2/past_webinars/{webinarId}/participants
+  ?page_size=N[&next_page_token=...]`` (scope ``webinar:read:admin``; Pro-or-higher account
+  with the Webinar add-on). Response ``participants[]`` with ``id``, ``user_id``,
+  ``user_email``, ``name``, ``join_time``, ``leave_time``, ``duration`` (seconds) and
+  ``next_page_token`` (expires after 15 minutes). Pages are capped (``ATTENDANCE_MAX_PAGES``)
+  and sized to fit the 64 KB response bound of the transport (``ATTENDANCE_PAGE_SIZE``).
 
 Zoom create has no idempotency key: an unknown outcome stops for reconciliation.
 """
@@ -43,12 +49,17 @@ _HOST_USER = re.compile(r"^(?:[A-Za-z0-9_-]{6,64}|[A-Za-z0-9._%+-]{1,64}@[A-Za-z
 _ACCOUNT_ID = re.compile(r"^[A-Za-z0-9_-]{6,128}$")
 ZOOM_WEBINAR_ID = re.compile(r"^[0-9]{6,20}$")
 TOPIC_MAX = 200
+# Attendance pull: Zoom allows page_size up to 300, but 300 participant objects can exceed
+# the transport's 64 KB response cap, so pages are smaller and more of them are allowed.
+ATTENDANCE_PAGE_SIZE = 100
+ATTENDANCE_MAX_PAGES = 50
+_PAGE_TOKEN = re.compile(r"^[A-Za-z0-9_.:=+/-]{1,512}$")
 
 
 class ZoomAdapter(Adapter):
     provider = "zoom"
     label = "Zoom Webinars"
-    capabilities = Capabilities(create=True, update=True, attach=True)
+    capabilities = Capabilities(create=True, update=True, attach=True, attendance_import=True)
     contract = "documented-unverified"
     allowed_hosts = frozenset({OAUTH_HOST, API_HOST})
     link_hosts = ("zoom.us", "zoom.com")
@@ -69,6 +80,8 @@ class ZoomAdapter(Adapter):
         "Built from Zoom's public API documentation; needs sandbox verification before production use.",
         "Create has no idempotency key: if the outcome is unknown the session is marked for reconciliation and never re-sent automatically.",
         "The host start link is stored encrypted and never shown in public pages or APIs.",
+        "Attendance is pulled from past_webinars/{id}/participants (webinar:read:admin) only when a person asks; "
+        "it is never applied without a confirmed preview.",
     )
 
     # ---- plans (preview-safe)
@@ -99,7 +112,15 @@ class ZoomAdapter(Adapter):
             return [self._token_plan(), Plan("update", "PATCH", f"{API_BASE}/webinars/{quote(external_id, safe='')}", body=self._body(occ, full=False), headers=auth)]
         if action == "attach":
             return [self._token_plan(), Plan("attach", "GET", f"{API_BASE}/webinars/{quote(external_id, safe='')}", headers=auth)]
+        if action == "attendance":
+            return [self._token_plan(), Plan("attendance", "GET", self._participants_url(external_id or "{webinarId}"), headers=auth)]
         raise Unsupported(action)
+
+    def _participants_url(self, external_id, page_token=""):
+        url = f"{API_BASE}/past_webinars/{quote(external_id, safe='')}/participants?page_size={ATTENDANCE_PAGE_SIZE}"
+        if page_token:
+            url += f"&next_page_token={quote(page_token, safe='')}"
+        return url
 
     def valid_external_id(self, value):
         return bool(isinstance(value, str) and ZOOM_WEBINAR_ID.match(value) and EXTERNAL_ID.match(value))
@@ -163,3 +184,52 @@ class ZoomAdapter(Adapter):
         except _Stop as stop:
             return stop.outcome
         raise Unsupported(action)
+
+    def fetch_attendance(self, occ, config, secrets, external_id, *, transport):
+        """Read-only pull of the participants of a past webinar (paginated, capped)."""
+        if not self.valid_external_id(external_id):
+            return Outcome("failed", "attendance: invalid_external_id")
+        rows = []
+        try:
+            token = self._token(transport, secrets)
+            auth = {"Authorization": f"Bearer {token}"}
+            page_token = ""
+            complete = False
+            for _page in range(ATTENDANCE_MAX_PAGES):
+                data = self._send(transport, "attendance", "GET", self._participants_url(external_id, page_token),
+                                  headers=auth, side_effect=False)
+                items = data.get("participants")
+                if not isinstance(items, list):
+                    return Outcome("failed", "attendance: response_unexpected")
+                for item in items:
+                    row = _participant_row(item)
+                    if row is not None:
+                        rows.append(row)
+                nxt = data.get("next_page_token")
+                if not isinstance(nxt, str) or not nxt or not _PAGE_TOKEN.match(nxt):
+                    complete = True
+                    break
+                page_token = nxt
+        except _Stop as stop:
+            return stop.outcome
+        return Outcome("succeeded", external_id=external_id, data={"rows": rows, "complete": complete})
+
+
+def _participant_row(item):
+    """Normalise one Zoom participant object; None when it has nothing usable."""
+    if not isinstance(item, dict):
+        return None
+    email = item.get("user_email")
+    name = item.get("name")
+    duration = item.get("duration")
+    row = {
+        "external_id": scalar_id(item, "id", "user_id"),
+        "email": email.strip() if isinstance(email, str) else "",
+        "name": name.strip() if isinstance(name, str) else "",
+        "joined_at": item.get("join_time") if isinstance(item.get("join_time"), str) else "",
+        "left_at": item.get("leave_time") if isinstance(item.get("leave_time"), str) else "",
+        "duration_seconds": duration if isinstance(duration, int) and not isinstance(duration, bool) and duration >= 0 else None,
+    }
+    if not row["external_id"] and not row["email"]:
+        return None
+    return row

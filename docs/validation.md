@@ -2,6 +2,11 @@
 
 Implemented with parallel Claude CLI `claude-opus-5-5` orchestrators and bounded subagents, independent security review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Attendance import — 2026-10-27
+
+- Added one attendance ingestion pipeline (`webinars/attendance_import.py`, migration `0011_attendance_import`) fed by a read-only, durable provider pull (Zoom `past_webinars/{id}/participants`, documented but **not sandbox-verified**; Riverside registrant list, **UNVERIFIED**) or operator rows/CSV (Wistia, Sequel, StreamYard and any report). Matching by provider id then email, dedupe, ambiguity never guessed; apply, row review and no-shows are explicit confirmed steps over REST (428 + `Webinar-Confirm-Token`), MCP (gated dry run) and the studio (Administrators only, signed state tokens, masked emails). Applying goes through `scheduling.record_attendance`, once per registration; no-shows compose with `waiting_room.finalize_attendance` and never touch waiting-room check-ins. Failed or lost pulls become `failed` (retryable), never `unknown`. Rows hold minimum PII, purged by `purge_personal_data` and on erasure.
+- **1,420 tests pass locally on Python 3.12 / PostgreSQL 16** (25 new in `tests/test_attendance_import.py`: matching/dedupe/ambiguity, apply idempotency with outbox counts, no-show rules incl. checked-in refusal and room finalization, Zoom pagination/page cap/failure/lost-and-late outcomes, Riverside external-id matching, CSV header variants and limits, REST 428 flow and scopes, MCP dry run/confirm, studio role gating, upload, tokens and CSRF, purge coverage, OpenAPI completeness). `ruff check`, `manage.py check` and `makemigrations --check` clean. No provider was contacted; the Zoom reference site is browser-only, so the contract was cross-checked against OpenAPI-derived listings (see hosting.md). No deployment, image build or vendor sends.
+
 ## Actual built-image smoke — 2026-10-26T22:30:20Z
 
 - **Passed** managed runtime smoke of `artifacts/pi-build-fec1905b-e8cb-4147-b39d-7ed3f21564bd/image.tar` with disposable PostgreSQL16. Ran migrations, web, probe and worker once; no application-source mount.

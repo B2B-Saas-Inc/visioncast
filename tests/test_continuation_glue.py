@@ -178,7 +178,8 @@ def test_openapi_every_route_is_documented(spec):
         if route in skip:
             continue
         path = "/" + route
-        for conv, name in (("<uuid:pk>", "{id}"), ("<slug:slug>", "{slug}"), ("<str:version>", "{version}"),
+        for conv, name in (("<uuid:pk>", "{id}"), ("<uuid:import_id>", "{importId}"), ("<uuid:row_id>", "{rowId}"),
+                           ("<slug:slug>", "{slug}"), ("<str:version>", "{version}"),
                            ("<str:code>", "{code}"), ("<str:token>", "{token}")):
             path = path.replace(conv, name)
         assert path in documented, path
