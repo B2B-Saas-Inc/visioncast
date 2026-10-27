@@ -2,6 +2,13 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Six more integrations merged: beehiiv, Resend, Amazon SES, Zapier, Make, n8n — 2026-10-27T19:40Z
+
+- Three worktree branches merged into `main` on top of the published `v0.2.0-pre` tree; `VERSION` bumped to `0.3.0-pre` (not tagged, not published). Conflicts were only in the shared status line, hosts list, site catalogue and this file, resolved by keeping every branch's additions.
+- **Local verification on the merged tree** (Python 3.12.14 / PostgreSQL 16 `webinar-pg16`): **2,372 passed** (1,945 + 427 new: beehiiv 132, transactional email 87, Resend 73, SES 68, webhook presets 56, plus studio/enumeration tests), `ruff check .`, `manage.py check`, `makemigrations --check` ("No changes detected"; no new migration). Site **51/51** (`BACKEND_TESTS.passed` now 2,372); `node --test` kits + automation recipes **22/22**; SDK **63/63**. Studio and GTM Chromium journeys rerun on this tree against the local preview (results in `artifacts/browser-*-2026-10-27-integrations.log`).
+- The PostgreSQL 16 harness (`tests/run-pg16.sh`), the typecheck/production build of `site/`, the image build and the Compose first run were **not** repeated on this tree; the published image remains `0.2.0-pre`. The demo backend and frontend still run the `v0.2.0-pre` code.
+- Per-integration evidence and the official pages each adapter was compared with are in the three entries below this one. No vendor account, Zapier/Make/n8n account or live send was used anywhere.
+
 ## beehiiv native adapter — 2026-10-27
 
 - One module-registered adapter (`webinars/native_providers/beehiiv.py`, listed in `PROVIDER_MODULES`): `POST /v2/publications/{pub}/subscriptions` (free subscription; never `tier`, premium tiers, Stripe, referrals, automations or newsletter lists) then `POST …/subscriptions/{id}/tags` when the lifecycle has a tag. Unlike every other adapter it **subscribes registrants** and says so: enabling needs a `subscribe_ack` and `email_merge_ack`, and overriding double opt-in to `off` needs a further `optin_ack`. No change to `webinars/native_integrations.py`, `ssrf`, the studio form or the models; no migration.

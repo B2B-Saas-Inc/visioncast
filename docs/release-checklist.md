@@ -1,6 +1,6 @@
 # Release checklist
 
-Status as of 2026-10-27 (release candidate `0.2.0-pre`, tag `v0.2.0-pre` at `1462cb7`, published to GHCR). **Nothing on
+Status as of 2026-10-27 (published release candidate `0.2.0-pre`, tag `v0.2.0-pre` at `1462cb7`; `main` has since gained beehiiv, Resend, Amazon SES and the Zapier/Make/n8n presets and reads `0.3.0-pre`, not yet tagged or published). **Nothing on
 this page is evidence.** Results are recorded only in [validation.md](validation.md); the
 gaps they close are in [remaining-gaps.md](remaining-gaps.md) (R1–R28). "Last recorded"
 quotes validation.md.
@@ -19,12 +19,12 @@ accepted, and every D item is in place. Any code change (including B) re-opens A
 
 | # | Check | How | Last recorded |
 |---|---|---|---|
-| A1 | Python suite, system check, migration drift, Ruff | `tests/run-pg.sh` (PG15) or `tests/run-pg16.sh` | **1,945 passed**, clean (2026-10-27, PG16 harness and local). Release tree |
-| A2 | Site tests, typecheck, production build | `site/`: `npm test`, `npm run typecheck`, `npm run build` | **50 passed**, typecheck/build passed (2026-10-27). Release tree |
-| A3 | SDK, proxy and kit tests | `npm test` in `sdk/`; `node --test sdk/kits/test/kits.test.js` | **63 + 9 passed** (2026-10-27). Release tree |
+| A1 | Python suite, system check, migration drift, Ruff | `tests/run-pg.sh` (PG15) or `tests/run-pg16.sh` | **2,372 passed** locally on the integrations tree (2026-10-27); the PG16 harness last ran at the tag (1,945). Rerun the harness before the next tag |
+| A2 | Site tests, typecheck, production build | `site/`: `npm test`, `npm run typecheck`, `npm run build` | **51 passed** (2026-10-27); typecheck/build last run at the tag. Rerun before deploying the catalogue |
+| A3 | SDK, proxy, kit and automation-recipe tests | `npm test` in `sdk/`; `node --test sdk/kits/test/kits.test.js sdk/kits/automation/test/automation.test.js` | **63 + 22 passed** (2026-10-27). Integrations tree |
 | A4 | Actual-app Chromium: studio journey, Riverside, GTM | `tests/browser-studio.cjs`, `browser-riverside.cjs` (+ `riverside_browser_seed.py`), `browser-gtm.cjs` against the preview settings | **13/13, 8/8, 10/10** (2026-10-27). Release tree |
 | A5 | Mocked-backend SDK Chromium incl. web calendar links, `payment_required`, `verification_required` | `tests/browser-sdk.cjs` | **11/11** (2026-10-27). Release tree |
-| A6 | Python suite on PostgreSQL 16 + logical and application restore probe | `tests/run-pg16.sh` (includes `tests/restore_probe.py`) | **1,945 passed**, restore/decrypt/wrong-key/admin probe passed (2026-10-27, Python 3.12.16 / PostgreSQL 16.15). Release tree |
+| A6 | Python suite on PostgreSQL 16 + logical and application restore probe | `tests/run-pg16.sh` (includes `tests/restore_probe.py`) | **1,945 passed**, restore/decrypt/wrong-key/admin probe passed at the `v0.2.0-pre` tag (Python 3.12.16 / PostgreSQL 16.15). Not yet rerun on the integrations tree |
 | A7 | Base-image digests | `PYTHON_IMAGE` (`Dockerfile`) and Postgres (`compose.yaml`) pinned by `@sha256` | **Pinned** (2026-10-27); refresh procedure in README |
 | A8 | Dependency audit | `pip-audit` on the hash lock; dev pins separately | **No known vulnerabilities** (2026-10-27); dev `pytest` 9.0.3 |
 | A9 | OCI image and digest | `deploy/build-image.sh --save`; `release.yml` | arm64 `0.2.0-pre` image ID `sha256:3ff6df0d…`, tar SHA-256 `11cd42aa…`; emulated amd64 image ID `sha256:c73a59ec…`; **published** `ghcr.io/b2b-saas-inc/visioncast:0.2.0-pre` digest `sha256:c81ad8b1…` (amd64 + arm64, 2026-10-27) |
@@ -55,19 +55,19 @@ None is approved by this document. External calls need explicit approval and own
 
 | # | Item | Gap | Needs owner account |
 |---|---|---|---|
-| C1 | Native adapter sandboxes, one per adapter to be enabled (HubSpot, Attio, PostHog, Customer.io, Segment, GA4, Amplitude, Mixpanel, RudderStack, Brevo, Salesforce, Pipedrive, ActiveCampaign, Mailchimp); otherwise keep disabled | R11 | Yes |
+| C1 | Native adapter sandboxes, one per adapter to be enabled (HubSpot, Attio, PostHog, Customer.io, Segment, GA4, Amplitude, Mixpanel, RudderStack, Brevo, Salesforce, Pipedrive, ActiveCampaign, Mailchimp, beehiiv, Resend, Amazon SES); otherwise keep disabled | R11 | Yes |
 | C2 | Stripe test-mode run of the full paid flow, webhooks, refunds, disputes | R12 | Yes (Stripe) |
 | C3 | Hosting sandboxes: Zoom Webinars licence (provisioning and participant report), Wistia, Sequel, Riverside (attach, registrants, attendance) | R13 | Yes |
 | C4 | Real SMTP relay test to owner mailboxes (mandatory for paid tickets and invitations) | R14 | Yes |
-| C5 | Real webhook receiver test over the internet | R15 | Yes |
+| C5 | Real webhook receiver test over the internet; import the Zapier, Make and n8n recipes on real accounts | R15 | Yes |
 | C6 | Kit compatibility on the owner's real sites and hosts (https hosts, CDN, Vercel, Webflow/Framer plans, paid sessions through a kit) | R16 | Yes (hosting / CMS / plan accounts) |
 | C7 | Web calendar deep links against live Google/Outlook/Microsoft 365, or accept unverified | R17 | Yes (test calendars) |
-| C8 | Accept publication authority, confirmation-token, `config_read` draft-read, paid-flow, attendance-import and marketing-status policies | R18–R22, R27, R28 | No |
+| C8 | Accept publication authority, confirmation-token, `config_read` draft-read, paid-flow, attendance-import, marketing-status (incl. the beehiiv subscription exception) and transactional-email policies | R18–R22, R27–R29 | No |
 | C9 | Accept residual behaviour (remaining-gaps §5) and the A7 digests | R23 | No |
-| C10 | Scope decision recorded: no further marketing destinations are committed; transactional email adapters stay unbuilt by design (remaining-gaps §4, §7). Confirm or amend | §4 | No |
+| C10 | Scope decisions recorded 2026-10-27: beehiiv, Resend, Amazon SES, Zapier, Make and n8n built; Intercom, Loops and Marketo skipped; Postmark and HubSpot Marketing not committed (remaining-gaps §4) | §4 | No |
 | C11 | Approve a staging host and run launch acceptance ([implementation-guide.md §11.1](implementation-guide.md#111-launch-acceptance-run-on-staging-record-results-in-validationmd)) | §3 | Yes (host) |
 | C12 | Approve live demo backend upgrade and frontend catalogue redeploy, production deployment, any preview renewal | — | Yes |
-| C13 | **Approved and done 2026-10-27:** tag `v0.2.0-pre` pushed; `release.yml` published `ghcr.io/b2b-saas-inc/visioncast:0.2.0-pre` (private). Remaining: decide package visibility or grant deploy hosts a `read:packages` token; run the published manifest on a real amd64 host (C11) | R24 | Yes (GitHub) |
+| C13 | **Done for 0.2.0-pre** (tag pushed, `ghcr.io/b2b-saas-inc/visioncast:0.2.0-pre` published, private). **Next:** approve tagging `v0.3.0-pre` once A1/A6 are rerun on the integrations tree; decide package visibility or grant deploy hosts a `read:packages` token; run the published manifest on a real amd64 host (C11) | R24 | Yes (GitHub) |
 
 ## D. Operator tasks (target environment)
 
