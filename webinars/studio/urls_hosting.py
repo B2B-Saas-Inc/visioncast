@@ -9,4 +9,5 @@ urlpatterns = [
     path("hosting/<uuid:pk>/", v.hosting_account_edit, name="hosting-account-edit"),
     path("sessions/<uuid:pk>/hosting", v.session_hosting, name="session-hosting"),
     path("sessions/<uuid:pk>/hosting/registrants", v.session_registrants, name="session-registrants"),
+    path("sessions/<uuid:pk>/attendance", v.session_attendance, name="session-attendance"),
 ]

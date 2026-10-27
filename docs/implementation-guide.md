@@ -578,6 +578,17 @@ this table. Example destination mapping:
   check-ins become `attended` and the rest `no_show`, and `attendance.recorded` is
   emitted. Explicit attendance from your provider's reports goes through the
   management API (`attendance_write`). Attendance is **never inferred** otherwise.
+- **Attendance import** ([hosting.md](hosting.md#attendance-import)): Session → Hosting →
+  Attendance in the studio, `POST …/occurrences/<id>/attendance/imports` over REST or the
+  `import_session_attendance` MCP tool. Pull the attendee list from Zoom (documented, not
+  sandbox-verified) or Riverside (UNVERIFIED), or upload a Zoom/Wistia/StreamYard report
+  (CSV, or JSON rows). Rows are matched to registrations (provider id, then email), reviewed,
+  then **applied** after a confirmed preview: `attended` is recorded through the same path
+  as above, once per registration, so `attendance.recorded` (`source` on the attendance
+  event is `import:<zoom|riverside|file>`) fires once however often you import. No-shows are
+  a separate confirmed step after the session ended; waiting-room check-ins are never
+  marked no-show. Nothing is pulled on a schedule, and providers without
+  `attendanceImport` (Wistia, Sequel, StreamYard) always go through the file import.
 - **Recordings:** publish an https URL with `…/occurrences/<id>/recording` (needs the
   `publication` scope and a repeat with `Webinar-Confirm-Token` after the 428). It then
   appears in public `recordingUrl` and `when=recorded`, and `recording.published` is

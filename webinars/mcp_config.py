@@ -852,6 +852,136 @@ def set_session_manual_link(args, key):
     return _mgmt(_hosting_api().occurrence_hosting_manual_link, "POST", key, body, pk=args["occurrenceId"])
 
 
+# ---------------------------------------------------------------------------
+# Attendance import (thin wrappers over webinars.api.attendance_imports; docs/hosting.md)
+# ---------------------------------------------------------------------------
+
+
+def _attendance_api():
+    from webinars.api import attendance_imports
+
+    return attendance_imports
+
+
+def _invalid(exc):
+    return ToolError(exc.status, exc.code, exc.message, exc.fields)
+
+
+def list_attendance_imports(args, key):
+    api = _attendance_api()
+    if args.get("importId"):
+        return _mgmt(api.attendance_import_detail, "GET", key, pk=args["occurrenceId"], import_id=args["importId"])
+    return _mgmt(api.occurrence_attendance_imports, "GET", key, pk=args["occurrenceId"])
+
+
+def import_session_attendance(args, key):
+    """Dry run previews the provider request (credentials redacted) or the matching counts of
+    the given rows without writing; the confirmed call creates the import (a provider pull is
+    one read-only call). Nothing is recorded until apply_attendance_import."""
+    api = _attendance_api()
+    occ = _get(Occurrence, pk=args["occurrenceId"])
+    body = {k: args[k] for k in ("source", "rows") if k in args}
+    try:
+        preview = api.create_preview(occ, dict(body))
+    except management._Invalid as exc:
+        raise _invalid(exc)
+    if preview.get("problems"):
+        raise ToolError(409, "conflict", "This import cannot run yet: " + "; ".join(preview["problems"]))
+    gated = _gate("import_session_attendance", key, args, preview, state=_session_state(occ))
+    if gated:
+        return gated
+    return _mgmt(api.occurrence_attendance_imports, "POST", key, body, pk=args["occurrenceId"])
+
+
+def _import_for(args):
+    api = _attendance_api()
+    occ = _get(Occurrence, pk=args["occurrenceId"])
+    try:
+        return api, occ, api.import_target(occ, args["importId"])
+    except management._Invalid as exc:
+        raise _invalid(exc)
+
+
+def _confirmed_import_call(tool, view, preview_fn, args, key):
+    from webinars import attendance_import as pipeline
+
+    api, occ, imp = _import_for(args)
+    preview = preview_fn(imp)
+    if preview["problems"]:
+        raise ToolError(409, "conflict", "; ".join(preview["problems"]))
+    state = pipeline.import_state(imp)
+    gated = _gate(tool, key, args, preview, state=state)
+    if gated:
+        return gated
+    request = SimpleNamespace(method="POST", headers={}, attendance_confirmed=True, attendance_expected_state=state)
+    return management._run(view.logic, request, key, {}, (), {"pk": args["occurrenceId"], "import_id": args["importId"]})
+
+
+def apply_attendance_import(args, key):
+    from webinars import attendance_import as pipeline
+
+    return _confirmed_import_call("apply_attendance_import", _attendance_api().attendance_import_apply,
+                                  pipeline.apply_preview, args, key)
+
+
+def mark_session_no_shows(args, key):
+    from webinars import attendance_import as pipeline
+
+    return _confirmed_import_call("mark_session_no_shows", _attendance_api().attendance_import_no_shows,
+                                  pipeline.no_show_preview, args, key)
+
+
+def resolve_attendance_row(args, key):
+    api, occ, imp = _import_for(args)
+    try:
+        row = api.row_target(imp, args["rowId"])
+    except management._Invalid as exc:
+        raise _invalid(exc)
+    body = {k: args[k] for k in ("registrationId", "ignore") if k in args}
+    preview = {"importId": str(imp.pk), "rowId": str(row.pk), "currentMatch": row.match, "emailMasked": row.email_masked or None,
+               **body, "effect": ("Leaves the row out; nothing is recorded." if body.get("ignore") else
+                                  "Marks that registration attended at once via record_attendance (attendance.recorded "
+                                  "is delivered once; already-attended registrations record nothing new).")}
+    gated = _gate("resolve_attendance_row", key, args, preview, state=f"{row.match}:{row.updated_at.isoformat()}")
+    if gated:
+        return gated
+    return _mgmt(api.attendance_import_row_resolve, "POST", key, body, pk=args["occurrenceId"], import_id=args["importId"],
+                 row_id=args["rowId"])
+
+
+def _attendance_tools():
+    api = _attendance_api()
+    ids = {"occurrenceId": _UUID, "importId": _UUID}
+    return [
+        {"name": "list_attendance_imports", "scopes": ATTEND + (S.CONFIG_READ,), "readOnly": True,
+         "handler": list_attendance_imports,
+         "description": "Attendance imports of a session (counts, state), or one import with its rows when importId is "
+                        "given (masked emails, display names, match state; never full emails or links).",
+         "inputSchema": _schema({"occurrenceId": _UUID, "importId": _UUID}, ["occurrenceId"])},
+        {"name": "import_session_attendance", "scopes": ATTEND, "handler": import_session_attendance, "gated": True,
+         "description": "Create an attendance import: source=provider makes one read-only pull from the linked hosting "
+                        "provider (Zoom, Riverside; refused for providers without attendanceImport), source=file stores "
+                        "the given rows (max 5000). Rows are matched by provider id, then email, and deduplicated; "
+                        "nothing is recorded until apply_attendance_import. Gated.",
+         "inputSchema": _schema({"occurrenceId": _UUID, **api.CREATE_INPUT_SCHEMA["properties"]},
+                                ["occurrenceId", "source"], gated=True)},
+        {"name": "apply_attendance_import", "scopes": ATTEND, "handler": apply_attendance_import, "gated": True,
+         "description": "Record attended for every matched row whose registration is not already attended "
+                        "(attendance.recorded once per registration); re-applying records nothing new. Gated.",
+         "inputSchema": _schema(dict(ids), ["occurrenceId", "importId"], gated=True)},
+        {"name": "resolve_attendance_row", "scopes": ATTEND, "handler": resolve_attendance_row, "gated": True,
+         "description": "Map an unmatched or ambiguous row to a registration of this session (attendance recorded at "
+                        "once) or ignore it. Gated.",
+         "inputSchema": _schema({**ids, "rowId": _UUID, **api.RESOLVE_INPUT_SCHEMA["properties"]},
+                                ["occurrenceId", "importId", "rowId"], gated=True)},
+        {"name": "mark_session_no_shows", "scopes": ATTEND, "handler": mark_session_no_shows, "gated": True,
+         "description": "After an import is applied and the session ended: mark every remaining active registration "
+                        "without attendance no_show. Registrants who checked in through the waiting room are never "
+                        "marked no_show (reported as refused). Gated.",
+         "inputSchema": _schema(dict(ids), ["occurrenceId", "importId"], gated=True)},
+    ]
+
+
 def _order_tool(name, view, effect):
     def handler(args, key):
         from webinars import payments
@@ -1092,7 +1222,7 @@ TOOLS = [
     {"name": "revoke_api_key", "scopes": KEYS, "handler": revoke_api_key, "gated": True,
      "description": "Revoke a key whose scopes you hold (not keys_admin keys). Gated.",
      "inputSchema": _schema({"keyId": _UUID}, ["keyId"], gated=True)},
-] + _ticket_tools()
+] + _ticket_tools() + _attendance_tools()
 
 
 def call(tool, args, key):

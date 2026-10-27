@@ -46,7 +46,7 @@ class Capabilities:
     update: bool = False
     attach: bool = False
     register_attendees: bool = False
-    attendance_import: bool = False  # not implemented for any provider
+    attendance_import: bool = False  # Adapter.fetch_attendance (read-only pull)
     manual_link: bool = False
 
     def as_dict(self):
@@ -357,6 +357,17 @@ class Adapter:
 
     def run(self, action, occ, config, secrets, *, transport, external_id="", registration=None, account_key=""):
         raise Unsupported(action)
+
+    def fetch_attendance(self, occ, config, secrets, external_id, *, transport):
+        """Read-only: who attended the provider session ``external_id``.
+
+        Returns an ``Outcome`` whose ``data`` is ``{"rows": [...], "complete": bool}``.
+        Every row is ``{external_id, email, name, joined_at, left_at, duration_seconds}``
+        with string / ISO-8601 string / int values only (``webinars.attendance_import``
+        validates them again). ``complete`` is False when a page cap cut the list short.
+        Nothing is ever simulated: adapters without ``capabilities.attendance_import``
+        raise ``Unsupported``."""
+        raise Unsupported("attendance")
 
     def _send(self, transport, step, method, url, **kw):
         return send(transport, self.allowed_hosts, step, method, url, **kw)

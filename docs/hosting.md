@@ -10,16 +10,17 @@ Code: `webinars/hosting/` (adapters + `service.py`), REST `webinars/api/hosting.
 
 ## Capability matrix
 
-| Provider | Create | Update | Attach existing | Per-attendee links | Manual link | Contract |
-|---|---|---|---|---|---|---|
-| Zoom Webinars | yes | yes (PATCH) | yes (GET) | no | no | documented, **not sandbox-verified** |
-| Wistia Webinars | yes | no | no | no | no | documented, **not sandbox-verified** |
-| Sequel (Introvoke) | yes | no | no | no | no | documented, **not sandbox-verified** |
-| Riverside | no (not documented) | no | yes | yes (registrant join links) | no | **unverified** paths/fields |
-| StreamYard | no | no | no | no | yes | no public API; zero outbound calls |
+| Provider | Create | Update | Attach existing | Per-attendee links | Manual link | `attendanceImport` | Contract |
+|---|---|---|---|---|---|---|---|
+| Zoom Webinars | yes | yes (PATCH) | yes (GET) | no | no | yes (`past_webinars/{id}/participants`) | documented, **not sandbox-verified** |
+| Wistia Webinars | yes | no | no | no | no | no (file import) | documented, **not sandbox-verified** |
+| Sequel (Introvoke) | yes | no | no | no | no | no (file import) | documented, **not sandbox-verified** |
+| Riverside | no (not documented) | no | yes | yes (registrant join links) | no | yes (**UNVERIFIED** registrant list) | **unverified** paths/fields |
+| StreamYard | no | no | no | no | yes | no (file import) | no public API; zero outbound calls |
 
-Attendance import is not implemented for any provider. Teams and Google Meet are not
-supported. "No" means the action is refused with a clear message, never simulated.
+Attendance for providers without `attendanceImport` arrives through the file import
+(see [Attendance import](#attendance-import)); it is never simulated. Teams and Google Meet
+are not supported. "No" means the action is refused with a clear message, never simulated.
 
 Every vendor contract here needs verification against a real sandbox account before
 production use. Riverside endpoint paths (`platform.riverside.fm/api/v1/events/{id}` and
@@ -143,3 +144,81 @@ Guarantees:
   - A registrant that is not Riverside, or not in `needs_reconciliation`, gets 409.
   - An invalid link or ID gets 400, and the token is not consumed.
 - **Nothing is sent to Riverside.** These routes only record your finding. They do not check the link against Riverside or import attendance. The Riverside contract itself is still unverified against a sandbox (see the provider table).
+
+## Attendance import
+
+Who attended is never inferred and never pulled automatically. A person (or an
+`attendance_write` key) asks for an import, reviews the matches, and applies it; only then
+is attendance recorded, through the same `scheduling.record_attendance` path as the
+management API and the waiting room, so `attendance.recorded` is delivered once per
+registration. Code: `webinars/attendance_import.py` (pipeline), `webinars/api/attendance_imports.py`
+(REST, shared by MCP), studio `session_attendance` in `webinars/studio/views_hosting.py`.
+
+### Sources
+
+| Source | How | Contract |
+|---|---|---|
+| Zoom (`provider`) | `GET https://api.zoom.us/v2/past_webinars/{webinarId}/participants?page_size=100[&next_page_token=…]`, Bearer token from the Server-to-Server app; scope `webinar:read:admin` (`webinar:read` for user-level apps); needs a Pro-or-higher account with the Webinar add-on. Fields read: `id`, `user_id`, `user_email`, `name`, `join_time`, `leave_time`, `duration` (seconds); pagination `next_page_token` (expires after 15 minutes). Pages are capped at 50 (`ATTENDANCE_MAX_PAGES`); the page size is 100 instead of Zoom's maximum 300 so one page fits the transport's 64 KB response cap. A capped list is stored with `complete: false`. | Zoom API reference, Webinars → "List webinar participants": https://developers.zoom.us/docs/api/webinars/#tag/webinars/GET/past_webinars/{webinarId}/participants. The reference site renders in the browser only (the page returns 404 to non-browser fetches), so path, scopes, `page_size` / `next_page_token` and the participant fields were cross-checked against the OpenAPI-derived listing at https://docs.rs/zoom-api/latest/zoom_api/webinars/struct.Webinars.html and Zoom's own (legacy) published reference https://zoom.github.io/api/ (participant report fields). **Not sandbox-verified.** |
+| Riverside (`provider`) | `GET https://platform.riverside.fm/api/v1/events/{eventId}/registrants` (Bearer API key), reading an attended/joined marker (`attended`, `joined`, `has_joined`, `has_attended`, or a `joined_at` / `join_time` value) per registrant, with `id`, `email`, `name` / `first_name` + `last_name`, optional `left_at` / `duration`; pagination `next_page_token` → `?page_token=` (cap 20 pages). Constants in `webinars/hosting/riverside.py` (`ATTENDANCE_*`). | **UNVERIFIED** path, field and marker names (same status as the other Riverside paths). |
+| Wistia, Sequel, StreamYard | `attendanceImport: false`: a provider pull is refused with "does not support attendance import here: import a file instead". | n/a |
+| File (`file`) | JSON rows over REST/MCP (`email`, `name`, `externalId`, `joinedAt`, `leftAt`, `durationSeconds`) or a CSV upload in the studio. CSV headers are tolerated for Zoom participant/attendee reports (`Attended`, `User Name (Original Name)`, `First Name`/`Last Name`, `Email`, `Join Time`, `Leave Time`, `Time in Session (minutes)`, `Duration (Minutes)`), Wistia and StreamYard exports (`Name`, `Email Address`, `Duration`, `Join time`/`Leave time`); a report preamble before the header line is skipped; rows with `Attended = No` are dropped; `H:MM:SS` durations and minute columns are converted to seconds (a bare `duration` column is read as minutes unless the header says seconds). Limits: 1 MB, 5,000 rows, parsed server-side; the raw file is never stored. | n/a |
+
+### Pipeline
+
+- **One run = one `AttendanceImport`** (occurrence, source `zoom` / `riverside` / `file`, state
+  `pending` → `in_flight` → `needs_review` → `applied`, or `failed`; counts; who asked; for a
+  pull, the `ProvisioningOperation` with action `attendance`) and its deduplicated
+  `AttendanceImportRow`s (provider id, normalised email key, masked email `j***@example.com`,
+  display name, joined/left/duration, match state, matched registration). Raw provider
+  payloads and join links are never stored. Migration `0011_attendance_import`.
+- **Matching.** Provider id ↔ `ProviderRegistrant.external_id` of the same session first,
+  else email key ↔ `Person.email_key` of *active* registrations of that occurrence. Several
+  candidates (or an id and an email that point at different registrations) → `ambiguous`;
+  none → `unmatched`. Never a guess. Rows for the same person in one run are merged:
+  durations summed, earliest join, latest leave.
+- **Pulls are durable and read-only.** Step A commits the in-flight operation and import,
+  step B calls the provider outside any lock (same bounded transport as provisioning), step C
+  records the outcome. A failed, timed-out or unparsable pull leaves the import `failed` and
+  the operation `failed` (never `unknown`: nothing was changed at the provider, so a retry is
+  always safe and there is nothing to reconcile). An in-flight pull older than 5 minutes is
+  recovered as `failed` by the same recovery pass as other operations; a response that
+  arrives after that is fenced (noted on the operation, rows never stored, audit
+  `attendance_import.late_outcome`). The session's link state is untouched by pulls.
+- **Apply** (preview → confirm). The preview counts matched / unmatched / ambiguous rows,
+  what will be recorded and what is already attended. Confirming records `attended` for every
+  matched or resolved row whose registration is active and not already `attended`
+  (`record_attendance(..., source="import:<source>")`); already-attended registrations and
+  already-applied rows are skipped, so applying twice or importing the same list again never
+  re-emits `attendance.recorded`. Unmatched and ambiguous rows stay for review.
+- **Review.** Resolve an unmatched/ambiguous row to an active registration of the same
+  occurrence (attendance is recorded at once, same path) or ignore it. Rows already matched,
+  resolved or ignored cannot be changed.
+- **No-shows** (preview → confirm; separate from apply). Only after the import is applied,
+  the session has ended (`waiting_room.room_state` says `ended`) and once per import. If the
+  session has a waiting room that is not finalized yet, `waiting_room.finalize_attendance`
+  runs first (current check-ins become `attended`, the rest `no_show`, its own audit). Then
+  every remaining active registration without attendance becomes `no_show` via
+  `record_attendance`; registrants it refuses because they checked in through the waiting
+  room are counted as `refused` and left alone.
+- **Audit** (ids and counts only): `attendance_import.created`, `.pull_started`,
+  `.pull_finished`, `.lost`, `.late_outcome`, `.applied`, `.row_resolved`, `.no_shows`; plus
+  the usual `attendance.recorded` per registration.
+- **Retention.** `purge_personal_data` blanks the email key, masked email, display name and
+  provider id of rows older than `OUTBOX_PAYLOAD_RETENTION_DAYS` (30) and, on person erasure,
+  of rows matched to that person's registrations or carrying their email key. Import counts
+  and match states stay.
+
+### Interfaces
+
+| Interface | Create | Read | Apply | Resolve | No-shows | Who |
+|---|---|---|---|---|---|---|
+| Studio | Session → Hosting → "Attendance" (`/studio/sessions/<id>/attendance`): "Pull from provider" (only when the linked provider is capable; the request is shown with credentials redacted) and CSV upload | imports list, selected import's rows with masked emails | button with a signed state token (10 minutes, bound to user, session, import and its state) | per-row form: registration (masked emails) or Ignore | button with a signed state token | Administrators / superusers only; Editors and Analysts get 403 |
+| REST | `POST /api/v1/manage/occurrences/{id}/attendance/imports` `{source: "provider"}` or `{source: "file", rows: [...]}` → 201 (a failed pull is still 201 with `state: failed`) | `GET …/attendance/imports` (counts), `GET …/attendance/imports/{importId}` (rows) | `POST …/{importId}/apply` (428 + `confirmToken`, then `Webinar-Confirm-Token`) | `POST …/{importId}/rows/{rowId}/resolve` `{registrationId}` or `{ignore: true}` | `POST …/{importId}/no-shows` (428 + confirm) | writes: `attendance_write`; reads: `attendance_write` or `config_read` |
+| MCP | `import_session_attendance` (gated; dry run shows the provider request or the matching counts, writes nothing) | `list_attendance_imports` | `apply_attendance_import` (gated) | `resolve_attendance_row` (gated) | `mark_session_no_shows` (gated) | same scopes |
+
+Confirmation tokens (REST and MCP) are bound to the key, the exact arguments and the
+import's state (state, update time, applied/ignored counts, no-show pass), so any resolve,
+apply or outcome in between invalidates them. A provider pull additionally requires an
+enabled hosting account linked to the session; credentials are never returned or rendered.
+Other-occurrence import or row ids get 404; state conflicts get 409 and consume no token.
+Responses and pages never contain full email addresses, join links or provider payloads.

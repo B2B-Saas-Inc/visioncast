@@ -67,7 +67,7 @@ def test_management_operations_are_typed_and_secured(spec):
         if method in ("post", "patch"):
             body = _body(spec, path, method)
             assert body["type"] == "object", (path, method)
-            if path.endswith("/cancel"):
+            if path.endswith(("/cancel", "/apply", "/no-shows")):  # empty-body actions ({} only)
                 assert body["additionalProperties"] is False
             else:
                 assert body.get("properties"), (path, method)

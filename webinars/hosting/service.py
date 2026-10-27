@@ -399,11 +399,16 @@ def recover_stale_operations(now=None):
     ``needs_reconciliation`` too. Returns the number of records changed."""
     from datetime import timedelta
 
+    from webinars import attendance_import
+
     now = now or timezone.now()
     cutoff = now - timedelta(seconds=STALE_IN_FLIGHT_SECONDS)
-    changed = 0
+    # Read-only attendance pulls are recovered by their own module (they become ``failed``,
+    # never ``unknown``: there is nothing to reconcile) and are excluded below.
+    changed = attendance_import.recover_stale_imports(now)
     for op_id in list(ProvisioningOperation.objects.filter(status=ProvisioningOperation.Status.IN_FLIGHT,
-                                                           created_at__lt=cutoff).values_list("pk", flat=True)[:50]):
+                                                           created_at__lt=cutoff)
+                      .exclude(action=ProvisioningOperation.Action.ATTENDANCE).values_list("pk", flat=True)[:50]):
         with transaction.atomic():
             op = ProvisioningOperation.objects.select_for_update().filter(
                 pk=op_id, status=ProvisioningOperation.Status.IN_FLIGHT).first()

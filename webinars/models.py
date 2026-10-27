@@ -1,8 +1,9 @@
 """Data model for the webinar platform.
 
 All PII lives on Person, Registration.submitted_profile, ConsentRecord evidence,
-AttributionTouch, OrganizationExternalId and OutboxMessage.payload. The retention
-command (``manage.py purge_personal_data``) must clear every one of them.
+AttributionTouch, OrganizationExternalId, OutboxMessage.payload and
+AttendanceImportRow (email key, masked email, display name). The retention command
+(``manage.py purge_personal_data``) must clear every one of them.
 """
 import uuid
 
@@ -886,6 +887,7 @@ class ProvisioningOperation(models.Model):
         UPDATE = "update", "Update"
         ATTACH = "attach", "Attach existing"
         REGISTER = "register", "Register attendee"
+        ATTENDANCE = "attendance", "Fetch attendance (read-only)"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
@@ -936,6 +938,90 @@ class ProviderRegistrant(models.Model):
     last_error = models.CharField(max_length=300, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+# --------------------------------------------------------------------------
+# Attendance import (webinars/attendance_import.py, docs/hosting.md)
+# --------------------------------------------------------------------------
+
+
+class AttendanceImport(models.Model):
+    """One attendance ingestion run for an occurrence (provider pull or operator file).
+
+    Applying is explicit (preview -> confirm); every applied row goes through
+    ``scheduling.record_attendance`` so the usual ``attendance.recorded`` delivery fires
+    once per registration. Never stores raw provider payloads or join links."""
+
+    class Source(models.TextChoices):
+        ZOOM = "zoom", "Zoom (provider pull)"
+        RIVERSIDE = "riverside", "Riverside (provider pull)"
+        FILE = "file", "File / rows supplied by an operator"
+
+    class State(models.TextChoices):
+        PENDING = "pending", "Pending"
+        IN_FLIGHT = "in_flight", "Provider request in flight"
+        NEEDS_REVIEW = "needs_review", "Ready: review and apply"
+        APPLIED = "applied", "Applied"
+        FAILED = "failed", "Failed (safe to retry)"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    occurrence = models.ForeignKey(Occurrence, on_delete=models.CASCADE, related_name="attendance_imports")
+    source = models.CharField(max_length=16, choices=Source.choices)
+    state = models.CharField(max_length=16, choices=State.choices, default=State.PENDING)
+    # False when the provider list was cut short (page cap): rows may be missing.
+    complete = models.BooleanField(default=True)
+    row_count = models.PositiveIntegerField(default=0)
+    matched_count = models.PositiveIntegerField(default=0)
+    unmatched_count = models.PositiveIntegerField(default=0)
+    ambiguous_count = models.PositiveIntegerField(default=0)
+    ignored_count = models.PositiveIntegerField(default=0)
+    applied_count = models.PositiveIntegerField(default=0)
+    no_show_count = models.PositiveIntegerField(default=0)
+    no_show_refused_count = models.PositiveIntegerField(default=0)
+    operation = models.ForeignKey(ProvisioningOperation, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    # Sanitised step/status strings only (never provider text, never PII).
+    last_error = models.CharField(max_length=300, blank=True)
+    created_by_user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_by_api_key = models.ForeignKey("ApiKey", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+    no_shows_marked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class AttendanceImportRow(models.Model):
+    """One (deduplicated) participant of an import. Minimum PII: the normalised email key
+    (matching), a masked email and a display name (review UI). Purged by
+    ``purge_personal_data`` and on person erasure."""
+
+    class Match(models.TextChoices):
+        MATCHED = "matched", "Matched"
+        UNMATCHED = "unmatched", "Unmatched"
+        AMBIGUOUS = "ambiguous", "Ambiguous"
+        IGNORED = "ignored", "Ignored"
+        RESOLVED = "resolved", "Resolved by a person"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    attendance_import = models.ForeignKey(AttendanceImport, on_delete=models.CASCADE, related_name="rows")
+    external_id = models.CharField(max_length=255, blank=True)
+    email_key = models.CharField(max_length=254, blank=True, db_index=True)
+    email_masked = models.CharField(max_length=254, blank=True)
+    display_name = models.CharField(max_length=300, blank=True)
+    joined_at = models.DateTimeField(null=True, blank=True)
+    left_at = models.DateTimeField(null=True, blank=True)
+    duration_seconds = models.PositiveIntegerField(null=True, blank=True)
+    match = models.CharField(max_length=16, choices=Match.choices, default=Match.UNMATCHED)
+    registration = models.ForeignKey(Registration, null=True, blank=True, on_delete=models.SET_NULL,
+                                     related_name="attendance_import_rows")
+    applied_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at"]
 
 
 class AuditLog(models.Model):
