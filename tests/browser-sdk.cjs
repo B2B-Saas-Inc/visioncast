@@ -53,7 +53,10 @@ function initScript(args) {
     if (typeof init.body === 'string') {
       try { body = JSON.parse(init.body); } catch (e) { body = init.body; }
     }
-    window.__calls.push({ url: String(url), method: method, headers: Object.assign({}, init.headers || {}), body: body });
+    const entry = { url: String(url), method: method, headers: Object.assign({}, init.headers || {}), body: body };
+    window.__calls.push(entry);
+    // Also mirrored to the console so the test can still read calls after a navigation away.
+    console.debug('__webinar_call ' + JSON.stringify(entry));
     const key = method + ' ' + pathOf(String(url));
     const q = window.__fake.queues[key];
     if (!q || !q.length) {
@@ -81,12 +84,21 @@ async function openPage(opts) {
     if (u.origin === ORIGIN && u.pathname === '/webinar') {
       return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: HTML });
     }
+    const extra = (opts.routes || {})[u.href];
+    if (extra !== undefined) {
+      return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: extra });
+    }
     return route.abort();
   });
   if (opts.cookies) {
     await context.addCookies(opts.cookies.map((c) => Object.assign({ url: ORIGIN }, c)));
   }
   const page = await context.newPage();
+  page.__seen = [];
+  page.on('console', (msg) => {
+    const t = msg.text();
+    if (t.startsWith('__webinar_call ')) page.__seen.push(JSON.parse(t.slice('__webinar_call '.length)));
+  });
   await page.addInitScript(initScript, {
     config: opts.config || null,
     csrfToken: CSRF_TOKEN,
@@ -118,6 +130,12 @@ function calls(page) {
 async function postsTo(page, key) {
   const [method, p] = key.split(' ');
   return (await calls(page)).filter((c) => c.method === method && new URL(c.url, ORIGIN).pathname === p);
+}
+
+/** Like postsTo, but from the console mirror: survives a navigation to another origin. */
+function postsSeen(page, key) {
+  const [method, p] = key.split(' ');
+  return page.__seen.filter((c) => c.method === method && new URL(c.url, ORIGIN).pathname === p);
 }
 
 async function fieldState(page, name) {
@@ -315,6 +333,74 @@ scenario('8. backslash proxyBase falls back to /webinar-api', async (page) => {
 }, { config: { proxyBase: '/\\evil.example' } });
 
 // ---------------------------------------------------------------------------
+
+scenario('9. web calendar links render with accessible labels; unsafe ones are dropped', async (page) => {
+  const google = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=Demo';
+  const outlook = 'https://outlook.live.com/calendar/0/deeplink/compose?rru=addevent&subject=Demo';
+  await setQueue(page, REG_KEY, [{ status: 201, body: {
+    status: 'registered', thankYou: { mode: 'message', message: 'See you there' },
+    calendar: { icsUrl: '/webinar-api/calendar.ics?occurrenceId=' + OCC, googleUrl: google, outlookUrl: outlook,
+      office365Url: 'javascript:alert(1)' }
+  } }]);
+  assert.equal(await submit(page), true);
+  assert.equal(await page.getAttribute('form', 'data-webinar-state'), 'complete');
+  const links = page.locator('a[data-webinar-calendar-link]');
+  assert.equal(await links.count(), 2, 'the javascript: Microsoft 365 link is dropped');
+  assert.deepEqual(await links.evaluateAll((as) => as.map((a) => a.getAttribute('data-webinar-calendar-link'))), ['google', 'outlook']);
+  assert.deepEqual(await links.evaluateAll((as) => as.map((a) => a.href)), [google, outlook]);
+  for (const a of await links.elementHandles()) {
+    assert.equal(await a.getAttribute('target'), '_blank');
+    assert.equal(await a.getAttribute('rel'), 'noopener noreferrer');
+    const label = await a.getAttribute('aria-label');
+    const textContent = (await a.textContent()).trim();
+    assert.ok(label.startsWith(textContent) && /new tab/i.test(label), 'accessible name starts with the visible text');
+  }
+  // Keyboard reachable: Tab from the disabled form lands on the ICS link, then the web links.
+  assert.equal(await page.getAttribute('a[data-webinar-calendar]', 'href'), ORIGIN + '/webinar-api/calendar.ics?occurrenceId=' + OCC);
+  assert.equal((await page.evaluate(() => document.querySelector('[data-webinar-status]').textContent)).includes('javascript:'), false);
+}, { profile: { recognized: true, missingFields: [], formVersion: FORM_VERSION } });
+
+scenario('10. paid session: 202 payment_required goes to Stripe Checkout, keeps the key, never confirms', async (page) => {
+  await fillAnonymous(page);
+  // First answer: a checkout link on an unexpected host is never followed ("preparing checkout").
+  await setQueue(page, REG_KEY, [{ status: 202, body: { status: 'payment_required', order: { id: 'o1', checkoutUrl: 'https://evil.example/pay' } } }]);
+  assert.equal(await submit(page), 'payment_required');
+  assert.equal(await page.getAttribute('form', 'data-webinar-state'), 'payment-required');
+  assert.equal(page.url(), PAGE_URL, 'no navigation to an unexpected host');
+  assert.match(await text(page, '[data-webinar-status]'), /checkout/i);
+  assert.equal(await page.locator('a[data-webinar-calendar]').count(), 0, 'no confirmation or calendar before payment');
+  assert.equal(await fieldState(page, 'email').then((s) => s.disabled), false, 'the form is not locked');
+  // Resubmitting replays the same order: identical idempotency key, never a second hold.
+  await setQueue(page, REG_KEY, [{ status: 202, body: { status: 'payment_required', order: { id: 'o1', checkoutUrl: 'https://checkout.stripe.com/c/pay/cs_test_1' } } }]);
+  const navigation = page.waitForURL('https://checkout.stripe.com/c/pay/cs_test_1', { timeout: 3000 });
+  assert.equal(await submit(page), 'payment_required');
+  await navigation;
+  const posts = postsSeen(page, REG_KEY);
+  assert.equal(posts.length, 2);
+  assert.equal(posts[1].body.idempotencyKey, posts[0].body.idempotencyKey, 'the held order is replayed with the same key');
+  assert.equal(page.url(), 'https://checkout.stripe.com/c/pay/cs_test_1');
+}, { routes: { 'https://checkout.stripe.com/c/pay/cs_test_1': '<!doctype html><title>Checkout</title>' } });
+
+scenario('11. paid session, unverified browser: 202 verification_required goes to the email check', async (page) => {
+  await fillAnonymous(page);
+  await setQueue(page, REG_KEY, [{ status: 202, body: { status: 'verification_required', verification: { available: false, verifyUrl: null } } }]);
+  assert.equal(await submit(page), 'verification_required');
+  assert.equal(await page.getAttribute('form', 'data-webinar-state'), 'verification-required');
+  assert.equal(page.url(), PAGE_URL);
+  assert.match(await text(page, '[data-webinar-status]'), /verif|email/i);
+  assert.equal(await page.locator('a[data-webinar-calendar]').count(), 0, 'never a confirmation');
+  const first = (await postsTo(page, REG_KEY))[0].body.idempotencyKey;
+  // Available: navigate to the hosted waiting-room check (https, /w/<code>/ only). A new key is used afterwards.
+  const room = 'https://webinars.example.com/w/room-1/';
+  await setQueue(page, REG_KEY, [{ status: 202, body: { status: 'verification_required', verification: { available: true, verifyUrl: room } } }]);
+  const navigation = page.waitForURL(room, { timeout: 3000 });
+  assert.equal(await submit(page), 'verification_required');
+  await navigation;
+  const posts = postsSeen(page, REG_KEY);
+  assert.equal(posts.length, 2);
+  assert.notEqual(posts[1].body.idempotencyKey, first, 'verification resets the key (nothing was held)');
+  assert.equal(page.url(), room);
+}, { routes: { 'https://webinars.example.com/w/room-1/': '<!doctype html><title>Check your email</title>' } });
 
 async function main() {
   const launch = { headless: true };
