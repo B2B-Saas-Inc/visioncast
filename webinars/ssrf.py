@@ -399,16 +399,19 @@ def _stop(proc):
 # ---------------------------------------------------------------------------
 #
 # Same URL policy, DNS vetting, pinned TLS, no redirects and hard total deadline as
-# ``post_json_bounded``. Differences: GET (no body; read-back and dedupe lookups), POST or PUT
-# only (the vendor contracts we call), the
+# ``post_json_bounded``. Differences: GET (no body; read-back and dedupe lookups), POST, PUT or
+# PATCH only (the vendor contracts we call: Pipedrive v2 updates are PATCH), the
 # response body is returned up to ``MAX_NATIVE_RESPONSE_BYTES`` (larger bodies are dropped
-# and flagged), and ``Retry-After`` is returned parsed and capped. Requests carrying an
-# ``Authorization`` header must name the exact hosts they may go to (``allowed_hosts``),
-# so credentials can never follow a user-entered URL. Method and headers are constants
-# built by the adapters, not user input.
+# and flagged), and ``Retry-After`` is returned parsed and capped. Requests carrying a
+# credential header (``CREDENTIAL_HEADERS``) must name the exact hosts they may go to
+# (``allowed_hosts``), so credentials can never follow a user-entered URL. Method and headers
+# are constants built by the adapters, not user input.
 
 MAX_NATIVE_RESPONSE_BYTES = 65536
-NATIVE_METHODS = frozenset({"GET", "POST", "PUT"})
+NATIVE_METHODS = frozenset({"GET", "POST", "PUT", "PATCH"})
+# Request headers that carry vendor credentials (lower-case): Bearer/Basic auth, Brevo's
+# ``api-key`` and Pipedrive's ``x-api-token``.
+CREDENTIAL_HEADERS = frozenset({"authorization", "api-key", "x-api-token"})
 MAX_RETRY_AFTER_SECONDS = 3600
 _RETRY_AFTER_RAW_CHARS = 64
 
@@ -444,7 +447,7 @@ def _check_native_request(method, host, headers, allowed_hosts):
     if allowed_hosts is not None:
         if host not in {_normalize_host(h) for h in allowed_hosts}:
             raise UnsafeDestination("Host is not an allowed vendor host")
-    elif any(k.lower() in {"authorization", "api-key"} for k in (headers or {})):
+    elif any(k.lower() in CREDENTIAL_HEADERS for k in (headers or {})):
         raise UnsafeDestination("Credentialed requests need an explicit vendor host")
 
 

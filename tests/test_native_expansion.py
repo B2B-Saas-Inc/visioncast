@@ -74,9 +74,9 @@ def test_new_providers_offered_and_schema_driven():
     assert ni.config_of(GA4, "ga4") == {"region": "global", "measurement_id": "G-ABC123XYZ", "processing_ack": "confirmed"}
 
 
-@pytest.mark.parametrize("name", ["mixpanel", "rudderstack"])
+@pytest.mark.parametrize("name", ["mixpanel", "rudderstack", "salesforce", "pipedrive"])
 def test_formerly_deferred_providers_now_built(name):
-    # Covered in depth by tests/test_native_remaining_analytics.py.
+    # Covered in depth by tests/test_native_remaining_analytics.py, test_native_salesforce.py and test_native_pipedrive.py.
     creds = {"native_provider": name, **ACK}
     assert ni.provider_of(creds) == name and name in ni.FIELDS
     assert ni.validate(name, creds, **KW).get("provider") != ["Unknown provider."]

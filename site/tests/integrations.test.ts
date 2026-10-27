@@ -57,18 +57,20 @@ const byId = Object.fromEntries(INTEGRATIONS.map((i) => [i.id, i]));
 
 test('only mock-tested outbound and hosting adapters are marked built', () => {
   assert.deepEqual(idsWith('built'), [
-    'amplitude', 'attio', 'brevo', 'customerio', 'ga4', 'hubspot', 'mixpanel', 'posthog', 'rudderstack', 'segment',
-    'sequel', 'wistia', 'zoom',
+    'amplitude', 'attio', 'brevo', 'customerio', 'ga4', 'hubspot', 'mixpanel', 'pipedrive', 'posthog', 'rudderstack',
+    'salesforce', 'segment', 'sequel', 'wistia', 'zoom',
   ]);
 });
 
-// Mirrors PROVIDER_CHOICES in webinars/native_integrations.py (generic webhook excluded).
+// Mirrors PROVIDER_CHOICES in webinars/native_integrations.py (generic webhook excluded), including the
+// registered provider modules in webinars/native_providers/.
 const NATIVE_PROVIDERS = [
   'posthog', 'hubspot', 'customerio', 'attio', 'segment', 'amplitude', 'ga4', 'mixpanel', 'rudderstack', 'brevo',
+  'salesforce', 'pipedrive',
 ];
 
 test('every native adapter in the back-end registry is listed as built, never live', () => {
-  assert.equal(NATIVE_PROVIDERS.length, 10);
+  assert.equal(NATIVE_PROVIDERS.length, 12);
   for (const id of NATIVE_PROVIDERS) {
     const item = byId[id];
     assert.ok(item, id);
@@ -91,6 +93,9 @@ test('built adapters state their privacy limits', () => {
   assert.ok(byId.rudderstack.details.some((d) => /own data plane host.*allowlist/i.test(d)));
   assert.ok(byId.brevo.details.some((d) => /never changes lists, subscriptions or blocklist/i.test(d)));
   assert.ok(byId.brevo.details.some((d) => /no urls are sent/i.test(d)));
+  assert.ok(byId.salesforce.details.some((d) => /own my domain host.*allowlist/i.test(d)));
+  assert.ok(byId.salesforce.details.some((d) => /unverified/i.test(d)));
+  assert.ok(byId.pipedrive.details.some((d) => /never changes marketing status/i.test(d)));
 });
 
 test('hosting statuses match what exists', () => {
@@ -116,7 +121,7 @@ test('framework and CMS kits are reference code, never built', () => {
 
 test('roadmap providers are listed and not built', () => {
   for (const id of [
-    'salesforce', 'pipedrive', 'activecampaign', 'mailchimp', 'marketo', 'hubspot-marketing', 'loops', 'intercom', 'resend', 'postmark', 'ses',
+    'activecampaign', 'mailchimp', 'marketo', 'hubspot-marketing', 'loops', 'intercom', 'resend', 'postmark', 'ses',
     'n8n', 'zapier', 'make',
   ]) {
     assert.equal(INTEGRATIONS.find((i) => i.id === id)?.status, 'roadmap', id);

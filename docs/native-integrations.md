@@ -1,6 +1,6 @@
 # Native integrations
 
-Status: **ten adapters (PostHog, HubSpot, Customer.io, Attio, Segment, Amplitude, Google Analytics 4, Mixpanel, RudderStack, Brevo) are implemented in source on `ssrf.request_json_bounded`; their tests are mock-only, and none is production-ready or live-verified.** Mixpanel and RudderStack request shapes were compared with primary-doc facts fetched 2026-10-25; some contract points are still open (see below). That function is a bounded POST/PUT transport: response body up to 64 KB, `Retry-After` parsed, and every native request pinned to the destination's own configured host. If the function were ever missing, HubSpot and Attio fail validation, and their deliveries are dead-lettered with `native_transport_unavailable` without any network call.
+Status: **twelve adapters (PostHog, HubSpot, Customer.io, Attio, Segment, Amplitude, Google Analytics 4, Mixpanel, RudderStack, Brevo, Salesforce, Pipedrive) are implemented in source on `ssrf.request_json_bounded`; their tests are mock-only, and none is production-ready or live-verified.** Mixpanel and RudderStack request shapes were compared with primary-doc facts fetched 2026-10-25; Salesforce and Pipedrive were compared with official pages and OpenAPI files fetched 2026-10-27; some contract points are still open (see below). That function is a bounded GET/POST/PUT/PATCH transport: response body up to 64 KB, `Retry-After` parsed, and every native request pinned to the destination's own configured host. If the function were ever missing, HubSpot, Attio, Salesforce and Pipedrive fail validation, and their deliveries are dead-lettered with `native_transport_unavailable` without any network call. Salesforce and Pipedrive live in self-contained modules under `webinars/native_providers/` (registered through `PROVIDER_MODULES`); the studio form, validation and preview are driven by their `FIELDS`.
 
 The vendor API contracts below are **UNVERIFIED** assumptions. Testing so far is mocked contract tests only. Nothing has been checked against a real vendor or sandbox account: no accounts are connected and no external calls have been made. The API shapes below come from the implementer's knowledge of the vendors' public documentation and **must be checked against the current official docs** (list at the end) before anyone enables these integrations.
 
@@ -17,7 +17,7 @@ The vendor API contracts below are **UNVERIFIED** assumptions. Testing so far is
   - The lease is renewed before every vendor call after the first. If renewal fails, the run stops and nothing is recorded.
   - There are at most 6 calls per message.
   - Each call goes through `ssrf.request_json_bounded`:
-    - Methods are POST or PUT only. Method and headers are adapter constants, never user input.
+    - Methods are GET (bodiless lookups: Pipedrive search and activity dedupe), POST, PUT or PATCH (Pipedrive v2 updates) only. Method and headers are adapter constants, never user input. Requests carrying a credential header (`Authorization`, `api-key`, `x-api-token`: `ssrf.CREDENTIAL_HEADERS`) are refused without an explicit `allowed_hosts`.
     - The same URL and port policy as webhooks, with DNS vetting and a pinned IP for TLS.
     - Redirects are returned but never followed.
     - A spawned child has a hard deadline inside the lease.
@@ -42,6 +42,8 @@ The vendor API contracts below are **UNVERIFIED** assumptions. Testing so far is
   - Mixpanel: `api.mixpanel.com`, `api-eu.mixpanel.com`, `api-in.mixpanel.com` (unverified)
   - RudderStack: the destination's own data plane host, which must be an exact operator allowlist entry (see below)
   - Brevo: `api.brevo.com` only (no other region or host)
+  - Salesforce: the destination's own My Domain host (`acme.my.salesforce.com`, or a sandbox host such as `acme--dev.sandbox.my.salesforce.com`), which must be an exact operator allowlist entry, like the RudderStack data plane. The token request goes there too.
+  - Pipedrive: `api.pipedrive.com` only (the `{company}.pipedrive.com` form shown in the authentication guide is not used)
 
   The operator must also add the host to `WEBHOOK_HOST_ALLOWLIST`. The destination URL is set from provider and region and is read-only in the studio. Self-hosted PostHog and HubSpot EU-specific hosts are **not supported**.
 - **Studio.**
@@ -187,18 +189,87 @@ Status: **source implemented; tests mock-only (`tests/test_native_brevo.py`, fak
 - Whether `POST /v3/events` creates a contact for an unknown `email_id`, and how it behaves with blocklisted contacts.
 - Whether `event_properties` limits apply to the serialized JSON or something else, and the decimal vs binary reading of "50KB".
 - Rate limits and their `Retry-After` behaviour.
-- Transport enforcement also requires explicit `allowed_hosts` for `api-key` headers, case-insensitively, alongside `Authorization`. Regression tests reject missing host restrictions before any request is spawned.
+- Transport enforcement also requires explicit `allowed_hosts` for `api-key` and `x-api-token` headers, case-insensitively, alongside `Authorization` (`ssrf.CREDENTIAL_HEADERS`). Regression tests reject missing host restrictions before any request is spawned.
 - No sandbox or live verification.
 
-## Deferred providers
+## Salesforce (Lead or Contact, Account and participation in one Composite request; checked against the REST API Developer Guide, no org used)
 
-- Salesforce, Pipedrive, marketing-automation and transactional tools are a later wave.
+Status: **source implemented (`webinars/native_providers/salesforce.py`); tests mock-only (`tests/test_native_salesforce.py`, fake transports, no network); not checked against a Salesforce org or sandbox.** The implementer read these pages on 2026-10-27 in a headless browser (the legacy `developer.salesforce.com/docs/atlas.en-us.api_rest.meta/...` URLs and the site's content API answer 403 to plain fetches):
+
+- Composite resource: https://developer.salesforce.com/docs/platform/api-rest/guide/resources-composite-composite-post.html
+- Composite request body: https://developer.salesforce.com/docs/platform/api-rest/guide/requests-composite.html
+- Composite subrequest result: https://developer.salesforce.com/docs/platform/api-rest/guide/resources-composite-subrequest-result.html
+- Upsert by external ID: https://developer.salesforce.com/docs/platform/api-rest/guide/resources-sobject-upsert-patch.html and https://developer.salesforce.com/docs/platform/api-rest/guide/dome-upsert.html
+- OAuth overview: https://developer.salesforce.com/docs/platform/api-rest/guide/intro-oauth-and-connected-apps.html (creating connected apps is restricted from Spring '26; External Client Apps are recommended)
+- **Not readable:** the client credentials flow article https://help.salesforce.com/s/articleView?id=xcloud.remoteaccess_oauth_client_credentials_flow.htm did not render headless ("CSS Error"), so the token request and response shape below are **UNVERIFIED**.
+
+**Settings** (schema-driven from `FIELDS["salesforce"]`):
+
+- **Host**: fixed choice "Operator-allowlisted My Domain host" plus **My Domain host** (`instance_host`), a bare host name typed by the marketer. It is checked exactly like the RudderStack data plane (`destination_host_problem`): bare lowercase DNS name, not a static vendor host, an **exact, non-wildcard** `WEBHOOK_HOST_ALLOWLIST` entry, and `validate_destination_url` must pass. `host_of` returns it, so `allowed_hosts` pins the token request and the write to that one host; otherwise the host set is empty and every call is refused. A sandbox is just another host value.
+- **Consumer key** and **Consumer secret**: secrets, set-only, never rendered, previewed, logged or put in `last_error`. Sent only in the token request body to the configured host.
+- **Match existing people by**: only **custom ID**. Salesforce upserts only on External ID fields and the standard `Email` field cannot be one, so there is no email merge. An existing record with the same email but no person ID is not merged; a duplicate rule may reject the write (dead-lettered, nothing merged).
+- **Person object**: `Lead` or `Contact`. **Person External ID field** (`Webinar_Person_Id__c`): custom field (`__c`) holding our person ID.
+- **Account External ID field** (optional, Contact mode only; a Lead configuration with it fails validation) with the **Organization ID namespace**, both or neither.
+- **Participation object** (`Webinar_Participation__c`), **Participation External ID field** (our registration ID), **Person lookup relationship** (`Contact__r` or `Lead__r`), and **Participation field mapping**: comma pairs `source=Field__c` whose sources are only the keys of `facts["properties"]` (`webinar_event_type`, `webinar_event_id`, `webinar_event_title`, `webinar_occurrence_id`, `webinar_starts_at`, `webinar_registration_id`, `webinar_registration_status`, `webinar_attendance`, `webinar_schema_version`, `webinar_delivery_id`); targets are custom fields, each source and target once, never the External ID field or the lookup. Validated strictly like Brevo's mapping; an invalid mapping is `native_config_invalid` with no call.
+- **Data processing confirmation**: required. The **profile** data group is also required, because Lead and Contact need a last name (and Lead a company) on create.
+
+| Call | Body | Notes |
+| --- | --- | --- |
+| `POST /services/oauth2/token` (`Content-Type: application/x-www-form-urlencoded`) | `grant_type=client_credentials&client_id=…&client_secret=…` | **UNVERIFIED** (article not readable). Skipped when a token is cached: tokens live only in process memory (`hosting.base.cached_token`/`store_token`, keyed by host and credentials, 15 min minus safety margin, never the database). The response's `access_token` is required (else retry `token: response_missing_token`) and its `instance_url` must be `https://<configured host>` (else dead `token: instance_mismatch`, nothing cached): credentials never follow a vendor-supplied URL. A composite 401 on a cached token forgets it and retries (`composite: token_rejected`); a 401 on a fresh token is dead. |
+| `POST /services/data/v62.0/composite` (`Authorization: Bearer …`) | `{"allOrNone": true, "collateSubrequests": false, "compositeRequest": [account?, person, participation]}`; each subrequest is `{"method": "PATCH", "url": "/services/data/v62.0/sobjects/<Object>/<ExtIdField>/<value>", "referenceId": …, "body": …}` | Verified on the pages above: URI and method; `allOrNone` rolls the whole request back and the top-level status stays 200; up to 25 subrequests; subrequest fields and allowed methods (`PATCH` included); `referenceId` letters, digits and underscores; the result shape (`compositeResponse[].httpStatusCode/referenceId/body`); the upsert URL pattern; 201 on create, 200 on update (API 46+), 300 when several records match; `Relationship__r: {ExtId__c: value}` relates a record by external ID. |
+
+Subrequest bodies: `account` (Contact mode with a verified org ID): `{<AccountExtId>: org, "Name": company name or the org ID}` (Account Name is required on create; the verified ID stands in when no company name is known). `person`: `{<PersonExtId>: person id, "Email", "FirstName", "LastName", "Title"}` plus `"Company"` for Lead and `"Account": {<AccountExtId>: org}` for a Contact with an account (the standard `Account` relationship by external ID is **assumed** from the custom `__r` example). `participation`: `{<RegExtId>: registration id, <mapped fields…>, <Relationship__r>: {<PersonExtId>: person id}}`. Path values are URL-quoted and must be printable ASCII without spaces, otherwise `<ref>: payload_unsupported`.
+
+**Identity / dedupe.** Every write is an upsert by our stable IDs, so a retried sequence targets the same records and no plain create (`POST /sobjects/...`) is ever sent (tested). That this gives a single record per key depends on the External ID fields being **Unique** in the org (unverified; a non-unique External ID also needs "View All Data", per the upsert page). Registrations without a last name, or Leads without a company, are cancelled (`native_contact_fields_missing` / `native_lead_fields_missing`) rather than written with placeholders. Company names are only ever `Name`/`Company` values, never match keys.
+
+**Responses.** Top-level 2xx with every subrequest 2xx: delivered. A subrequest outside 2xx: the step is its `referenceId`; among several failures the one whose body is not `PROCESSING_HALTED` (the fixed error code of siblings rolled back by `allOrNone`) is reported. 408/425/429/5xx: retry; 300 (several records match) and other 4xx: dead. Top-level 408/425/429/5xx/3xx: retry; other 4xx: dead. Only the error code enum is read from bodies; messages never reach `last_error`. A response without a parseable `compositeResponse` of the expected length is retried (`composite: response_unparsable`).
+
+**Limits.** At most 3 subrequests are built (25 allowed). The composite body (compact UTF-8) must be at most 200,000 bytes (`composite: payload_too_large`, our own bound, unverified against any Salesforce limit) and mapped values must be scalars (`participation: payload_unsupported`); both are checked before the token call. Two calls per message (token, composite), within `MAX_CALLS`.
+
+**Consent.** Salesforce is not analytics: which purposes gate it is the operator's **Required consent** choice, re-checked before the composite call (a withdrawal between the token and the write stops it).
+
+**Unresolved:**
+
+- The client credentials token request (path, parameters, `instance_url`, whether `expires_in` is present) and session lifetime; the 15-minute cache TTL is an assumption.
+- API version `v62.0` (the docs' examples use `v68.0`; any version from 46.0 returns 200 with a body on update).
+- The standard `Account` relationship-by-external-ID syntax on Contact; any composite byte limit; duplicate-rule behaviour; required permissions and field-level security for the External ID fields.
+- No sandbox or live verification.
+
+## Pipedrive (person, organization and activity; checked against the API v2 OpenAPI file, no account used)
+
+Status: **source implemented (`webinars/native_providers/pipedrive.py`); tests mock-only (`tests/test_native_pipedrive.py`, fake transports, no network); not checked against a Pipedrive account.** On 2026-10-27 the implementer downloaded the official OpenAPI files https://developers.pipedrive.com/docs/api/v1/openapi-v2.yaml (servers: `https://api.pipedrive.com/api/v2`) and https://developers.pipedrive.com/docs/api/v1/openapi.yaml, and read https://pipedrive.readme.io/docs/core-api-concepts-authentication and https://pipedrive.readme.io/docs/core-api-concepts-custom-fields. The v1 file no longer lists persons, organizations or activities, so the adapter uses **v2** (`PATCH` for updates, which is why the native transport now admits PATCH).
+
+**Settings** (schema-driven from `FIELDS["pipedrive"]`): region (`api.pipedrive.com` only); **API token** (secret, `x-api-token` header only, verified in the authentication guide and the OpenAPI security scheme; previews show `x-api-token: [redacted]`); **Match existing people by** (`email` with the email merge confirmation, or `custom_id`); **Person ID custom field key** and **Organization ID custom field key** (40-character hex keys, verified format; required for custom-ID matching and organizations respectively); **Organization ID namespace** (both or neither with the org field); **Activity type** (key, default `meeting`; must exist in the account, unverified); **Data processing confirmation**.
+
+| Call | Request | Notes |
+| --- | --- | --- |
+| `GET /api/v2/organizations/search?term=<org id>&fields=custom_fields&exact_match=true&limit=1` (only with an org field and a single verified org ID) | — | Verified parameters and `data.items[].item.id`. Found: the id is reused and the organization is **not** renamed. Not found: `POST /api/v2/organizations` `{"name": company name or org id, "custom_fields": {<key>: org id}}` (`name` required, verified). |
+| `GET /api/v2/persons/search?term=<person id or email>&fields=custom_fields|email&exact_match=true&limit=1` | — | Verified parameters (`exact_match` is not case sensitive; only `varchar`/`text`/`varchar_auto`/… custom fields are searchable). Terms must be a plain id (`[A-Za-z0-9_-]`) or a plain email, otherwise `person_search: payload_unsupported` before any call. The first hit is taken; that a `custom_fields` match is on the configured field is **assumed**. |
+| `PATCH /api/v2/persons/{id}` (found) or `POST /api/v2/persons` (not found) | `name` (first and last name, else the email; a registration with neither is cancelled `native_person_name_missing`), `custom_fields: {<person key>: person id}` when configured, `org_id`; `emails: [{"value", "primary": true, "label": "work"}]` **only on create** (PATCH replaces the whole list and would drop other addresses) | Verified fields and that `name` is required on create. Never sent: `marketing_status`, `job_title`/`notes`/`postal_address`/`im`/`birthday` (contact-sync fields that answer 403 otherwise), phones, labels, deals, leads, URLs. A 2xx create without `data.id`: retry `person: response_missing_id`. |
+| `GET /api/v2/activities?person_id=<id>&limit=500&sort_by=add_time&sort_direction=desc` | — | Verified parameters (`person_id` filters by primary participant; 500 max). Items whose `note` contains `webinar-registration:<registration id>:<event type>` mean the activity exists: nothing more is sent. **Only this first page is scanned**; older activities are not. |
+| `POST /api/v2/activities` | `subject` ("Webinar registered: <title>" etc.), `type`, `due_date` `YYYY-MM-DD` and `due_time` `HH:MM:SS` in UTC from the occurrence start (omitted when unparseable), `done` (true for check-in and attendance outcomes), `note` = the marker, `org_id`, `participants: [{"person_id", "primary": true}]` | Verified fields (the spec example uses `'15:00:00'`; the time zone Pipedrive applies to `due_time` is unverified). |
+
+**Identity / dedupe.** Search-then-write makes retries converge: a person or organization created by a failed earlier attempt is found and updated, never re-created, and an activity already carrying the marker is not duplicated (tested for a failure after each step). Email mode needs the confirmation and a profile email (`native_no_email` otherwise); only `identity.verified` registrations are sent. Organizations come only from a single verified `trusted_api` external ID; company names are only `name` values.
+
+**Limits.** Each write body (compact UTF-8) is at most 100,000 bytes (`<step>: payload_too_large`, our own bound) and profile values must be scalars (`person: payload_unsupported`), checked before the first call. At most six calls per message (organization search and create, person search and write, activity list and create), exactly `MAX_CALLS`.
+
+**Consent.** Pipedrive is not analytics: the operator's **Required consent** choice gates it, re-checked before every call after the first.
+
+**Responses.** 2xx: delivered (a 2xx update needs no body). 408/425/429/5xx/3xx: retried; other 4xx: dead. Errors are `<step>: <code>` only (`organization_search`, `organization`, `person_search`, `person`, `activities`, `activity`).
+
+**Unresolved:**
+
+- Rate limits (token budget per request) and `Retry-After` behaviour.
+- The time zone applied to `due_time`; whether `exact_match` on `custom_fields` can match another field with the same value.
+- Whether the first-page scan is enough for very active persons (more than 500 activities since the registration).
+- Any request-size limit; the default activity type keys.
+- No sandbox or live verification.
 
 ## Marketer setup
 
 1. Ask the operator to allowlist the vendor host.
 2. Create the integration, choose the provider and region, and save.
-3. Fill in the settings: the match strategy and its confirmation (HubSpot and Attio), the stable ID properties or attributes, and the organization namespace and target (or leave both empty).
+3. Fill in the settings: the match strategy and its confirmation (HubSpot, Attio and Pipedrive; Salesforce only matches by our person ID), the stable ID properties, attributes, External ID fields or custom field keys, the organization namespace and target (or leave both empty), and for Salesforce your own My Domain host.
 4. Enter secrets in the provider credentials form.
 5. Tick the supported events and the identity, registration and event groups. Choose **Required consent** according to your policy; PostHog, Amplitude, GA4, Mixpanel and RudderStack require Analytics. Then set the data processing confirmation.
 6. Review the redacted preview, then enable. Enabling re-validates.
@@ -241,6 +312,9 @@ These need checking in the current official docs:
   - The JSON nesting limit.
   - `messageId` handling and dedupe.
   - The Cloud data plane host formats.
+
+- **Salesforce** (composite and upsert pages read 2026-10-27; see its section): the client credentials token flow, the standard `Account` relationship-by-external-ID syntax, composite size limits, duplicate rules and permissions.
+- **Pipedrive** (v2 OpenAPI file read 2026-10-27; see its section): rate limits, `due_time` time zone, custom-field search semantics, activity type keys.
 
 Other known gaps:
 
