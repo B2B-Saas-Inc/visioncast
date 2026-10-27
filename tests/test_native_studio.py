@@ -216,3 +216,99 @@ def test_brevo_valid_preview_has_no_refusal_and_redacts_key(admin, settings):
     # The template omits request headers entirely; the context must still redact them.
     assert page.context["native_preview"][0]["headers"]["api-key"] == "[redacted]"
     assert BREVO_KEY.encode() not in page.content
+
+
+# --- module-registered providers (webinars/native_providers/): the form is schema-driven ---------
+
+AC_KEY = "ac-studioTokenValue-789"
+MC_KEY = "mailchimp-test-key-not-real-0123456789-us19"
+
+
+def test_create_activecampaign_derives_url_from_typed_host(admin, settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = ["acme.api-us1.com"]
+    dest = _create(
+        admin,
+        name="ActiveCampaign",
+        provider="activecampaign",
+        required_consents=[],
+        **{
+            "native-region": "account",
+            "native-api_host": "acme.api-us1.com",
+            "native-email_merge_ack": "confirmed",
+            "native-field_map": "company=12",
+            "native-tag_registered": "20",
+            "native-group_type": None,
+            "native-org_namespace": None,
+        },
+    )
+    creds = _creds(dest)
+    assert creds["native_provider"] == "activecampaign" and creds["native_api_host"] == "acme.api-us1.com"
+    assert "native_api_key" not in creds and dest.url == "https://acme.api-us1.com" and dest.enabled is False
+
+
+def test_create_mailchimp_derives_url_from_datacenter(admin, settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = ["us19.api.mailchimp.com"]
+    dest = _create(
+        admin,
+        name="Mailchimp",
+        provider="mailchimp",
+        required_consents=[],
+        **{
+            "native-region": "datacenter",
+            "native-datacenter": "us19",
+            "native-audience_id": "a1b2c3d4e5",
+            "native-email_merge_ack": "confirmed",
+            "native-group_type": None,
+            "native-org_namespace": None,
+        },
+    )
+    creds = _creds(dest)
+    assert creds["native_provider"] == "mailchimp" and creds["native_datacenter"] == "us19"
+    assert "native_api_key" not in creds and dest.url == "https://us19.api.mailchimp.com"
+
+
+def _module_dest(name, host, creds):
+    from webinars.crypto import encrypt_secret
+
+    return Destination.objects.create(
+        name=name,
+        url=f"https://{host}",
+        event_types=["registration.created"],
+        allowed_groups=list(Destination.GROUPS),
+        required_consents=[],
+        credentials_encrypted=encrypt_secret(json.dumps(creds)),
+    )
+
+
+def test_activecampaign_edit_page_previews_without_secret(admin, settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = ["acme.api-us1.com"]
+    creds = {
+        "native_provider": "activecampaign", "native_region": "account", "native_api_host": "acme.api-us1.com",
+        "native_api_key": AC_KEY, "native_email_merge_ack": "confirmed", "native_tag_registered": "20", "native_processing_ack": "confirmed",
+    }
+    dest = _module_dest("ActiveCampaign", "acme.api-us1.com", creds)
+    page = admin.get(f"/studio/integrations/{dest.pk}/")
+    assert page.status_code == 200
+    assert b"Preview unavailable" not in page.content
+    assert b"/api/3/contact/sync" in page.content and b"/api/3/contactTags" in page.content
+    assert page.context["native_preview"][0]["headers"]["Api-Token"] == "[redacted]"
+    assert AC_KEY.encode() not in page.content
+
+
+def test_mailchimp_edit_page_previews_without_secret_and_refuses_pending_without_ack(admin, settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = ["us19.api.mailchimp.com"]
+    creds = {
+        "native_provider": "mailchimp", "native_region": "datacenter", "native_datacenter": "us19", "native_api_key": MC_KEY,
+        "native_audience_id": "a1b2c3d4e5", "native_email_merge_ack": "confirmed", "native_processing_ack": "confirmed",
+    }
+    dest = _module_dest("Mailchimp", "us19.api.mailchimp.com", creds)
+    page = admin.get(f"/studio/integrations/{dest.pk}/")
+    assert page.status_code == 200
+    assert b"Preview unavailable" not in page.content and b"/members/" in page.content and b"/events" in page.content
+    assert page.context["native_preview"][0]["headers"]["Authorization"] == "[redacted]"
+    assert MC_KEY.encode() not in page.content and b"us19" in page.content
+    pending = _module_dest("Mailchimp pending", "us19.api.mailchimp.com", {**creds, "native_status_if_new": "pending"})
+    page = admin.get(f"/studio/integrations/{pending.pk}/")
+    assert page.status_code == 200
+    assert b"Preview unavailable (native_match_strategy_unconfirmed)" in page.content
+    assert MC_KEY.encode() not in page.content

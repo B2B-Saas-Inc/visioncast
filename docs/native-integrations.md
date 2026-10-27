@@ -1,6 +1,6 @@
 # Native integrations
 
-Status: **ten adapters (PostHog, HubSpot, Customer.io, Attio, Segment, Amplitude, Google Analytics 4, Mixpanel, RudderStack, Brevo) are implemented in source on `ssrf.request_json_bounded`; their tests are mock-only, and none is production-ready or live-verified.** Mixpanel and RudderStack request shapes were compared with primary-doc facts fetched 2026-10-25; some contract points are still open (see below). That function is a bounded POST/PUT transport: response body up to 64 KB, `Retry-After` parsed, and every native request pinned to the destination's own configured host. If the function were ever missing, HubSpot and Attio fail validation, and their deliveries are dead-lettered with `native_transport_unavailable` without any network call.
+Status: **twelve adapters (PostHog, HubSpot, Customer.io, Attio, Segment, Amplitude, Google Analytics 4, Mixpanel, RudderStack, Brevo, ActiveCampaign, Mailchimp) are implemented in source on `ssrf.request_json_bounded`; their tests are mock-only, and none is production-ready or live-verified.** ActiveCampaign and Mailchimp live in self-contained modules under `webinars/native_providers/` (registered through `PROVIDER_MODULES`); their request shapes were compared with official reference pages fetched 2026-10-27 (see their sections). Mixpanel and RudderStack request shapes were compared with primary-doc facts fetched 2026-10-25; some contract points are still open (see below). That function is a bounded POST/PUT transport: response body up to 64 KB, `Retry-After` parsed, and every native request pinned to the destination's own configured host. If the function were ever missing, HubSpot and Attio fail validation, and their deliveries are dead-lettered with `native_transport_unavailable` without any network call.
 
 The vendor API contracts below are **UNVERIFIED** assumptions. Testing so far is mocked contract tests only. Nothing has been checked against a real vendor or sandbox account: no accounts are connected and no external calls have been made. The API shapes below come from the implementer's knowledge of the vendors' public documentation and **must be checked against the current official docs** (list at the end) before anyone enables these integrations.
 
@@ -42,6 +42,8 @@ The vendor API contracts below are **UNVERIFIED** assumptions. Testing so far is
   - Mixpanel: `api.mixpanel.com`, `api-eu.mixpanel.com`, `api-in.mixpanel.com` (unverified)
   - RudderStack: the destination's own data plane host, which must be an exact operator allowlist entry (see below)
   - Brevo: `api.brevo.com` only (no other region or host)
+  - ActiveCampaign: the account's own API host (`<account>.api-us1.com`), typed by the marketer and required to be an exact operator allowlist entry, exactly like the RudderStack data plane
+  - Mailchimp: `<data center>.api.mailchimp.com`, derived from the configured data center, which must equal the API key's suffix and be an exact operator allowlist entry
 
   The operator must also add the host to `WEBHOOK_HOST_ALLOWLIST`. The destination URL is set from provider and region and is read-only in the studio. Self-hosted PostHog and HubSpot EU-specific hosts are **not supported**.
 - **Studio.**
@@ -190,9 +192,95 @@ Status: **source implemented; tests mock-only (`tests/test_native_brevo.py`, fak
 - Transport enforcement also requires explicit `allowed_hosts` for `api-key` headers, case-insensitively, alongside `Authorization`. Regression tests reject missing host restrictions before any request is spawned.
 - No sandbox or live verification.
 
+## ActiveCampaign (contact sync + lifecycle tags; source checked against official references, account unverified)
+
+Status: **source implemented in `webinars/native_providers/activecampaign.py`; tests mock-only (`tests/test_native_activecampaign.py`, fake transports, no network); not checked against an ActiveCampaign account.** The implementer fetched these official pages with WebFetch on 2026-10-27 and compared the code with them:
+
+- Sync a contact's data (`POST /contact/sync`): https://developers.activecampaign.com/reference/sync-a-contacts-data
+- Add a tag to a contact (`POST /contactTags`): https://developers.activecampaign.com/reference/create-contact-tag
+- Authentication (`Api-Token` header, `https://<account>.api-us1.com/api/3/`): https://developers.activecampaign.com/reference/authentication
+- Rate limits (5 requests/second per account, 429 with `Retry-After`): https://developers.activecampaign.com/reference/rate-limits
+
+**Settings** (schema-driven from the module's `FIELDS`; the studio form, preview and validation need no provider-specific code):
+
+- **API host**: the account's own host, e.g. `acme.api-us1.com`, typed by the marketer. Checked by `native_integrations.destination_host_problem` at every trust boundary (`validate`, `check_send_policy` between steps, `host_of` at send time): a bare lowercase DNS name, not a static vendor host, an **exact, non-wildcard** `WEBHOOK_HOST_ALLOWLIST` entry (no parent domain or wildcard admits it), and `ssrf.validate_destination_url`. Delivery pins every call to that one host (`allowed_hosts`), so the key is never sent anywhere else, even to another allowlisted host. VERIFIED (host pattern): the authentication page's example host is `123456demo.api-us1.com`; the page does not state the pattern as a rule, so any other regional suffix is accepted as long as the operator allowlists it.
+- **API key**: secret, set-only, sent only in the `Api-Token` header (VERIFIED: authentication page). `api-token` is in `SECRET_HEADERS` (previews show `Api-Token: [redacted]`), and `ssrf.CREDENTIAL_HEADERS` now includes `api-token` and `x-api-token`, so a request carrying either is refused without an explicit `allowed_hosts` (regression-tested).
+- **Email match confirmation**: required. Every call creates or updates the contact that has the registrant's email; names and mapped fields overwrite it. Only `identity.verified` registrations are sent; that is not proof of mailbox ownership. Without it: `native_match_strategy_unconfirmed`, no call.
+- **Custom field mapping**: optional `source=<numeric field id>` pairs. Sources are only `firstName`, `lastName`, `company`, `jobTitle`, `webinar_event_title`, `webinar_starts_at`, `webinar_registration_status`, `webinar_attendance` and `webinar_event_type`. Never `phone` or anything else. Each source and each field id may appear once.
+- **Tag IDs** (`tag_registered`, `tag_attended`, `tag_no_show`): optional numeric ids of **existing** tags (VERIFIED: `contactTag.tag` is the tag id "not a tag name"; a name returns 400 "No tag id provided"). `registration.created` → registered; `attendance.checked_in` and `attendance.recorded`=attended → attended; `attendance.recorded`=no_show → no-show; `registration.updated` applies no tag.
+- **Data processing confirmation**: required, as for every provider.
+
+| Call | Body | Notes |
+| --- | --- | --- |
+| `POST /api/3/contact/sync` | `{"contact": {"email", "firstName", "lastName", "fieldValues": [{"field": "<id>", "value": …}]}}` (names only when the profile group is present; `fieldValues` only for mapped, non-empty scalar values) | VERIFIED: creates (201) or updates (200) one contact by email; "duplicate-email errors do not occur"; omitted fields are not changed; `fieldValues[].field` is the custom field id. Never sent: `phone`, `lists`, `tags`, `status`, `form`, `account`/`orgid`/`organization`, `ip4`, `whatsapp_id`, `source`, `useDefaults`, `allowNullEmail`, `open_tracking_optout` (VERIFIED as accepted keys we deliberately omit). The response `contact.id` (a string of digits) is required for the tag call; without it the message is retried (`contact: response_missing_id`). |
+| `POST /api/3/contactTags` (only when the lifecycle has a tag id) | `{"contactTag": {"contact": <id>, "tag": <id>}}` as integers | VERIFIED: 201 applied; **200 when the tag is already applied** ("repeating the request is safe"), so a retry after a lost lease or timeout never duplicates the tag. The documented 400 "contactTag object already exists" only occurs for two simultaneous requests and is dead-lettered like any other 4xx (no special case). 404 "Tag not found" (deleted or template tag) is dead. |
+
+**Identity / dedupe.** Both calls key on the email (sync) or the contact id the sync returned (tag); no platform id is written to ActiveCampaign. A retry re-sends the identical sync and tag requests, which converge. No `_require_delivery_id`: nothing here derives from the delivery id.
+
+**Limits.** One contact per sync request (VERIFIED). Rate limit 5 requests/second per account, 429 with `Retry-After` (VERIFIED), which the generic status mapping honours. No payload byte limit is documented; values must be scalars (`contact: payload_unsupported` before any call).
+
+**Consent / marketability.** Not an analytics provider: which consent purposes gate it is the operator's **Required consent** choice, re-checked before the tag call. The contact is **never added to a list or automation and its status is never changed**: a synced contact has no list subscription from this adapter. UNVERIFIED and the operator's responsibility: whether existing automations in the account trigger on contact creation, field changes or tag application (tags are a common automation trigger), and whether an account's default settings make a list-less contact reachable by campaigns. The data processing confirmation covers this; the platform does not treat the contact as consented to marketing.
+
+**Not implemented.** Site/event tracking through `trackcmp.net` (a different host, form-encoded, actid/key credentials), `contactLists` (subscriptions), `contactAutomations`, account/organization association and `POST /contacts` (plain create).
+
+**Responses.** 2xx: delivered. 408, 425, 429 (with `Retry-After`), 5xx and 3xx: retried. Other 4xx (400, 401, 403, 404, 422): dead-lettered. Errors hold only a step name and a code.
+
+**Unresolved:**
+
+- Whether the `fieldValues[].value` type for date custom fields accepts the ISO-8601 `webinar_starts_at` string (the reference lists string/number/boolean values but no date format).
+- The exact type of `contact.id` in the sync response (string in the reference; digits are required here) and of `contactTag.contact`/`tag` in responses (the page disagrees with itself; the adapter does not read them).
+- Regional API host suffixes other than `api-us1.com`.
+- No sandbox or live verification.
+
+## Mailchimp (audience member + tags + member event; source checked against official references, account unverified)
+
+Status: **source implemented in `webinars/native_providers/mailchimp.py`; tests mock-only (`tests/test_native_mailchimp.py`, fake transports, no network); not checked against a Mailchimp account.** The implementer fetched these official pages with WebFetch on 2026-10-27 and compared the code with them:
+
+- Add or update list member (`PUT /lists/{list_id}/members/{subscriber_hash}`): https://mailchimp.com/developer/marketing/api/list-members/add-or-update-list-member/
+- Add event (`POST …/members/{subscriber_hash}/events`): https://mailchimp.com/developer/marketing/api/list-member-events/add-event/
+- Add or remove member tags (`POST …/members/{subscriber_hash}/tags`): https://mailchimp.com/developer/marketing/api/list-member-tags/add-or-remove-member-tags/
+- Quick start (`curl --user "anystring:${apikey}"`): https://mailchimp.com/developer/marketing/guides/quick-start/
+- Errors (status codes, 429 = 10 concurrent requests per user): https://mailchimp.com/developer/marketing/docs/errors/
+- Contact statuses (non-subscribed/transactional "can't receive marketing emails"; pending contacts "must confirm their opt-in before being added"): https://mailchimp.com/help/about-your-contacts/
+- Official Python client README (`server` prefix such as `us19`; "All URIs are relative to https://server.api.mailchimp.com/3.0"): https://github.com/mailchimp/mailchimp-marketing-python
+
+**Settings** (schema-driven from the module's `FIELDS`):
+
+- **Data center**: `^[a-z]{2,3}[0-9]{1,3}$`, e.g. `us19`. The host is `<data center>.api.mailchimp.com` (VERIFIED against the official client README; the current API docs show only the root `https://api.mailchimp.com/3.0/`, so whether the un-prefixed host also accepts the key is UNVERIFIED and not offered). It must be an **exact, non-wildcard** `WEBHOOK_HOST_ALLOWLIST` entry and pass `ssrf.validate_destination_url` (`destination_host_problem`); otherwise there is no host, nothing validates and nothing is sent. `validate_extra` also requires the data center to equal the stored API key's suffix after its last `-`, compared without rendering the key (UNVERIFIED: the fetched pages no longer state that the key carries the data center suffix; the check is conservative and fails closed). Delivery pins every call to that one host.
+- **API key**: secret, set-only, sent only as HTTP Basic `anystring:<key>` (VERIFIED: quick-start curl `--user "anystring:${apikey}"`; the reference pages describe a Bearer alternative that is not implemented). Previews show `Authorization: [redacted]`.
+- **Audience ID**: the list the member is written to.
+- **Email match confirmation**: required. Every call is keyed by the MD5 of the lower-cased email (VERIFIED: `subscriber_hash` "is the MD5 hash of the lowercase version of the list member's email address"), so merge fields overwrite any existing member with that email. Only `identity.verified` registrations are sent; not proof of mailbox ownership.
+- **Status for new members**: `transactional` (default) or `pending`. **Never `subscribed`** (not a choice; refused by `validate` and `run`). Pending requires the **Opt-in email confirmation** acknowledgement, because Mailchimp then sends the registrant its opt-in confirmation (UNVERIFIED for API-created members: the double opt-in help page says double opt-in "can only be enabled for Mailchimp signup forms"; a pending member who never confirms is deleted after 60 days per the statuses page).
+- **Merge field mapping**: optional `firstName=FNAME,lastName=LNAME,…` pairs. Sources only `firstName`, `lastName`, `company`, `jobTitle`; targets are uppercase merge tags; `EMAIL` is refused; each source and target once. Merge tags must already exist in the audience (UNVERIFIED whether unknown tags are ignored or rejected).
+- **Tags** (`tag_registered`, `tag_attended`, `tag_no_show`): optional tag names (VERIFIED: a tag "that does not exist … set as `active`" is created). Lifecycle mapping as for ActiveCampaign.
+- **Data processing confirmation**: required.
+
+| Call | Body | Notes |
+| --- | --- | --- |
+| `PUT /3.0/lists/{audience}/members/{md5}` | `email_address`, `status_if_new`, `merge_fields` (mapped, non-empty, only when the profile group is present) | VERIFIED: "adds a list member or updates an existing one"; `status_if_new` is required only when the address is not yet on the list, with `transactional` and `pending` among its values; `merge_fields` keys are merge tags such as `FNAME`. **`status` is never sent**, so an existing member's status is never changed (VERIFIED that `status` is the field that would change it). Never sent: `interests`, `tags`, `marketing_permissions`, `ip_signup`, `ip_opt`, `timestamp_signup`, `timestamp_opt`, `vip`, `language`, `email_type`, `location`. 200 (the only documented status) returns `id` = the hash; a missing `id` is retried (`member: response_missing_id`) before any tag or event call. |
+| `POST …/members/{md5}/tags` (only when the lifecycle has a tag name) | `{"tags": [{"name": …, "status": "active"}]}` | VERIFIED: `active` adds, 204 empty response. Never `inactive` (no tag removal), never `is_syncing`. |
+| `POST …/members/{md5}/events` | `name` (`webinar_registered`, `webinar_registration_updated`, `webinar_checked_in`, `webinar_attended`, `webinar_no_show`: 2–30 chars, VERIFIED), `properties` (string values only, VERIFIED type "map from string to string"), `occurred_at` (ISO-8601, VERIFIED; omitted when `occurredAt` doesn't parse) | 204. Properties are the lifecycle facts only: `webinar_event_type`, `_event_id`, `_event_title`, `_occurrence_id`, `_starts_at`, `_registration_id`, `_registration_status`, `_attendance`, `_schema_version`, `_delivery_id`. Never profile, consent, attribution data or any URL. Sent last so that a failure earlier in the sequence never leaves a duplicate event behind. |
+
+**Identity / dedupe.** Every call keys on the email hash; no platform id is written. The member upsert and the tag call converge on retry. The event is **not idempotent** (the reference documents no idempotency key): a retry after a timeout, a lost lease or a failed event call can create a duplicate event. `webinar_delivery_id` stays the same across retries so consumers can dedupe (`_require_delivery_id`: missing delivery id is dead `native_delivery_id_missing`).
+
+**Limits.** 429 means more than 10 simultaneously processing requests per user (VERIFIED) and is retried with `Retry-After` when present. Event `name` length is enforced (VERIFIED 2–30). No documented size limits for `properties` or `merge_fields`; nested merge values are refused before any call (`member: payload_unsupported`).
+
+**Consent / marketability.** Not an analytics provider; consent purposes are the operator's **Required consent** choice, re-checked before the tag and event calls. A `transactional` member is a non-subscribed contact who "can't receive marketing emails, marketing text messages" (VERIFIED, statuses page), so the default never makes anyone marketable. A `pending` member becomes `subscribed` only if they click Mailchimp's confirmation; the operator's opt-in acknowledgement records that they accept Mailchimp sending that email. An existing `subscribed` member stays subscribed (we never send `status`); this adapter neither grants nor withdraws marketing permission. UNVERIFIED and the operator's responsibility: whether audience automations trigger on the tags or events this adapter writes.
+
+**Responses.** 2xx: delivered. 408, 425, 429, 5xx and 3xx: retried. Other 4xx (400 "Invalid Resource", 401 "API Key Invalid", 403, 404 "Resource Not Found", 405, 414, 422): dead-lettered. Errors hold only a step name and a code; the `application/problem+json` body is never read.
+
+**Unresolved:**
+
+- Whether the data-center host form (`<dc>.api.mailchimp.com`) is still required, and whether the API key suffix is the authoritative data center (the current docs show only the root URL; the check follows the official client README and fails closed).
+- Whether an API-created `pending` member receives the opt-in confirmation email.
+- Whether unknown merge tags are ignored or rejected, and whether `skip_merge_validation` would be needed for audiences with required merge fields (not sent).
+- Idempotency of re-adding an already active tag (not stated; assumed a no-op).
+- Any `properties` size or key-format limits for events.
+- No sandbox or live verification.
+
 ## Deferred providers
 
-- Salesforce, Pipedrive, marketing-automation and transactional tools are a later wave.
+- Salesforce, Pipedrive, further marketing-automation and transactional tools are a later wave.
 
 ## Marketer setup
 

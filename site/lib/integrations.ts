@@ -277,8 +277,32 @@ export const INTEGRATIONS: Integration[] = [
   // Roadmap -------------------------------------------------------------------
   roadmap('salesforce', 'Salesforce', 'crm', 'Contacts, leads and campaign membership in Salesforce.'),
   roadmap('pipedrive', 'Pipedrive', 'crm', 'People and activities in Pipedrive.'),
-  roadmap('activecampaign', 'ActiveCampaign', 'marketing', 'Contacts, tags and events in ActiveCampaign.'),
-  roadmap('mailchimp', 'Mailchimp', 'marketing', 'Audience members and tags in Mailchimp.'),
+  {
+    id: 'activecampaign',
+    name: 'ActiveCampaign',
+    category: 'marketing',
+    status: 'built',
+    summary: 'Create or update the contact by email on your own ActiveCampaign API host, then apply lifecycle tags.',
+    details: [
+      'Never adds contacts to lists or automations and never changes their status; only existing tag IDs are applied.',
+      'Only explicitly mapped name, company, job title and webinar fields; never phone, and no URLs are sent.',
+      'Your account API host must be on the operator allowlist exactly; the key is sent nowhere else.',
+      'Site event tracking (trackcmp.net) is not implemented.',
+    ],
+  },
+  {
+    id: 'mailchimp',
+    name: 'Mailchimp',
+    category: 'marketing',
+    status: 'built',
+    summary: 'Add or update the audience member by email, apply lifecycle tags and record a member event.',
+    details: [
+      'New members are transactional (not marketable) unless you explicitly choose pending double opt-in; never subscribed.',
+      'Never changes an existing member’s status, interests or marketing permissions.',
+      'Only explicitly mapped name, company and job title merge fields; no URLs are sent.',
+      'Member events may repeat on a delivery retry; each carries the delivery ID for dedupe.',
+    ],
+  },
   roadmap('marketo', 'Marketo', 'marketing', 'Leads and program membership in Marketo.'),
   roadmap(
     'hubspot-marketing',

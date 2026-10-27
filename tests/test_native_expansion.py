@@ -74,14 +74,36 @@ def test_new_providers_offered_and_schema_driven():
     assert ni.config_of(GA4, "ga4") == {"region": "global", "measurement_id": "G-ABC123XYZ", "processing_ack": "confirmed"}
 
 
-@pytest.mark.parametrize("name", ["mixpanel", "rudderstack"])
+@pytest.mark.parametrize("name", ["mixpanel", "rudderstack", "brevo", "activecampaign", "mailchimp"])
 def test_formerly_deferred_providers_now_built(name):
-    # Covered in depth by tests/test_native_remaining_analytics.py.
+    # Covered in depth by tests/test_native_remaining_analytics.py, test_native_brevo.py,
+    # test_native_activecampaign.py and test_native_mailchimp.py.
     creds = {"native_provider": name, **ACK}
     assert ni.provider_of(creds) == name and name in ni.FIELDS
     assert ni.validate(name, creds, **KW).get("provider") != ["Unknown provider."]
     out, _notes = ni.merge_credentials({}, name, {})
     assert out["native_provider"] == name
+
+
+def test_every_registered_provider_is_schema_driven_and_pinned():
+    """Shared studio/preview/delivery assumptions hold for every provider, including module-registered ones."""
+    for provider, label in ni.PROVIDER_CHOICES:
+        if not provider:
+            continue
+        assert label and ni.PROVIDER_LABELS[provider] == label
+        fields = ni.FIELDS[provider]
+        # The studio defaults the region from the first field's first choice.
+        assert fields[0].name == "region" and fields[0].choices
+        assert ni.PROCESSING_ACK in fields
+        assert any(f.secret for f in fields)
+        assert len({f.name for f in fields}) == len(fields)
+        if provider in ni.REGISTRY:
+            module = ni.REGISTRY[provider]
+            assert module.PROVIDER == provider and callable(module.run)
+            assert provider in ni.NEEDS_DESTINATION_HOSTS or provider in ni.HOSTS
+        # No host without a configuration: nothing can be sent until the destination resolves.
+        assert ni.allowed_hosts(provider, {"native_provider": provider}) == frozenset()
+    assert {"activecampaign", "mailchimp"} <= set(ni.REGISTRY)
 
 
 # --- validation ---------------------------------------------------------------

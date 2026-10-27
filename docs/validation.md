@@ -2,6 +2,12 @@
 
 Implemented with parallel Claude CLI `claude-opus-5-5` orchestrators and bounded subagents, independent security review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## ActiveCampaign and Mailchimp native adapters — 2026-10-27
+
+- Two module-registered adapters (`webinars/native_providers/activecampaign.py`, `webinars/native_providers/mailchimp.py`, listed in `PROVIDER_MODULES`); `ssrf.CREDENTIAL_HEADERS` now also treats `Api-Token`/`X-Api-Token` as credentials that require explicit `allowed_hosts`. No change to `webinars/native_integrations.py`, the studio form or the models; no migration.
+- Mock-only: `tests/test_native_activecampaign.py` (121 tests) and `tests/test_native_mailchimp.py` (115) cover schema and set-only secrets, host pinning to the typed account host / data-center host, exact request shapes with forbidden keys, response-id parsing, status mapping, retry idempotency, consent and identity skips, redacted previews, end-to-end delivery and the mid-sequence config-change stop. `tests/test_native_expansion.py` and `tests/test_native_studio.py` were extended for every registered provider (309 tests across the four files). Request shapes were compared with official reference pages fetched 2026-10-27 (cited in docs/native-integrations.md); no account, sandbox or network was used.
+- Full Python suite on Python 3.12 / PostgreSQL 16 (disposable `ws_mkt` database): **1,637 passed, 2 failed**. Both failures are pre-existing on `main` (`tests/test_hosting_transport.py` still expects `GET` to be refused after commit 80aa045 added bodiless `GET` to `ssrf.NATIVE_METHODS`) and are untouched by this work. `ruff check .`, `manage.py check` and `makemigrations --check` pass; the site catalogue tests pass (`cd site && npm test`, 50 tests, node 26, no `node_modules` needed). `site/lib/integrations.ts` lists both as built (mock-tested), not connected.
+
 ## Actual built-image smoke — 2026-10-26T22:30:20Z
 
 - **Passed** managed runtime smoke of `artifacts/pi-build-fec1905b-e8cb-4147-b39d-7ed3f21564bd/image.tar` with disposable PostgreSQL16. Ran migrations, web, probe and worker once; no application-source mount.

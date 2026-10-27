@@ -57,18 +57,20 @@ const byId = Object.fromEntries(INTEGRATIONS.map((i) => [i.id, i]));
 
 test('only mock-tested outbound and hosting adapters are marked built', () => {
   assert.deepEqual(idsWith('built'), [
-    'amplitude', 'attio', 'brevo', 'customerio', 'ga4', 'hubspot', 'mixpanel', 'posthog', 'rudderstack', 'segment',
-    'sequel', 'wistia', 'zoom',
+    'activecampaign', 'amplitude', 'attio', 'brevo', 'customerio', 'ga4', 'hubspot', 'mailchimp', 'mixpanel', 'posthog',
+    'rudderstack', 'segment', 'sequel', 'wistia', 'zoom',
   ]);
 });
 
-// Mirrors PROVIDER_CHOICES in webinars/native_integrations.py (generic webhook excluded).
+// Mirrors PROVIDER_CHOICES in webinars/native_integrations.py plus the module registry in
+// webinars/native_providers/ (generic webhook excluded).
 const NATIVE_PROVIDERS = [
   'posthog', 'hubspot', 'customerio', 'attio', 'segment', 'amplitude', 'ga4', 'mixpanel', 'rudderstack', 'brevo',
+  'activecampaign', 'mailchimp',
 ];
 
 test('every native adapter in the back-end registry is listed as built, never live', () => {
-  assert.equal(NATIVE_PROVIDERS.length, 10);
+  assert.equal(NATIVE_PROVIDERS.length, 12);
   for (const id of NATIVE_PROVIDERS) {
     const item = byId[id];
     assert.ok(item, id);
@@ -91,6 +93,12 @@ test('built adapters state their privacy limits', () => {
   assert.ok(byId.rudderstack.details.some((d) => /own data plane host.*allowlist/i.test(d)));
   assert.ok(byId.brevo.details.some((d) => /never changes lists, subscriptions or blocklist/i.test(d)));
   assert.ok(byId.brevo.details.some((d) => /no urls are sent/i.test(d)));
+  assert.ok(byId.activecampaign.details.some((d) => /never adds contacts to lists or automations/i.test(d)));
+  assert.ok(byId.activecampaign.details.some((d) => /never phone.*no urls are sent/i.test(d)));
+  assert.ok(byId.activecampaign.details.some((d) => /operator allowlist exactly/i.test(d)));
+  assert.ok(byId.mailchimp.details.some((d) => /transactional \(not marketable\).*never subscribed/i.test(d)));
+  assert.ok(byId.mailchimp.details.some((d) => /never changes an existing member/i.test(d)));
+  assert.ok(byId.mailchimp.details.some((d) => /may repeat on a delivery retry/i.test(d)));
 });
 
 test('hosting statuses match what exists', () => {
@@ -116,7 +124,7 @@ test('framework and CMS kits are reference code, never built', () => {
 
 test('roadmap providers are listed and not built', () => {
   for (const id of [
-    'salesforce', 'pipedrive', 'activecampaign', 'mailchimp', 'marketo', 'hubspot-marketing', 'loops', 'intercom', 'resend', 'postmark', 'ses',
+    'salesforce', 'pipedrive', 'marketo', 'hubspot-marketing', 'loops', 'intercom', 'resend', 'postmark', 'ses',
     'n8n', 'zapier', 'make',
   ]) {
     assert.equal(INTEGRATIONS.find((i) => i.id === id)?.status, 'roadmap', id);
