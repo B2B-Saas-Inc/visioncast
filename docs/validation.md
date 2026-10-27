@@ -2,6 +2,11 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Live demo backend updated to v0.2.0-pre — 2026-10-27T19:02Z
+
+- With the owner's approval, the demo droplet's backend (`deploy/demo/STATUS.md`) was updated from the 2026-10-26 build to the `v0.2.0-pre` tree: bundle built with `git archive` from `1462cb7` (allowlisted paths only, no AppleDouble files, `requirements.txt` identical to the installed lock), uploaded, `update-test-backend.sh` dry run then `--apply`: database dump and previous source kept under `/srv/visioncast/backups/20261027T190217Z`, `migrate` applied `0011_attendance_import`, `sync_roles` (92/22/10), `collectstatic`, `check` clean, `visioncast-web` restarted and healthy.
+- Public checks afterwards: `https://64-225-16-137.sslip.io/healthz` → `{"status": "ok", "version": "0.2.0-pre"}`; `/api/v1/events?when=upcoming` → 4 demo events; `/api/v1/openapi.json` → 200 with 61 paths including the 5 attendance-import routes; `/admin/`, `/studio/login/`, `/mcp`, `/api/v1/manage/events` → 404 (not exposed); `https://visioncast-ten.vercel.app/events` → 200. No worker, email, destinations or outbound access on the demo host; the frontend catalogue was not redeployed. Not a production deployment.
+
 ## Published image v0.2.0-pre and amd64 first run — 2026-10-27T18:10Z
 
 - **History note.** Before the first push, GitHub push protection rejected the unpushed commits because a Mailchimp test fixture in `tests/test_native_studio.py` was shaped like a real API key. The fixture was replaced across the unpushed history (`git filter-branch`), so every commit hash after `864cb12` changed: the tree previously recorded as `09e104a` is now `44bcb10`, and the release docs commit is `1462cb7`. File contents are otherwise identical; the locally built arm64 image's `revision` label (`09e104a…`) therefore names a pre-rewrite commit. 1,945 tests still pass on the rewritten tree (`tests/test_native_studio.py` and `test_native_mailchimp.py` rerun: 132 passed).
