@@ -345,13 +345,15 @@ def set_credentials(destination, credentials, *, user):
 
 
 def credential_names(destination):
-    """Names (never values) of the stored credentials."""
+    """Names (never values) of the stored credentials. The ``webhook_preset`` marker
+    (``webinars.webhook_presets``) is a setting, not a credential, and is left out."""
     from webinars.crypto import DecryptionError, decrypt_secret
+    from webinars.webhook_presets import PRESET_KEY
 
     if not destination.credentials_encrypted:
         return []
     try:
-        return sorted(json.loads(decrypt_secret(destination.credentials_encrypted)).keys())
+        return sorted(k for k in json.loads(decrypt_secret(destination.credentials_encrypted)) if k != PRESET_KEY)
     except (DecryptionError, ValueError, AttributeError):
         return []
 

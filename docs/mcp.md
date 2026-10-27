@@ -86,6 +86,8 @@ Attendance imports ([hosting.md](hosting.md#attendance-import)) share the REST h
 
 `send_test_delivery` queues one fixed synthetic payload (`eventType: webhook.test`, no person, no links) for an existing **enabled** destination; the worker delivers it through the normal path (SSRF-pinned signed webhook, or the destination's native provider). No URL, header or payload is accepted. Invitation links are delivered by email only and never returned.
 
+`save_destination` accepts `preset` (`"zapier"`, `"make"`, `"n8n"`, or `""` to clear) for workflow-automation platforms ([webhooks.md](webhooks.md#workflow-automation-platforms)): the URL must match the platform's shape (otherwise `validation_error` on `url`), `kind` is pinned to `generic` and `includePrivateLinks` to `false`, and a preset cannot be combined with a native provider. The dry-run preview, `list_destinations` and `preview_destination_contract` return `preset` (id, label, URL rule, recipe path, verification notes, or `null`); `credentialNames` never lists the `webhook_preset` marker, and `set_destination_credentials` keeps it (passing it as a credential is refused). The `webinar://contracts/webhooks` resource lists the presets' URL rules and recipe paths.
+
 Covers: `set_event_cover` accepts PNG/JPEG/WebP up to 40 KB (base64 inside the 64 KB body). For larger images use the studio upload or set `heroImageUrl` (https) with `update_event`.
 
 **Not supported over MCP:** Administrator/superuser management and creation, writing process-environment settings (readiness is read-only; the playbook lists exact deployment steps), host provisioning (instructions only), arbitrary HTTP, shell or file access, returning any stored secret, join link, private link, invitation link or registrant personal data.

@@ -1,0 +1,413 @@
+{
+  "name": "Webinar platform - verified deliveries",
+  "flow": [
+    {
+      "id": 1,
+      "module": "gateway:CustomWebHook",
+      "version": 1,
+      "parameters": {
+        "hook": 0,
+        "maxResults": 1
+      },
+      "mapper": {},
+      "metadata": {
+        "designer": {
+          "x": 0,
+          "y": 0,
+          "name": "Webinar platform (create the webhook after import: JSON pass-through + Get request headers on)"
+        },
+        "restore": {
+          "parameters": {
+            "hook": {
+              "label": "Webinar platform"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "hook",
+            "type": "hook:gateway-webhook",
+            "label": "Webhook",
+            "required": true
+          },
+          {
+            "name": "maxResults",
+            "type": "number",
+            "label": "Maximum number of results"
+          }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "module": "util:SetVariables",
+      "version": 1,
+      "parameters": {},
+      "mapper": {
+        "scope": "roundtrip",
+        "variables": [
+          {
+            "name": "deliveryId",
+            "value": "{{get(map(1.headers; \"value\"; \"name\"; \"webinar-delivery-id\"); 1)}}"
+          },
+          {
+            "name": "timestamp",
+            "value": "{{get(map(1.headers; \"value\"; \"name\"; \"webinar-timestamp\"); 1)}}"
+          },
+          {
+            "name": "signature",
+            "value": "{{get(map(1.headers; \"value\"; \"name\"; \"webinar-signature\"); 1)}}"
+          },
+          {
+            "name": "body",
+            "value": "{{1.body}}"
+          }
+        ]
+      },
+      "metadata": {
+        "designer": {
+          "x": 300,
+          "y": 0,
+          "name": "Headers and raw body"
+        },
+        "restore": {
+          "expect": {
+            "scope": {
+              "label": "One cycle"
+            }
+          }
+        },
+        "expect": [
+          {
+            "name": "variables",
+            "type": "array",
+            "label": "Variables"
+          },
+          {
+            "name": "scope",
+            "type": "select",
+            "label": "Variable lifetime",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "module": "util:SetVariable2",
+      "version": 1,
+      "parameters": {},
+      "mapper": {
+        "name": "expected",
+        "scope": "roundtrip",
+        "value": "v1={{sha256(2.deliveryId + \".\" + 2.timestamp + \".\" + 2.body; \"hex\"; \"REPLACE_WITH_SIGNING_SECRET\")}}"
+      },
+      "metadata": {
+        "designer": {
+          "x": 600,
+          "y": 0,
+          "name": "Expected signature (HMAC-SHA256)"
+        },
+        "restore": {
+          "expect": {
+            "scope": {
+              "label": "One cycle"
+            }
+          }
+        },
+        "expect": [
+          {
+            "name": "name",
+            "type": "text",
+            "label": "Variable name",
+            "required": true
+          },
+          {
+            "name": "scope",
+            "type": "select",
+            "label": "Variable lifetime",
+            "required": true
+          },
+          {
+            "name": "value",
+            "type": "any",
+            "label": "Variable value"
+          }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "module": "builtin:BasicRouter",
+      "version": 1,
+      "mapper": null,
+      "metadata": {
+        "designer": {
+          "x": 900,
+          "y": 0
+        }
+      },
+      "routes": [
+        {
+          "flow": [
+            {
+              "id": 7,
+              "module": "json:ParseJSON",
+              "version": 1,
+              "parameters": {
+                "type": ""
+              },
+              "mapper": {
+                "json": "{{2.body}}"
+              },
+              "filter": {
+                "name": "Signature valid and fresh",
+                "conditions": [
+                  [
+                    {
+                      "a": "{{contains(2.signature; 3.expected)}}",
+                      "b": "true",
+                      "o": "boolean:equal"
+                    },
+                    {
+                      "a": "{{abs(timestamp - 2.timestamp)}}",
+                      "b": "300",
+                      "o": "number:lessorequal"
+                    }
+                  ]
+                ]
+              },
+              "metadata": {
+                "designer": {
+                  "x": 1200,
+                  "y": -150,
+                  "name": "Parse verified body"
+                },
+                "restore": {
+                  "parameters": {
+                    "type": {
+                      "label": "Choose a data structure"
+                    }
+                  }
+                },
+                "parameters": [
+                  {
+                    "name": "type",
+                    "type": "udt",
+                    "label": "Data structure"
+                  }
+                ],
+                "expect": [
+                  {
+                    "name": "json",
+                    "type": "text",
+                    "label": "JSON string",
+                    "required": true
+                  }
+                ]
+              }
+            },
+            {
+              "id": 8,
+              "module": "builtin:BasicRouter",
+              "version": 1,
+              "mapper": null,
+              "metadata": {
+                "designer": {
+                  "x": 1500,
+                  "y": -150
+                }
+              },
+              "routes": [
+                {
+                  "flow": [
+                    {
+                      "id": 9,
+                      "module": "util:SetVariable2",
+                      "version": 1,
+                      "parameters": {},
+                      "mapper": {
+                        "name": "handled",
+                        "scope": "roundtrip",
+                        "value": "registration.created: replace this module with your action (e.g. CRM create)"
+                      },
+                      "filter": {
+                        "name": "registration.created",
+                        "conditions": [
+                          [
+                            {
+                              "a": "{{7.eventType}}",
+                              "b": "registration.created",
+                              "o": "text:equal"
+                            }
+                          ]
+                        ]
+                      },
+                      "metadata": {
+                        "designer": {
+                          "x": 1800,
+                          "y": -300,
+                          "name": "registration.created"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "flow": [
+                    {
+                      "id": 10,
+                      "module": "util:SetVariable2",
+                      "version": 1,
+                      "parameters": {},
+                      "mapper": {
+                        "name": "handled",
+                        "scope": "roundtrip",
+                        "value": "registration.updated: replace this module with your action"
+                      },
+                      "filter": {
+                        "name": "registration.updated",
+                        "conditions": [
+                          [
+                            {
+                              "a": "{{7.eventType}}",
+                              "b": "registration.updated",
+                              "o": "text:equal"
+                            }
+                          ]
+                        ]
+                      },
+                      "metadata": {
+                        "designer": {
+                          "x": 1800,
+                          "y": -150,
+                          "name": "registration.updated"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "flow": [
+                    {
+                      "id": 11,
+                      "module": "util:SetVariable2",
+                      "version": 1,
+                      "parameters": {},
+                      "mapper": {
+                        "name": "handled",
+                        "scope": "roundtrip",
+                        "value": "attendance.recorded: replace this module with your action"
+                      },
+                      "filter": {
+                        "name": "attendance.recorded",
+                        "conditions": [
+                          [
+                            {
+                              "a": "{{7.eventType}}",
+                              "b": "attendance.recorded",
+                              "o": "text:equal"
+                            }
+                          ]
+                        ]
+                      },
+                      "metadata": {
+                        "designer": {
+                          "x": 1800,
+                          "y": 0,
+                          "name": "attendance.recorded"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "flow": [
+            {
+              "id": 5,
+              "module": "gateway:WebhookRespond",
+              "version": 1,
+              "parameters": {},
+              "mapper": {
+                "status": "401",
+                "body": "invalid signature or stale timestamp",
+                "headers": []
+              },
+              "filter": {
+                "name": "Rejected",
+                "conditions": [
+                  [
+                    {
+                      "a": "{{contains(2.signature; 3.expected)}}",
+                      "b": "false",
+                      "o": "boolean:equal"
+                    }
+                  ],
+                  [
+                    {
+                      "a": "{{abs(timestamp - 2.timestamp)}}",
+                      "b": "300",
+                      "o": "number:greater"
+                    }
+                  ]
+                ]
+              },
+              "metadata": {
+                "designer": {
+                  "x": 1200,
+                  "y": 150,
+                  "name": "Reject (401)"
+                },
+                "expect": [
+                  {
+                    "name": "status",
+                    "type": "uinteger",
+                    "label": "Status",
+                    "required": true
+                  },
+                  {
+                    "name": "body",
+                    "type": "any",
+                    "label": "Body"
+                  },
+                  {
+                    "name": "headers",
+                    "type": "array",
+                    "label": "Custom headers"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "instant": true,
+    "version": 1,
+    "scenario": {
+      "roundtrips": 1,
+      "maxErrors": 3,
+      "autoCommit": true,
+      "autoCommitTriggerLast": true,
+      "sequential": false,
+      "confidential": false,
+      "dataloss": false,
+      "dlq": false,
+      "freshVariables": false
+    },
+    "designer": {
+      "orphans": []
+    },
+    "zone": "eu1.make.com",
+    "notes": [
+      "UNVERIFIED on a Make account: the module and filter structure follows Make's blueprint export format from memory and may need adjusting on import; the expressions are the verified part (see README.md).",
+      "Replace REPLACE_WITH_SIGNING_SECRET in module 3 with the destination's signing secret, and map {{1.body}} to the raw-body item the webhook outputs with JSON pass-through on."
+    ]
+  }
+}

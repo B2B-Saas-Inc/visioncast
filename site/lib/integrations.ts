@@ -9,7 +9,7 @@
 
 /** Back-end test run the statuses below rely on. Static mocks only; no live vendor calls. */
 export const BACKEND_TESTS = {
-  passed: 1945,
+  passed: 2001,
   database: 'PostgreSQL',
   note: 'All vendor calls in the test suite use static mocks. No test talks to a live vendor account.',
 } as const;
@@ -351,9 +351,47 @@ export const INTEGRATIONS: Integration[] = [
   roadmap('resend', 'Resend', 'email', 'Send confirmations and reminders through your Resend account.'),
   roadmap('postmark', 'Postmark', 'email', 'Send confirmations and reminders through your Postmark account.'),
   roadmap('ses', 'Amazon SES', 'email', 'Send confirmations and reminders through your own SES.'),
-  roadmap('n8n', 'n8n', 'automation', 'Trigger n8n workflows from VisionCast events.'),
-  roadmap('zapier', 'Zapier', 'automation', 'Trigger Zaps from VisionCast events.'),
-  roadmap('make', 'Make', 'automation', 'Trigger Make scenarios from VisionCast events.'),
+
+  // Workflow automation ---------------------------------------------------------
+  // Destination presets (webinars/webhook_presets.py) over the generic signed webhook, plus an
+  // importable verification recipe per platform (sdk/kits/automation/). The recipes were run
+  // only as a Node simulation against backend-signed fixtures, never on a vendor account.
+  {
+    id: 'zapier',
+    name: 'Zapier',
+    category: 'automation',
+    status: 'built',
+    summary: 'Trigger Zaps from VisionCast events through a Catch Raw Hook, with a Code step that verifies the signed webhook.',
+    details: [
+      'Destination preset checks the hooks.zapier.com Catch Hook URL on save and keeps private links off.',
+      'Verification recipe (Code by Zapier): HMAC-SHA256 signature, 300 s timestamp window, dedupe on the delivery ID via StoreClient.',
+      'Recipe exercised only by a Node simulation on backend-signed fixtures; unverified with a real Zapier account.',
+    ],
+  },
+  {
+    id: 'make',
+    name: 'Make',
+    category: 'automation',
+    status: 'built',
+    summary: 'Trigger Make scenarios from VisionCast events through a custom webhook, verified with Make’s sha256 HMAC function.',
+    details: [
+      'Destination preset checks the hook.<zone>.make.com URL (eu1, eu2, us1, us2) on save and keeps private links off.',
+      'Verification recipe (blueprint + instructions): sha256(text; "hex"; key) HMAC filter, timestamp window, router on eventType, Data store dedupe on the delivery ID.',
+      'Recipe exercised only by a Node simulation on backend-signed fixtures; the blueprint import is unverified with a real Make account.',
+    ],
+  },
+  {
+    id: 'n8n',
+    name: 'n8n',
+    category: 'automation',
+    status: 'built',
+    summary: 'Trigger n8n workflows from VisionCast events through the Webhook node, verified with the Crypto node.',
+    details: [
+      'Destination preset accepts production /webhook/ URLs only (never /webhook-test/) on your own allowlisted n8n host or *.app.n8n.cloud.',
+      'Verification recipe (importable workflow): raw body, Crypto Hmac SHA256, IF on signature and timestamp, Remove Duplicates on the delivery ID, Switch on eventType.',
+      'Recipe exercised only by a Node simulation on backend-signed fixtures; unverified with a real n8n instance.',
+    ],
+  },
 ];
 
 export function isCategory(value: string): value is CategorySlug {

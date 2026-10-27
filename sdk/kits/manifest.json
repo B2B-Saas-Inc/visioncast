@@ -251,6 +251,63 @@
         "summary": "The import file passes contentful-import's own Joi payload schema (the assertPayload check `contentful space import` runs before any API call); both Symbol fields carry regexp validations that accept a slug/UUID and reject junk.",
         "notVerified": ["an actual space import (needs a space and token)"]
       }
+    },
+    {
+      "id": "zapier",
+      "status": "maintained-reference",
+      "productionTested": false,
+      "docs": "docs/kits.md#zapier",
+      "prerequisites": [
+        "A destination saved with the Zapier preset (studio or MCP save_destination preset=zapier) and its signing secret",
+        "hooks.zapier.com on the operator's WEBHOOK_HOST_ALLOWLIST",
+        "Zapier plan with Webhooks by Zapier (Catch Raw Hook) and Code by Zapier; Storage by Zapier for dedupe"
+      ],
+      "files": ["sdk/kits/automation/zapier/verify-step.js", "sdk/kits/automation/zapier/README.md"],
+      "browserFiles": [],
+      "verified": {
+        "date": "2026-10-27",
+        "versions": { "node": "26 (local node --test; Zapier runs Node.js 22 per its docs)" },
+        "summary": "Only the Node simulation ran: sdk/kits/automation/test/automation.test.js calls verifyWebinarDelivery with fixtures signed by examples/verify_webhook.py (the backend algorithm) and a fake StoreClient: valid, rotation header, tampered, wrong secret, stale, missing input and duplicate cases. No Zap was created.",
+        "notVerified": ["Catch Raw Hook field names in the mapping picker", "Code by Zapier runtime (top-level await/return, StoreClient API)", "Storage by Zapier limits in practice"]
+      }
+    },
+    {
+      "id": "make",
+      "status": "instructions",
+      "productionTested": false,
+      "docs": "docs/kits.md#make",
+      "prerequisites": [
+        "A destination saved with the Make preset (preset=make) and its signing secret",
+        "hook.<zone>.make.com (eu1, eu2, us1 or us2) on the operator's WEBHOOK_HOST_ALLOWLIST",
+        "Make custom webhook with JSON pass-through and Get request headers on; a Data store for dedupe"
+      ],
+      "files": ["sdk/kits/automation/make/blueprint.json", "sdk/kits/automation/make/simulate.js", "sdk/kits/automation/make/README.md"],
+      "browserFiles": [],
+      "verified": {
+        "date": "2026-10-27",
+        "versions": { "node": "26 (local node --test)" },
+        "summary": "Only the Node simulation ran: simulate.js evaluates the blueprint's expressions (sha256(text; \"hex\"; key) as HMAC, contains() against Webinar-Signature, abs(timestamp - header) <= 300, Parse JSON, router on eventType, a Data-store-style dedupe) on the backend-signed fixtures; the test also checks that blueprint.json carries exactly those expressions. No Make scenario was imported or run.",
+        "notVerified": ["blueprint.json import (module/filter structure from memory)", "the raw-body item name with JSON pass-through on", "Make's `timestamp` variable and header array shape"]
+      }
+    },
+    {
+      "id": "n8n",
+      "status": "maintained-reference",
+      "productionTested": false,
+      "docs": "docs/kits.md#n8n",
+      "prerequisites": [
+        "A destination saved with the n8n preset (preset=n8n) and its signing secret",
+        "The n8n host as an exact WEBHOOK_HOST_ALLOWLIST entry (n8n Cloud *.app.n8n.cloud accepted by suffix, still needs app.n8n.cloud allowlisted)",
+        "n8n with Webhook, Extract from File, Crypto (credential with HMAC secret), IF, Remove Duplicates and Switch nodes"
+      ],
+      "files": ["sdk/kits/automation/n8n/workflow.json", "sdk/kits/automation/n8n/simulate.js", "sdk/kits/automation/n8n/README.md"],
+      "browserFiles": [],
+      "verified": {
+        "date": "2026-10-27",
+        "versions": { "node": "26 (local node --test)" },
+        "summary": "Only the Node simulation ran: simulate.js replays each node's documented behaviour (raw body as binary, Extract from File to text, Crypto Hmac SHA256 hex with the credential secret, IF contains + age <= 300, Remove Duplicates on Webinar-Delivery-Id, Switch on eventType) on the backend-signed fixtures; the test checks that workflow.json carries exactly those expressions and node types. No n8n instance was used.",
+        "notVerified": ["workflow.json import on a given n8n version (node parameter names)", "Remove Duplicates operation availability", "n8n Cloud webhook URL shape"]
+      }
     }
   ]
 }

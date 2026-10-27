@@ -150,6 +150,7 @@ def webhook_contracts():
     from webinars import outbox
     from webinars.crypto import SIGNATURE_VERSION
     from webinars.models import Destination
+    from webinars.webhook_presets import PRESETS
 
     return {
         "schemaVersion": outbox.SCHEMA_VERSION,
@@ -161,6 +162,8 @@ def webhook_contracts():
         "signature": {"version": SIGNATURE_VERSION,
                       "description": "HMAC-SHA256 over delivery id, timestamp and body with the destination signing "
                                      "secret; verify with examples/verify_webhook.py logic and reject stale timestamps."},
+        # Workflow-automation presets (save_destination preset=...): URL rules and the recipe per platform.
+        "presets": {p.id: {"label": p.label, "urlRule": p.url_rule, "recipe": p.recipe} for p in PRESETS.values()},
     }
 
 

@@ -1,0 +1,263 @@
+{
+  "name": "Webinar platform - verified deliveries",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webinar-platform",
+        "responseMode": "onReceived",
+        "responseCode": 200,
+        "options": {
+          "rawBody": true
+        }
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "notes": "Raw Body must stay on: the signature covers the exact bytes. Use the PRODUCTION URL (/webhook/webinar-platform) as the destination URL; the test URL (/webhook-test/...) only listens while you click Listen for test event."
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "binaryPropertyName": "data",
+        "destinationKey": "data"
+      },
+      "name": "Extract body",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [220, 0],
+      "notes": "Turns the raw body (binary 'data') into the text in $json.data."
+    },
+    {
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ $('Webhook').item.json.headers['webinar-delivery-id'] }}.{{ $('Webhook').item.json.headers['webinar-timestamp'] }}.{{ $json.data }}",
+        "dataPropertyName": "signature",
+        "encoding": "hex"
+      },
+      "name": "HMAC",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [440, 0],
+      "credentials": {
+        "crypto": {
+          "name": "Webinar platform signing secret"
+        }
+      },
+      "notes": "Create a Crypto credential whose HMAC Secret is the destination's signing secret (studio -> Integrations -> Signing secret) and select it here."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "signature",
+              "leftValue": "={{ $('Webhook').item.json.headers['webinar-signature'] }}",
+              "rightValue": "=v1={{ $json.signature }}",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "timestamp",
+              "leftValue": "={{ Math.abs(Math.floor(Date.now() / 1000) - Number($('Webhook').item.json.headers['webinar-timestamp'])) }}",
+              "rightValue": 300,
+              "operator": {
+                "type": "number",
+                "operation": "lte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Signature valid and fresh",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 0],
+      "notes": "'contains' rather than 'equals' so a header carrying two signatures during secret rotation still passes. Deliveries older than 300 s are rejected (replay protection)."
+    },
+    {
+      "parameters": {
+        "operation": "removeItemsSeenInPreviousExecutions",
+        "logic": "removeItemsWithAlreadySeenKeyValues",
+        "dedupeValue": "={{ $('Webhook').item.json.headers['webinar-delivery-id'] }}",
+        "options": {
+          "scope": "workflow",
+          "historySize": 10000
+        }
+      },
+      "name": "Drop repeated delivery ids",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [880, -100],
+      "notes": "Webinar-Delivery-Id is stable across the platform's retries; a repeat is dropped here. If your n8n version lacks this operation, use a Data table / database lookup keyed by the delivery id instead."
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ JSON.parse($('Extract body').item.json.data).eventType }}",
+                    "rightValue": "registration.created",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "registration.created"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ JSON.parse($('Extract body').item.json.data).eventType }}",
+                    "rightValue": "registration.updated",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "registration.updated"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ JSON.parse($('Extract body').item.json.data).eventType }}",
+                    "rightValue": "attendance.recorded",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "attendance.recorded"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "name": "Route by eventType",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1100, -100],
+      "notes": "Connect your actions to the named outputs. The parsed payload is JSON.parse($('Extract body').item.json.data); other event types leave through the fallback output."
+    },
+    {
+      "parameters": {
+        "content": "## Rejected deliveries\nInvalid signature or stale timestamp. Nothing is processed; the platform already received a 200 (the Webhook node responds immediately), so it will not retry — which is what you want for a forged or replayed request. Add an alert here if you like.",
+        "height": 180,
+        "width": 360
+      },
+      "name": "Rejected",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [880, 160]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract body": {
+      "main": [
+        [
+          {
+            "node": "HMAC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HMAC": {
+      "main": [
+        [
+          {
+            "node": "Signature valid and fresh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signature valid and fresh": {
+      "main": [
+        [
+          {
+            "node": "Drop repeated delivery ids",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Drop repeated delivery ids": {
+      "main": [
+        [
+          {
+            "node": "Route by eventType",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "note": "UNVERIFIED on an n8n instance: node parameter names follow the n8n docs and source read on 2026-10-27; the expressions are exercised by sdk/kits/automation/test/automation.test.js."
+  }
+}
