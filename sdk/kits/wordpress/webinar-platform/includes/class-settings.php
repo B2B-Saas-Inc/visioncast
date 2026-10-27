@@ -110,11 +110,16 @@ final class Webinar_Platform_Settings {
 		return array_values( array_unique( array_merge( array( self::home_origin() ), is_array( $extra ) ? $extra : array() ) ) );
 	}
 
-	/** The SDK script URL: the override, else the backend's published file. */
+	/**
+	 * The SDK script URL: the override, else the backend's published file. A path override is
+	 * resolved against home_url(), so "/webinar-form.js" is "<home>/webinar-form.js" on a
+	 * subdirectory install too (wp_register_script would otherwise prefix the site URL itself,
+	 * turning "/blog/webinar-form.js" into "/blog/blog/webinar-form.js").
+	 */
 	public static function sdk_url() {
 		$override = (string) self::get( 'sdk_url' );
 		if ( '' !== $override ) {
-			return $override;
+			return '/' === $override[0] ? home_url( $override ) : $override;
 		}
 		$origin = self::backend_origin();
 		return '' === $origin ? '' : $origin . self::SDK_PATH;
@@ -269,7 +274,7 @@ final class Webinar_Platform_Settings {
 					<tr>
 						<th scope="row"><label for="wp-sdk-url"><?php esc_html_e( 'SDK script URL', 'webinar-platform' ); ?></label></th>
 						<td><input id="wp-sdk-url" class="regular-text" type="text" name="<?php echo esc_attr( self::OPTION ); ?>[sdk_url]" value="<?php echo esc_attr( (string) self::get( 'sdk_url' ) ); ?>" placeholder="<?php echo esc_attr( self::backend_origin() . self::SDK_PATH ); ?>">
-						<p class="description"><?php esc_html_e( 'Optional. Blank uses the backend’s /static/webinar-sdk/webinar-form.js. Use a path on this site for a self-hosted copy.', 'webinar-platform' ); ?></p></td>
+						<p class="description"><?php esc_html_e( 'Optional. Blank uses the backend’s /static/webinar-sdk/webinar-form.js. For a self-hosted copy, enter a path under this site’s home URL (for example /webinar-form.js; on a subdirectory install that is /blog/webinar-form.js).', 'webinar-platform' ); ?></p></td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="wp-origins"><?php esc_html_e( 'Extra allowed origins', 'webinar-platform' ); ?></label></th>

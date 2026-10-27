@@ -162,8 +162,10 @@ function rewriteSetCookie(raw, config) {
   const eq = first.indexOf('=');
   if (eq === -1) return null;
   const name = first.slice(0, eq).trim();
-  const value = first.slice(eq + 1).trim();
+  let value = first.slice(eq + 1).trim();
   if (name !== config.sessionCookieName) return null;
+  // RFC 6265 allows a DQUOTE-wrapped cookie-value; Django's delete_cookie emits `name=""`.
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
   if (value !== '' && !COOKIE_VALUE_RE.test(value)) return null;
   const kept = [];
   for (const p of parts) {

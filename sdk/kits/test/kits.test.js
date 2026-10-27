@@ -199,6 +199,42 @@ test('headless seam: config validation, normalisation and occurrence choice (fak
   assert.deepEqual(resolved.form, { occurrenceId: B, formVersion: 'v1' });
 });
 
+test('fresh-install findings stay fixed (nginx precedence, runes, Next 16 segment config, quoted cookies, WP sdk path)', () => {
+  // nginx: "location ^~ /webinar-api/" would shadow the regex route block, so every route 404s (nginx 1.27).
+  const nginx = read('sdk/kits/node/nginx-webinar-api.conf').replace(/#.*$/gm, '');
+  assert.match(nginx, /location ~ \^\/webinar-api\/\(profile\|registrations\|reset\|my-registration\|calendar\\\.ics\)\$/);
+  assert.ok(!/location\s+\^~\s+\/webinar-api\//.test(nginx), 'catch-all must not use ^~');
+  assert.match(nginx, /location \/webinar-api\/ \{\s*return 404;/);
+  // SvelteKit 3 scaffolds compile with runes: true, where `export let` and `$:` are compile errors.
+  const svelte = read('sdk/kits/frameworks/svelte/WebinarForm.svelte');
+  assert.ok(svelte.includes('$props()') && svelte.includes('$effect('), 'runes syntax');
+  assert.ok(!/^\s*export let /m.test(svelte) && !/^\s*\$:\s/m.test(svelte), 'no legacy reactive syntax');
+  // Next 16 (cacheComponents) rejects route segment config; the page must use Suspense instead.
+  const page = read('sdk/kits/frameworks/nextjs/app/webinars/[slug]/page.jsx');
+  assert.ok(!/export const (revalidate|dynamic|fetchCache|runtime)\b/.test(page), 'no route segment config');
+  assert.ok(page.includes('<Suspense') && page.includes('await params'), 'Suspense boundary + awaited params');
+  // Django's delete_cookie emits webinar_session=""; both proxies must keep the expiry (SDK "Not you?" reset).
+  const php = read(WP + 'includes/class-proxy.php');
+  assert.equal(
+    (() => { const { rewriteSetCookie } = require(path.join(ROOT, 'sdk/proxy/server.js'));
+      return rewriteSetCookie('webinar_session=""; expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Max-Age=0; Path=/; SameSite=Lax', { sessionCookieName: 'webinar_session' }); })(),
+    'webinar_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; HttpOnly; Secure; SameSite=Lax'
+  );
+  assert.ok(/'"' === \$value\[0\] && '"' === substr\( \$value, -1 \)/.test(php), 'PHP port unquotes DQUOTE-wrapped cookie values');
+  // A self-hosted SDK path must resolve against home_url(), or a /blog/ install emits /blog/blog/....
+  const settings = read(WP + 'includes/class-settings.php');
+  assert.ok(settings.includes("'/' === $override[0] ? home_url( $override ) : $override"), 'sdk_url path resolves via home_url');
+  // The repeatable fresh-install run exists, is excluded from node --test, and covers every kit stage.
+  const fresh = read('sdk/kits/test/fresh-install.sh');
+  for (const stage of ['wordpress()', 'next()', 'sveltekit()', 'approach_b()', 'react()', 'cms()', 'down()']) assert.ok(fresh.includes(stage), stage);
+  for (const helper of ['flow.cjs', 'wp-admin.cjs', 'cms-validate.mjs', 'payload-check.ts', 'tsconfig.json', 'nginx-test-front.conf', 'wp-enable-cache.php', 'kit-form.py']) {
+    assert.ok(fs.existsSync(path.join(ROOT, 'sdk/kits/test/fresh-install', helper)), helper);
+  }
+  for (const kit of manifest.kits) {
+    assert.ok(kit.verified && typeof kit.verified.date === 'string' && typeof kit.verified.summary === 'string', `${kit.id}: verified entry`);
+  }
+});
+
 test('CMS schema files store references only (slug + optional occurrence UUID)', () => {
   const contentful = JSON.parse(read('sdk/kits/cms/contentful/webinar-reference.import.json'));
   assert.deepEqual(contentful.contentTypes[0].fields.map((f) => f.id), ['eventSlug', 'occurrenceId']);

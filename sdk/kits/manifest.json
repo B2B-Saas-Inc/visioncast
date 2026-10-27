@@ -18,6 +18,11 @@
     "publicEventsApi": "/api/v1/events/{slug}",
     "paidSessions": "202 {status:'payment_required', order:{checkoutUrl,...}} handled by the SDK (checkout.stripe.com only)"
   },
+  "verification": {
+    "method": "sdk/kits/test/fresh-install.sh: fresh vendor scaffolds in a scratch directory, the real Django backend (DEBUG, Postgres 16) seeded with seed_public_demo --allow-registration, a proxy-scoped key, and Chromium driven by Playwright 1.58.2 (sdk/kits/test/fresh-install/flow.cjs). productionTested stays false: http on localhost, no TLS, no CDN, no paid session.",
+    "browserFlow": "profile 200 + __Host-webinar_csrf set and stored; anonymous full form; consent default denied (payload consents false, no attribution despite ?utm_source); registration 201 with CSRF header; thank-you + calendar link on this origin; ICS 200 text/calendar; webinar_session re-issued HttpOnly; reload hides recognised fields and shows 'Confirm my RSVP' (fully covered form); confirm-only resubmit with empty profile; 'Not you? Start over' resets and clears the session cookie; WebinarForm.setConsent({analytics:true}) grants consent and captures utm_source; unknown route 404, wrong method 405, bad query 400; no page errors.",
+    "notVerified": ["paid sessions (202 payment_required, Stripe Checkout)", "https hosts other than localhost (the __Host- cookie needs a secure context)", "Vercel route handlers (site/)", "Webflow/Framer hosted sites", "a CDN in front of /webinar-api"]
+  },
   "kits": [
     {
       "id": "wordpress",
@@ -36,7 +41,14 @@
         "sdk/kits/wordpress/webinar-platform/blocks/webinar-form/index.js",
         "sdk/kits/wordpress/webinar-platform/blocks/webinar-form/index.asset.php"
       ],
-      "browserFiles": ["sdk/kits/wordpress/webinar-platform/blocks/webinar-form/index.js"]
+      "browserFiles": ["sdk/kits/wordpress/webinar-platform/blocks/webinar-form/index.js"],
+      "verified": {
+        "date": "2026-10-27",
+        "versions": { "wordpress": "7.1.3 (wordpress:php8.2-apache)", "php": "8.2.35", "mariadb": "11.8.9", "wp-cli": "2.12.0", "wp-super-cache": "3.1.4", "chromium": "147.0.7727.15" },
+        "summary": "php -l clean on all six PHP files; wp-cli install, plugin activation, pretty permalinks; block page and [webinar_form] shortcode page each pass the 30-check browser flow; Settings page (manage_options, key reported as set from WEBINAR_PLATFORM_PROXY_KEY and never echoed, backend URL with a path rejected and previous value kept, options.php save persists, plugin options absent from /wp-json/wp/v2/settings); block registered in the editor; WP Super Cache caches pages but leaves /webinar-api/* uncached with fresh CSRF tokens; subdirectory install at /blog/ (proxyBase /blog/webinar-api, root-level /webinar-api 404) passes the flow.",
+        "fixed": ["rewrite_set_cookie dropped Django's webinar_session=\"\" expiry on reset, so the revoked capability cookie lingered", "a self-hosted SDK path was emitted as /blog/blog/... on subdirectory installs (now resolved via home_url)"],
+        "notVerified": ["https (the __Host- cookie only worked over http because Chromium treats localhost as a secure context)", "nginx-fronted WordPress", "multisite"]
+      }
     },
     {
       "id": "node-proxy-mount",
@@ -45,7 +57,14 @@
       "docs": "docs/kits.md#serving-webinar-api",
       "prerequisites": ["Node >= 18.17", "sdk/proxy/server.js (reused unchanged)", "PROXY_* environment"],
       "files": ["sdk/kits/node/mount.cjs", "sdk/kits/node/nginx-webinar-api.conf"],
-      "browserFiles": []
+      "browserFiles": [],
+      "verified": {
+        "date": "2026-10-27",
+        "versions": { "node": "26.4.0", "nginx": "1.27.5 (nginx:1.27-alpine)" },
+        "summary": "mount.cjs in-process with Next 16 and SvelteKit 3 (approach A); nginx-webinar-api.conf included verbatim passes nginx -t and, with the sidecar on the Docker host, fronts Astro, Nuxt and a static page (approach B) through the full browser flow.",
+        "fixed": ["the catch-all `location ^~ /webinar-api/ { return 404; }` took precedence over the regex route block, so every proxy route returned 404 from nginx", "sdk/proxy/server.js rewriteSetCookie now accepts RFC 6265 DQUOTE-wrapped values (Django's delete_cookie)"],
+        "notVerified": ["PROXY_TRUST_FORWARDED_FOR with a real client IP chain", "TLS termination"]
+      }
     },
     {
       "id": "headless",
@@ -54,20 +73,33 @@
       "docs": "docs/kits.md#headless-seam",
       "prerequisites": ["Node >= 18.17 (native fetch, AbortSignal.timeout)", "WEBINAR_API_BASE (server-only)"],
       "files": ["sdk/kits/headless/webinar-events.mjs"],
-      "browserFiles": []
+      "browserFiles": [],
+      "verified": {
+        "date": "2026-10-27",
+        "versions": { "node": "26.4.0" },
+        "summary": "Used server-side by the Next, SvelteKit, Astro and Nuxt pages against the real GET /api/v1/events/{slug} (seeded demo data); pickOccurrence/formProps produced the open session and form version that the browser flow then registered for.",
+        "notVerified": ["WEBINAR_SDK_URL over https (local runs self-host the SDK as a path because the backend was http)"]
+      }
     },
     {
       "id": "nextjs",
       "status": "maintained-reference",
       "productionTested": false,
       "docs": "docs/kits.md#nextjs",
-      "prerequisites": ["Next.js App Router", "React 18+", "self-hosted Node for server.mjs; Vercel uses site/ route handlers"],
+      "prerequisites": ["Next.js App Router (14-16)", "React 18+", "self-hosted Node for server.mjs; Vercel uses site/ route handlers"],
       "files": [
         "sdk/kits/frameworks/react/WebinarForm.jsx",
         "sdk/kits/frameworks/nextjs/server.mjs",
         "sdk/kits/frameworks/nextjs/app/webinars/[slug]/page.jsx"
       ],
-      "browserFiles": ["sdk/kits/frameworks/react/WebinarForm.jsx"]
+      "browserFiles": ["sdk/kits/frameworks/react/WebinarForm.jsx"],
+      "verified": {
+        "date": "2026-10-27",
+        "versions": { "next": "16.4.3 (create-next-app --js --app, cacheComponents on)", "react": "19.3.0", "node": "26.4.0" },
+        "summary": "Fresh create-next-app, kit files copied per docs, next build, NODE_ENV=production node server.mjs; /webinars/<slug> renders the form and the 30-check browser flow passes on http://localhost:3000.",
+        "fixed": ["page.jsx exported `revalidate`, which Next 16 rejects when cacheComponents is enabled; the catalogue read now sits inside a Suspense boundary with no segment config"],
+        "notVerified": ["Next 14/15 builds of the revised page (not scaffolded; the file uses only Suspense and awaited params)", "Vercel (approach C)"]
+      }
     },
     {
       "id": "react",
@@ -76,34 +108,59 @@
       "docs": "docs/kits.md#react",
       "prerequisites": ["React 18+", "/webinar-api served on the page's origin"],
       "files": ["sdk/kits/frameworks/react/WebinarForm.jsx"],
-      "browserFiles": ["sdk/kits/frameworks/react/WebinarForm.jsx"]
+      "browserFiles": ["sdk/kits/frameworks/react/WebinarForm.jsx"],
+      "verified": {
+        "date": "2026-10-27",
+        "versions": { "vite": "8.3.5", "react": "19.3.1" },
+        "summary": "Build + mount smoke only: create-vite react template with the component in App.jsx builds cleanly. The component's browser behaviour was exercised through the Next.js kit (same file).",
+        "notVerified": ["a Vite dev-server proxy to the sidecar", "Remix/CRA"]
+      }
     },
     {
       "id": "astro",
       "status": "maintained-reference",
       "productionTested": false,
       "docs": "docs/kits.md#astro",
-      "prerequisites": ["Astro 4+", "/webinar-api served on the page's origin"],
+      "prerequisites": ["Astro 4+ (SSR page or prerender)", "/webinar-api served on the page's origin"],
       "files": ["sdk/kits/frameworks/astro/WebinarForm.astro"],
-      "browserFiles": ["sdk/kits/frameworks/astro/WebinarForm.astro"]
+      "browserFiles": ["sdk/kits/frameworks/astro/WebinarForm.astro"],
+      "verified": {
+        "date": "2026-10-27",
+        "versions": { "astro": "7.4.2 (create-astro minimal)", "@astrojs/node": "11.1.9 (standalone)", "nginx": "1.27.5" },
+        "summary": "SSR page (prerender = false) with the component; astro build; node dist/server/entry.mjs behind nginx (approach B) with the sidecar; the 30-check browser flow passes on http://localhost:8081, SDK injected once.",
+        "notVerified": ["view transitions (<ClientRouter />) re-binding", "@astrojs/node middleware mode with mount.cjs (approach A)"]
+      }
     },
     {
       "id": "nuxt-vue",
       "status": "maintained-reference",
       "productionTested": false,
       "docs": "docs/kits.md#nuxt--vue",
-      "prerequisites": ["Vue 3 / Nuxt 3", "/webinar-api served on the page's origin"],
+      "prerequisites": ["Vue 3 / Nuxt 3 or 4", "/webinar-api served on the page's origin"],
       "files": ["sdk/kits/frameworks/vue/WebinarForm.vue"],
-      "browserFiles": ["sdk/kits/frameworks/vue/WebinarForm.vue"]
+      "browserFiles": ["sdk/kits/frameworks/vue/WebinarForm.vue"],
+      "verified": {
+        "date": "2026-10-27",
+        "versions": { "nuxt": "4.6.3 (create-nuxt minimal)", "vue": "3.5.44", "nginx": "1.27.5" },
+        "summary": "Server route server/api/webinar/[slug].get.js using the headless seam, page with useFetch + the component; nuxt build; node .output/server/index.mjs behind nginx (approach B); the 30-check browser flow passes on http://localhost:8082.",
+        "notVerified": ["Nuxt 3 (only Nuxt 4 was scaffolded)", "Nitro routeRules proxying"]
+      }
     },
     {
       "id": "sveltekit",
       "status": "maintained-reference",
       "productionTested": false,
       "docs": "docs/kits.md#sveltekit",
-      "prerequisites": ["SvelteKit with @sveltejs/adapter-node", "Svelte 4 or 5"],
+      "prerequisites": ["SvelteKit with @sveltejs/adapter-node", "Svelte 5 (runes); Svelte 4 needs the legacy-syntax edits noted in the component"],
       "files": ["sdk/kits/frameworks/svelte/WebinarForm.svelte", "sdk/kits/frameworks/sveltekit/server.js"],
-      "browserFiles": ["sdk/kits/frameworks/svelte/WebinarForm.svelte"]
+      "browserFiles": ["sdk/kits/frameworks/svelte/WebinarForm.svelte"],
+      "verified": {
+        "date": "2026-10-27",
+        "versions": { "@sveltejs/kit": "3.1.0 (sv create minimal)", "svelte": "5.57.3", "@sveltejs/adapter-node": "6.0.0" },
+        "summary": "+page.server.js through the headless seam, +page.svelte with the component, adapter-node build, node server.js (approach A); the 30-check browser flow passes on http://localhost:3001.",
+        "fixed": ["the component used `export let` / `$:`; a fresh sv create project compiles with runes: true, so it did not compile. Rewritten with $props/$derived/$effect"],
+        "notVerified": ["Svelte 4 / SvelteKit 2 (the legacy edits are described in the file, not built here)"]
+      }
     },
     {
       "id": "webflow",
@@ -112,7 +169,13 @@
       "docs": "docs/kits.md#webflow",
       "prerequisites": ["A first-party reverse proxy in front of the Webflow-hosted domain (plan-dependent; unverified)"],
       "files": ["sdk/kits/nocode/embed-snippet.html"],
-      "browserFiles": ["sdk/kits/nocode/embed-snippet.html"]
+      "browserFiles": ["sdk/kits/nocode/embed-snippet.html"],
+      "verified": {
+        "date": "2026-10-27",
+        "versions": { "nginx": "1.27.5", "chromium": "147.0.7727.15" },
+        "summary": "The snippet (placeholders replaced, SDK self-hosted) served as a plain static page behind nginx approach B passes the browser flow (28 checks; the snippet renders no company field, so the recognised state shows 'Welcome back' rather than 'Confirm my RSVP' until every optional field is covered). Webflow itself was not used.",
+        "notVerified": ["Webflow custom code and Embed element", "a reverse proxy in front of Webflow hosting"]
+      }
     },
     {
       "id": "framer",
@@ -121,16 +184,28 @@
       "docs": "docs/kits.md#framer",
       "prerequisites": ["A first-party reverse proxy in front of the Framer-hosted domain (plan-dependent; unverified)"],
       "files": ["sdk/kits/nocode/embed-snippet.html", "sdk/kits/frameworks/react/WebinarForm.jsx"],
-      "browserFiles": ["sdk/kits/nocode/embed-snippet.html"]
+      "browserFiles": ["sdk/kits/nocode/embed-snippet.html"],
+      "verified": {
+        "date": "2026-10-27",
+        "versions": { "nginx": "1.27.5", "chromium": "147.0.7727.15" },
+        "summary": "Same static-page evidence as Webflow; the React component (option 2) builds under Vite 8 / React 19. Framer itself was not used.",
+        "notVerified": ["Framer custom code, HTML embeds (iframe behaviour) and code components"]
+      }
     },
     {
       "id": "sanity",
       "status": "schema-reference",
       "productionTested": false,
       "docs": "docs/kits.md#sanity",
-      "prerequisites": ["Sanity Studio v3"],
+      "prerequisites": ["Sanity Studio v3+ (ESM project)"],
       "files": ["sdk/kits/cms/sanity/webinarReference.js", "sdk/kits/cms/resolve-reference.mjs"],
-      "browserFiles": []
+      "browserFiles": [],
+      "verified": {
+        "date": "2026-10-27",
+        "versions": { "sanity": "6.20.0", "@sanity/types": "6.20.0" },
+        "summary": "createSchema() from the sanity package compiles webinarReference plus a document that uses it with no validation problems; field rules resolve to required+regex (eventSlug) and regex (occurrenceId) and reject/accept the expected values when run.",
+        "notVerified": ["Sanity Studio UI", "GROQ fetching"]
+      }
     },
     {
       "id": "payload",
@@ -139,7 +214,13 @@
       "docs": "docs/kits.md#payload",
       "prerequisites": ["Payload 3 (Payload 2: change the type import)"],
       "files": ["sdk/kits/cms/payload/webinarReference.ts", "sdk/kits/cms/resolve-reference.mjs"],
-      "browserFiles": []
+      "browserFiles": [],
+      "verified": {
+        "date": "2026-10-27",
+        "versions": { "payload": "3.92.1", "typescript": "6.0.3" },
+        "summary": "tsc --strict type-checks webinarReference() as a payload Field inside a CollectionConfig (sdk/kits/test/fresh-install/payload-check.ts).",
+        "notVerified": ["a running Payload admin", "Payload 2"]
+      }
     },
     {
       "id": "prismic",
@@ -148,7 +229,13 @@
       "docs": "docs/kits.md#prismic",
       "prerequisites": ["Prismic with Slice Machine"],
       "files": ["sdk/kits/cms/prismic/webinar_reference/model.json", "sdk/kits/cms/resolve-reference.mjs"],
-      "browserFiles": []
+      "browserFiles": [],
+      "verified": {
+        "date": "2026-10-27",
+        "versions": { "@prismicio/types-internal": "4.8.0" },
+        "summary": "model.json parses with SharedSliceModelSchema from @prismicio/types-internal/zod4 (the codec Slice Machine uses for shared-slice models).",
+        "notVerified": ["Slice Machine UI import", "the docURL placeholder"]
+      }
     },
     {
       "id": "contentful",
@@ -157,7 +244,13 @@
       "docs": "docs/kits.md#contentful",
       "prerequisites": ["Contentful space; contentful-cli for import (or create the type in the web app)"],
       "files": ["sdk/kits/cms/contentful/webinar-reference.import.json", "sdk/kits/cms/resolve-reference.mjs"],
-      "browserFiles": []
+      "browserFiles": [],
+      "verified": {
+        "date": "2026-10-27",
+        "versions": { "contentful-import": "10.5.7" },
+        "summary": "The import file passes contentful-import's own Joi payload schema (the assertPayload check `contentful space import` runs before any API call); both Symbol fields carry regexp validations that accept a slug/UUID and reject junk.",
+        "notVerified": ["an actual space import (needs a space and token)"]
+      }
     }
   ]
 }
