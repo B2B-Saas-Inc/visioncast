@@ -2,6 +2,14 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Release candidate 0.3.0-pre: harness, image and first run on the integrations tree — 2026-10-27T22:10Z
+
+- **PostgreSQL 16 harness** (`tests/run-pg16.sh` in a disposable `postgres:16-bookworm` container, uv-managed Python 3.12.16, PostgreSQL 16.15) on `main` at `24e3493`: **2,372 passed**; `manage.py check`, `makemigrations --check` ("No changes detected") and `ruff check .` clean; 29 migration records; logical backup/restore, synthetic application records, credential decryption, wrong-key rejection and authenticated admin request passed.
+- **Site** (`site/`): `npm test` 51/51, `npm run typecheck` and `npm run build` passed on the same tree.
+- **Image** (`deploy/build-image.sh --name wrel-webinar-platform --save`): version `0.3.0-pre`, revision `24e3493271878a0ac68131194d881873e7eb7af8`, built `2026-10-27T22:03:39Z`, linux/arm64, image ID `sha256:8934f6efe513c61adf13f11d0e4f2358ffd601eb703fd139dbca52af655cebf3`, tarball SHA-256 `e08db362ab4fab9d4d7ffa610344e82ea7d4d1db4374df55f64ab2bbeebb5aee` (`artifacts/wrel-webinar-platform-0.3.0-pre.tar`, not committed). Not pushed from here.
+- **Clean-server first run on that image** (disposable Compose project `wrel-a10`, generated `.env`, `localhost:18000`): `compose config` valid; migrate (29 records); `sync_roles`; `bootstrap_admin`; `create_api_key --scope config_read`; `seed_public_demo` (6 events); db, web and worker healthy; `/healthz` → `{"status": "ok", "version": "0.3.0-pre"}`; plain HTTP → 301; OpenAPI 200 (61 paths); MCP initialize (`serverInfo.version 0.3.0-pre`), `tools/list` with key, 401 without; `/studio/login/` 200; 4 public events; provider capabilities; `show_version` matches the build; uid 10001; retention dry run (counts only); `deploy/backup.sh` 187,794-byte dump. Project, volumes and `.env` removed afterwards.
+- Not repeated on this tree: backup/restore into a second project, the in-place upgrade rehearsal (no new migration since `0011`), the amd64 build (the release workflow builds it), and the Riverside / mocked-SDK browser suites (their code paths did not change; studio and GTM journeys were rerun earlier today on this tree).
+
 ## Six more integrations merged: beehiiv, Resend, Amazon SES, Zapier, Make, n8n — 2026-10-27T19:40Z
 
 - Three worktree branches merged into `main` on top of the published `v0.2.0-pre` tree; `VERSION` bumped to `0.3.0-pre` (not tagged, not published). Conflicts were only in the shared status line, hosts list, site catalogue and this file, resolved by keeping every branch's additions.

@@ -17,15 +17,14 @@ owned by [mcp.md](mcp.md), [native-integrations.md](native-integrations.md),
 
 | What | Latest recorded | Covers the release tree? |
 |---|---|---|
-| Python suite, Python 3.12.16 / PostgreSQL 16.15, Ruff, system check, migration drift, logical + application restore probe (`tests/run-pg16.sh`) | **1,945 passed** at the `v0.2.0-pre` tag; the harness has not been rerun on the integrations tree | Tag only |
-| Same suite locally on Python 3.12 / PostgreSQL 16 after the integrations merge (`main` at `0.3.0-pre`) | **2,372 passed**, Ruff / check / migration drift clean (2026-10-27) | Yes |
+| Python suite, Python 3.12.16 / PostgreSQL 16.15, Ruff, system check, migration drift, logical + application restore probe (`tests/run-pg16.sh`) | **2,372 passed**, all checks and the restore probe passed on `24e3493` (2026-10-27) | Yes |
 | End-to-end acceptance (`tests/test_e2e_acceptance.py`): create → provision (Zoom) → register/pay (room, mailbox code, Stripe webhook) → verify → attend (check-in, and separately Zoom attendance import + no-shows) → CRM follow-up (native HubSpot + signed webhook) | 2 scenarios pass, fake vendors (2026-10-27) | Yes |
-| Site (`site/`) tests, typecheck, production build | 51 passed (2026-10-27); typecheck and build last run on the `v0.2.0-pre` tree | Tests yes |
+| Site (`site/`) tests, typecheck, production build | 51 passed, typecheck and build passed (2026-10-27) | Yes |
 | SDK unit, proxy, kit and automation-recipe tests | 63 + 22 passed (2026-10-27) | Yes |
 | Mocked-backend SDK Chromium (`tests/browser-sdk.cjs`) incl. web calendar links, `payment_required`, `verification_required` | 11/11 (2026-10-27) | Yes |
 | Actual-app Chromium: studio journey, Riverside controls, GTM screen | 13/13, 8/8, 10/10 at the tag; studio and GTM rerun on the integrations tree (see validation.md) | Yes |
 | Website kits installed from fresh vendor scaffolds (WordPress 7.1 / PHP 8.2, Next 16, SvelteKit 3, Astro 7, Nuxt 4, static snippet behind nginx) with a 30-check Chromium flow; CMS schemas validated with vendor packages | All flows pass; five kit bugs fixed (2026-10-27) | Yes (`bash sdk/kits/test/fresh-install.sh` to repeat) |
-| Versioned OCI image built from the release tree (`deploy/build-image.sh`) | arm64 `0.2.0-pre` (image ID `sha256:3ff6df0d…`, tar SHA-256 `11cd42aa…`) and an emulated amd64 build from the tagged tree `1462cb7` (image ID `sha256:c73a59ec…`), 2026-10-27 | Yes |
+| Versioned OCI image built from the release tree (`deploy/build-image.sh`) | `0.3.0-pre` arm64 from `24e3493` (image ID `sha256:8934f6ef…`, tar SHA-256 `e08db362…`), first run passed; earlier `0.2.0-pre` arm64 and emulated amd64 builds | Yes (arm64) |
 | Published image `ghcr.io/b2b-saas-inc/visioncast:0.2.0-pre` (tag `v0.2.0-pre`, workflow run 40555955145) | digest `sha256:c81ad8b1…`, linux/amd64 + linux/arm64, SBOM + provenance (2026-10-27). Private package | Yes, but the pushed manifest has not been pulled and run from here |
 | Clean-server Compose first run, backup/restore, retention dry run, offline receiver contract, `nginx -t` + routing, in-place upgrade from `da04cc7` and rollback | All passed (2026-10-27, distribution entry; first run repeated on the final arm64 image and on the emulated amd64 image) | Upgrade/restore evidence is from commit `3ec60ad`; the first run was repeated on the release image |
 | Base-image digest pins (`python:3.12-slim-bookworm`, `postgres:16-alpine`) | Pinned by `@sha256` (2026-10-27) | Yes |
