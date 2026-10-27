@@ -57,8 +57,8 @@ const byId = Object.fromEntries(INTEGRATIONS.map((i) => [i.id, i]));
 
 test('only mock-tested outbound and hosting adapters are marked built', () => {
   assert.deepEqual(idsWith('built'), [
-    'activecampaign', 'amplitude', 'attio', 'brevo', 'customerio', 'ga4', 'hubspot', 'mailchimp', 'mixpanel', 'pipedrive', 'posthog',
-    'rudderstack', 'salesforce', 'segment', 'sequel', 'wistia', 'zoom',
+    'activecampaign', 'amplitude', 'attio', 'beehiiv', 'brevo', 'customerio', 'ga4', 'hubspot', 'mailchimp', 'mixpanel', 'pipedrive',
+    'posthog', 'rudderstack', 'salesforce', 'segment', 'sequel', 'wistia', 'zoom',
   ]);
 });
 
@@ -66,11 +66,11 @@ test('only mock-tested outbound and hosting adapters are marked built', () => {
 // webinars/native_providers/ (generic webhook excluded), in registration order.
 const NATIVE_PROVIDERS = [
   'posthog', 'hubspot', 'customerio', 'attio', 'segment', 'amplitude', 'ga4', 'mixpanel', 'rudderstack', 'brevo',
-  'activecampaign', 'mailchimp', 'salesforce', 'pipedrive',
+  'activecampaign', 'mailchimp', 'salesforce', 'pipedrive', 'beehiiv',
 ];
 
 test('every native adapter in the back-end registry is listed as built, never live', () => {
-  assert.equal(NATIVE_PROVIDERS.length, 14);
+  assert.equal(NATIVE_PROVIDERS.length, 15);
   for (const id of NATIVE_PROVIDERS) {
     const item = byId[id];
     assert.ok(item, id);
@@ -102,6 +102,9 @@ test('built adapters state their privacy limits', () => {
   assert.ok(byId.salesforce.details.some((d) => /own my domain host.*allowlist/i.test(d)));
   assert.ok(byId.salesforce.details.some((d) => /unverified/i.test(d)));
   assert.ok(byId.pipedrive.details.some((d) => /never changes marketing status/i.test(d)));
+  assert.ok(byId.beehiiv.details.some((d) => /this one subscribes people.*subscription acknowledgement/i.test(d)));
+  assert.ok(byId.beehiiv.details.some((d) => /never reactivates someone who unsubscribed/i.test(d)));
+  assert.ok(byId.beehiiv.details.some((d) => /existing-email handling is unverified/i.test(d)));
 });
 
 test('hosting statuses match what exists', () => {

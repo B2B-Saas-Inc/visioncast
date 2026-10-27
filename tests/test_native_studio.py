@@ -222,6 +222,8 @@ def test_brevo_valid_preview_has_no_refusal_and_redacts_key(admin, settings):
 
 AC_KEY = "ac-studioTokenValue-789"
 MC_KEY = "mailchimp-test-key-not-real-0123456789-us19"
+BH_KEY = "beehiiv-test-key-not-real-0123456789abcdef"
+BH_PUB = "pub_0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
 
 
 def test_create_activecampaign_derives_url_from_typed_host(admin, settings):
@@ -265,6 +267,30 @@ def test_create_mailchimp_derives_url_from_datacenter(admin, settings):
     creds = _creds(dest)
     assert creds["native_provider"] == "mailchimp" and creds["native_datacenter"] == "us19"
     assert "native_api_key" not in creds and dest.url == "https://us19.api.mailchimp.com"
+
+
+def test_create_beehiiv_requires_subscription_acknowledgement(admin, settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = ["api.beehiiv.com"]
+    fields = {
+        "native-region": "global",
+        "native-publication_id": BH_PUB,
+        "native-subscribe_ack": "confirmed",
+        "native-email_merge_ack": "confirmed",
+        "native-tag_registered": "webinar registered",
+        "native-group_type": None,
+        "native-org_namespace": None,
+    }
+    dest = _create(admin, name="beehiiv", provider="beehiiv", required_consents=[], **fields)
+    creds = _creds(dest)
+    assert creds["native_provider"] == "beehiiv" and creds["native_publication_id"] == BH_PUB
+    assert "native_api_key" not in creds and dest.url == "https://api.beehiiv.com" and dest.enabled is False
+    # Without the subscription acknowledgement the destination can't be enabled, even with the key set.
+    unacked = _module_dest("beehiiv unacked", "api.beehiiv.com", {**creds, "native_api_key": BH_KEY})
+    form = _form(name="beehiiv unacked", provider="beehiiv", enabled="on", required_consents=[], **{**fields, "native-subscribe_ack": ""})
+    resp = admin.post(f"/studio/integrations/{unacked.pk}/", form)
+    assert resp.status_code == 400 and b"subscribes registrants" in resp.content
+    unacked.refresh_from_db()
+    assert unacked.enabled is False and BH_KEY.encode() not in resp.content
 
 
 def _module_dest(name, host, creds):
@@ -312,3 +338,25 @@ def test_mailchimp_edit_page_previews_without_secret_and_refuses_pending_without
     assert page.status_code == 200
     assert b"Preview unavailable (native_match_strategy_unconfirmed)" in page.content
     assert MC_KEY.encode() not in page.content
+
+
+def test_beehiiv_edit_page_previews_without_secret_and_refuses_optout_without_ack(admin, settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = ["api.beehiiv.com"]
+    creds = {
+        "native_provider": "beehiiv", "native_region": "global", "native_api_key": BH_KEY, "native_publication_id": BH_PUB,
+        "native_subscribe_ack": "confirmed", "native_email_merge_ack": "confirmed", "native_tag_registered": "webinar registered",
+        "native_processing_ack": "confirmed",
+    }
+    dest = _module_dest("beehiiv", "api.beehiiv.com", creds)
+    page = admin.get(f"/studio/integrations/{dest.pk}/")
+    assert page.status_code == 200
+    assert b"Preview unavailable" not in page.content
+    assert f"/v2/publications/{BH_PUB}/subscriptions".encode() in page.content and b"/tags" in page.content
+    assert page.context["native_preview"][0]["headers"]["Authorization"] == "[redacted]"
+    assert BH_KEY.encode() not in page.content
+    assert b"registrants are subscribed to this publication" in page.content.lower()
+    off = _module_dest("beehiiv opt-out", "api.beehiiv.com", {**creds, "native_double_opt_override": "off"})
+    page = admin.get(f"/studio/integrations/{off.pk}/")
+    assert page.status_code == 200
+    assert b"Preview unavailable (native_match_strategy_unconfirmed)" in page.content
+    assert BH_KEY.encode() not in page.content

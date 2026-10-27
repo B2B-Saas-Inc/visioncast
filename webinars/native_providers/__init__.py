@@ -10,7 +10,7 @@ Add a vendor by writing ``webinars/native_providers/<provider>.py`` and listing 
 """
 from importlib import import_module
 
-PROVIDER_MODULES = ("activecampaign", "mailchimp", "salesforce", "pipedrive")
+PROVIDER_MODULES = ("activecampaign", "mailchimp", "salesforce", "pipedrive", "beehiiv")
 
 
 def modules():

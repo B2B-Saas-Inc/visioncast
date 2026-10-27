@@ -74,10 +74,10 @@ def test_new_providers_offered_and_schema_driven():
     assert ni.config_of(GA4, "ga4") == {"region": "global", "measurement_id": "G-ABC123XYZ", "processing_ack": "confirmed"}
 
 
-@pytest.mark.parametrize("name", ["mixpanel", "rudderstack", "brevo", "activecampaign", "mailchimp", "salesforce", "pipedrive"])
+@pytest.mark.parametrize("name", ["mixpanel", "rudderstack", "brevo", "activecampaign", "mailchimp", "salesforce", "pipedrive", "beehiiv"])
 def test_formerly_deferred_providers_now_built(name):
     # Covered in depth by tests/test_native_remaining_analytics.py, test_native_brevo.py, test_native_activecampaign.py,
-    # test_native_mailchimp.py, test_native_salesforce.py and test_native_pipedrive.py.
+    # test_native_mailchimp.py, test_native_salesforce.py, test_native_pipedrive.py and test_native_beehiiv.py.
     creds = {"native_provider": name, **ACK}
     assert ni.provider_of(creds) == name and name in ni.FIELDS
     assert ni.validate(name, creds, **KW).get("provider") != ["Unknown provider."]
@@ -103,7 +103,7 @@ def test_every_registered_provider_is_schema_driven_and_pinned():
             assert provider in ni.NEEDS_DESTINATION_HOSTS or provider in ni.HOSTS
         # No host without a configuration: nothing can be sent until the destination resolves.
         assert ni.allowed_hosts(provider, {"native_provider": provider}) == frozenset()
-    assert {"activecampaign", "mailchimp"} <= set(ni.REGISTRY)
+    assert {"activecampaign", "mailchimp", "salesforce", "pipedrive", "beehiiv"} <= set(ni.REGISTRY)
 
 
 # --- validation ---------------------------------------------------------------

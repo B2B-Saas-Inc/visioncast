@@ -326,6 +326,19 @@ export const INTEGRATIONS: Integration[] = [
       'Member events may repeat on a delivery retry; each carries the delivery ID for dedupe.',
     ],
   },
+  {
+    id: 'beehiiv',
+    name: 'beehiiv',
+    category: 'marketing',
+    status: 'built',
+    summary: 'Subscribe the registrant to your beehiiv publication (free tier) and apply lifecycle tags.',
+    details: [
+      'This one subscribes people: beehiiv has no non-subscribed contact, so enabling it needs an explicit subscription acknowledgement.',
+      'Uses the publication’s own double opt-in setting unless you override it; turning it off needs a further acknowledgement.',
+      'Never reactivates someone who unsubscribed unless you choose it; never premium tiers, Stripe, referrals or automations.',
+      'Only explicitly mapped name, company, job title and webinar fields; no URLs are sent. Existing-email handling is unverified.',
+    ],
+  },
   roadmap('marketo', 'Marketo', 'marketing', 'Leads and program membership in Marketo.'),
   roadmap(
     'hubspot-marketing',
