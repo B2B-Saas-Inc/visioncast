@@ -32,8 +32,8 @@ def _echo_child(conn, host, port, path, method, body, headers, timeout, max_byte
     conn.close()
 
 
-@pytest.mark.parametrize("method", ["GET", "PATCH", "DELETE"])
-def test_request_json_bounded_still_post_put_only(allow, no_spawn, method):
+@pytest.mark.parametrize("method", ["PATCH", "DELETE"])
+def test_request_json_bounded_refuses_patch_and_delete(allow, no_spawn, method):
     with pytest.raises(ssrf.UnsafeDestination):
         ssrf.request_json_bounded(method, URL, b"{}", {}, 10, 5, allowed_hosts=PINNED)
     assert no_spawn == []
@@ -89,5 +89,7 @@ def test_vendor_patch_passes_body(allow):
 
 
 def test_request_validated_default_methods_unchanged():
-    with pytest.raises(ssrf.UnsafeDestination):
-        ssrf._request_validated("api.zoom.us", 443, "/", "GET", b"", {}, 1, 10)
+    # Native default: GET (lookups), POST, PUT; never PATCH or DELETE without the vendor method set.
+    for method in ("PATCH", "DELETE"):
+        with pytest.raises(ssrf.UnsafeDestination):
+            ssrf._request_validated("api.zoom.us", 443, "/", method, b"", {}, 1, 10)
