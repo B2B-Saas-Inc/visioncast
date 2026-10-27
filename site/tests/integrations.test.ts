@@ -58,7 +58,7 @@ const byId = Object.fromEntries(INTEGRATIONS.map((i) => [i.id, i]));
 test('only mock-tested outbound and hosting adapters are marked built', () => {
   assert.deepEqual(idsWith('built'), [
     'activecampaign', 'amplitude', 'attio', 'brevo', 'customerio', 'ga4', 'hubspot', 'mailchimp', 'mixpanel', 'pipedrive', 'posthog',
-    'rudderstack', 'salesforce', 'segment', 'sequel', 'wistia', 'zoom',
+    'resend', 'rudderstack', 'salesforce', 'segment', 'sequel', 'ses', 'wistia', 'zoom',
   ]);
 });
 
@@ -66,11 +66,11 @@ test('only mock-tested outbound and hosting adapters are marked built', () => {
 // webinars/native_providers/ (generic webhook excluded), in registration order.
 const NATIVE_PROVIDERS = [
   'posthog', 'hubspot', 'customerio', 'attio', 'segment', 'amplitude', 'ga4', 'mixpanel', 'rudderstack', 'brevo',
-  'activecampaign', 'mailchimp', 'salesforce', 'pipedrive',
+  'activecampaign', 'mailchimp', 'salesforce', 'pipedrive', 'resend', 'ses',
 ];
 
 test('every native adapter in the back-end registry is listed as built, never live', () => {
-  assert.equal(NATIVE_PROVIDERS.length, 14);
+  assert.equal(NATIVE_PROVIDERS.length, 16);
   for (const id of NATIVE_PROVIDERS) {
     const item = byId[id];
     assert.ok(item, id);
@@ -102,6 +102,14 @@ test('built adapters state their privacy limits', () => {
   assert.ok(byId.salesforce.details.some((d) => /own my domain host.*allowlist/i.test(d)));
   assert.ok(byId.salesforce.details.some((d) => /unverified/i.test(d)));
   assert.ok(byId.pipedrive.details.some((d) => /never changes marketing status/i.test(d)));
+  for (const id of ['resend', 'ses']) {
+    assert.ok(byId[id].details.some((d) => /only verified registrations with an email/i.test(d)), id);
+    assert.ok(byId[id].details.some((d) => /provider link only when private links are allowed/i.test(d)), id);
+    assert.ok(byId[id].details.some((d) => /no operator html/i.test(d)), id);
+    assert.ok(byId[id].details.some((d) => /operator confirmation required/i.test(d)), id);
+  }
+  assert.ok(byId.resend.details.some((d) => /idempotency-key/i.test(d)));
+  assert.ok(byId.ses.details.some((d) => /no idempotency key.*twice/i.test(d)));
 });
 
 test('hosting statuses match what exists', () => {
@@ -127,7 +135,7 @@ test('framework and CMS kits are reference code, never built', () => {
 
 test('roadmap providers are listed and not built', () => {
   for (const id of [
-    'marketo', 'hubspot-marketing', 'loops', 'intercom', 'resend', 'postmark', 'ses',
+    'marketo', 'hubspot-marketing', 'loops', 'intercom', 'postmark',
     'n8n', 'zapier', 'make',
   ]) {
     assert.equal(INTEGRATIONS.find((i) => i.id === id)?.status, 'roadmap', id);

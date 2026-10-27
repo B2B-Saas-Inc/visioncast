@@ -1,6 +1,6 @@
 # Native integrations
 
-Status: **fourteen adapters (PostHog, HubSpot, Customer.io, Attio, Segment, Amplitude, Google Analytics 4, Mixpanel, RudderStack, Brevo, ActiveCampaign, Mailchimp, Salesforce, Pipedrive) are implemented in source on `ssrf.request_json_bounded`; their tests are mock-only, and none is production-ready or live-verified.** ActiveCampaign and Mailchimp live in self-contained modules under `webinars/native_providers/` (registered through `PROVIDER_MODULES`); their request shapes were compared with official reference pages fetched 2026-10-27 (see their sections). Mixpanel and RudderStack request shapes were compared with primary-doc facts fetched 2026-10-25; some contract points are still open (see below). That function is a bounded POST/PUT transport: response body up to 64 KB, `Retry-After` parsed, and every native request pinned to the destination's own configured host. If the function were ever missing, HubSpot and Attio fail validation, and their deliveries are dead-lettered with `native_transport_unavailable` without any network call.
+Status: **sixteen adapters (PostHog, HubSpot, Customer.io, Attio, Segment, Amplitude, Google Analytics 4, Mixpanel, RudderStack, Brevo, ActiveCampaign, Mailchimp, Salesforce, Pipedrive, Resend, Amazon SES) are implemented in source on `ssrf.request_json_bounded`; their tests are mock-only, and none is production-ready or live-verified.** Resend and Amazon SES are **transactional email destinations** (an owner-approved scope change: the platform now renders and sends attendee confirmation, reminder, change and follow-up emails itself; see [email.md](email.md#transactional-email-to-attendees-native-destinations)); their request shapes were compared with official references fetched 2026-10-27 (see their sections). ActiveCampaign and Mailchimp live in self-contained modules under `webinars/native_providers/` (registered through `PROVIDER_MODULES`); their request shapes were compared with official reference pages fetched 2026-10-27 (see their sections). Mixpanel and RudderStack request shapes were compared with primary-doc facts fetched 2026-10-25; some contract points are still open (see below). That function is a bounded POST/PUT transport: response body up to 64 KB, `Retry-After` parsed, and every native request pinned to the destination's own configured host. If the function were ever missing, HubSpot and Attio fail validation, and their deliveries are dead-lettered with `native_transport_unavailable` without any network call.
 
 The vendor API contracts below are **UNVERIFIED** assumptions. Testing so far is mocked contract tests only. Nothing has been checked against a real vendor or sandbox account: no accounts are connected and no external calls have been made. The API shapes below come from the implementer's knowledge of the vendors' public documentation and **must be checked against the current official docs** (list at the end) before anyone enables these integrations.
 
@@ -46,6 +46,8 @@ The vendor API contracts below are **UNVERIFIED** assumptions. Testing so far is
   - Mailchimp: `<data center>.api.mailchimp.com`, derived from the configured data center, which must equal the API key's suffix and be an exact operator allowlist entry
   - Salesforce: the destination's own My Domain host (`acme.my.salesforce.com`, or a sandbox host such as `acme--dev.sandbox.my.salesforce.com`), which must be an exact operator allowlist entry, like the RudderStack data plane. The token request goes there too.
   - Pipedrive: `api.pipedrive.com` only (the `{company}.pipedrive.com` form shown in the authentication guide is not used)
+  - Resend: `api.resend.com` only
+  - Amazon SES: `email.<region>.amazonaws.com` for the chosen AWS Region, from the fixed list of 27 commercial regions in `native_providers/ses.py` (the SES endpoints table fetched 2026-10-27; GovCloud, FIPS and `.api.aws` dual-stack hosts are not offered)
 
   The operator must also add the host to `WEBHOOK_HOST_ALLOWLIST`. The destination URL is set from provider and region and is read-only in the studio. Self-hosted PostHog and HubSpot EU-specific hosts are **not supported**.
 - **Studio.**
@@ -57,8 +59,8 @@ The vendor API contracts below are **UNVERIFIED** assumptions. Testing so far is
   - The generic credential form keeps provider keys, and `native_*` names are reserved.
   - Switching provider drops the previous provider's keys, with a visible notice.
 - **Shared rules.**
-  - Supported events: `registration.created`, `registration.updated`, `attendance.checked_in` and `attendance.recorded`. `attendance.recorded` is sent only for attended or no-show.
-  - Required data groups: identity, registration and event.
+  - Supported events, by default: `registration.created`, `registration.updated`, `attendance.checked_in` and `attendance.recorded`. `attendance.recorded` is sent only for attended or no-show. A provider module may declare its own `EVENT_TYPES` (the transactional email adapters send `registration.created`, `reminder.due`, `occurrence.rescheduled`, `occurrence.cancelled`, `attendance.recorded`, `recording.published` and `follow_up.requested` instead); `validate`, `check_send_policy` and the studio's event-type checkboxes read the list through `native_integrations.supported_event_types(provider)`, so an event a provider cannot send can neither be ticked nor enabled, and a stale configuration is dead-lettered `native_config_invalid` at send time. Every declared type must exist in `outbox.EVENT_TYPES` (tested).
+  - Required data groups: identity, registration and event by default; a module may declare `REQUIRED_GROUPS` (`native_integrations.required_groups(provider)`). The email adapters keep the default and treat the profile group as optional (first name and email; `identity.email` is the fallback).
   - Only registrations with `identity.verified` are sent.
   - Organizations come only from a single **verified, trusted_api** external ID in the configured namespace. If there are several, no association is made. Company names are a property only, never a match key.
   - No recording-view event is sent, because the platform has no access evidence.
@@ -353,13 +355,69 @@ Status: **source implemented (`webinars/native_providers/pipedrive.py`); tests m
 - Any request-size limit; the default activity type keys.
 - No sandbox or live verification.
 
+## Transactional email: Resend and Amazon SES (attendee emails sent by the platform; contracts checked against official references, accounts unverified)
+
+Status: **source implemented (`webinars/native_providers/_transactional_email.py` shared, `resend.py`, `ses.py`); tests mock-only (`tests/test_transactional_email.py`, `tests/test_native_resend.py`, `tests/test_native_ses.py`: fake transports, socket connects refused); not checked against a Resend or AWS account.** This is an owner-approved scope change: until now attendee email was explicitly out of scope and left to the ESP behind a webhook. These two destinations make the platform render and send the emails itself. The operational SMTP path for waiting-room codes and invitations ([email.md](email.md)) is untouched and separate.
+
+Official pages the implementer fetched with WebFetch on 2026-10-27 and compared the code with:
+
+- Resend: https://resend.com/docs/api-reference/emails/send-email (VERIFIED: `POST /emails`, `Authorization: Bearer`, body `from`, `to` (array, max 50), `reply_to`, `subject`, `text`, `html`, `headers`; response `{"id"}`; `Idempotency-Key` header "up to 256 characters", "keys expire after 24 hours"), https://resend.com/docs/dashboard/emails/idempotency-keys (VERIFIED: same key + same payload returns the same response without sending again; same key + different payload `409 invalid_idempotent_request`; `409 concurrent_idempotent_requests` while a request with that key is in progress; keys kept 24 hours), https://resend.com/docs/api-reference/rate-limit (VERIFIED: 10 requests per second per team by default; `429` with `ratelimit-limit`, `ratelimit-remaining`, `ratelimit-reset` and `retry-after` headers), https://resend.com/docs/api-reference/errors (VERIFIED: `429 rate_limit_exceeded` / `daily_quota_exceeded` / `monthly_quota_exceeded`, `422` validation errors, `401`/`403` key errors, `500 application_error`, `503 service_unavailable`). The page does not state a text/html size limit (UNVERIFIED; our own bound applies).
+- Amazon SES API v2: https://docs.aws.amazon.com/ses/latest/APIReference-V2/API_SendEmail.html (VERIFIED: `POST /v2/email/outbound-emails`; `FromEmailAddress`, `Destination.ToAddresses`, `ReplyToAddresses`, `Content.Simple`, `ConfigurationSetName`; response `{"MessageId"}`; `TooManyRequestsException` 429; `MessageRejected`, `SendingPausedException`, `AccountSuspendedException`, `MailFromDomainNotVerifiedException`, `BadRequestException`, `LimitExceededException` 400; `NotFoundException` 404), https://docs.aws.amazon.com/ses/latest/APIReference-V2/API_Message.html (VERIFIED: `Subject`, `Body`, `Headers` array of at most 15 `MessageHeader`), https://docs.aws.amazon.com/ses/latest/APIReference-V2/API_MessageHeader.html (VERIFIED: `Name` pattern `^[!-9;-@A-~]+$`, at most 126 characters; `Value` printable ASCII, at most 995; name + value at most 996), https://docs.aws.amazon.com/general/latest/gr/ses.html (VERIFIED: the `email.<region>.amazonaws.com` endpoint per Region; the 27 commercial Regions in `REGIONS` are the table's rows minus the two GovCloud rows), https://docs.aws.amazon.com/IAM/latest/UserGuide/create-signed-request.html (VERIFIED: canonical request, string to sign, `AWS4-HMAC-SHA256`, credential scope `YYYYMMDD/region/service/aws4_request`, the four-step key derivation, header trimming rules and the `Authorization` header format; the page has no numeric worked example). The signer is proven against the AWS SigV4 test suite published in https://github.com/awslabs/aws-c-auth (`tests/aws-signing-test-suite/v4`: `get-vanilla`, `post-vanilla`, `post-x-www-form-urlencoded`, `get-header-value-trim`; files fetched 2026-10-27 and their canonical request, string to sign and signature asserted verbatim in `tests/test_native_ses.py`). UNVERIFIED: whether SES accepts non-ASCII subjects with `Charset: UTF-8` (the Message page says 7-bit ASCII or RFC 2047; we send `Charset` and rely on SES encoding), the SES message size limit (not read; our 150 KB bound is far below any documented SES limit), and the `X-Amz-Date`/`Content-Type` canonicalisation against a real endpoint.
+
+**Events and messages.** One email per outbox delivery; the registrant is the recipient (`profile.email`, else `identity.email`; neither → cancelled `native_no_email`). Only `identity.verified` registrations are sent (the shared `_facts` rule). Cancelled registrations are skipped (`native_registration_cancelled`) except for `occurrence.cancelled`.
+
+| Event type | Message | Default subject |
+| --- | --- | --- |
+| `registration.created` | confirmation | `You're registered: {event_title}` |
+| `reminder.due` | reminder | `Reminder: {event_title} starts {starts_at_local}` |
+| `occurrence.rescheduled` | new time | `New time for {event_title}` |
+| `occurrence.cancelled` | cancellation (also to cancelled registrations) | `Cancelled: {event_title}` |
+| `attendance.recorded` (attended) | thank-you | `Thanks for joining {event_title}` |
+| `attendance.recorded` (no_show) | sorry we missed you | `Sorry we missed you at {event_title}` |
+| `attendance.recorded` (other) | skipped `native_attendance_unknown` | |
+| `recording.published` | recording available (needs a public https `recordingUrl`, else cancelled `native_recording_missing`) | `Recording available: {event_title}` |
+| `follow_up.requested` | follow-up | `Following up on {event_title}` |
+
+`registration.updated` and `attendance.checked_in` are not offered (`EVENT_TYPES`); a queued message of another type is cancelled `native_event_unsupported`.
+
+**Templates and placeholders.** Built-in plain-text templates per message (`TEMPLATES`). Operators may override the subject (`subject_<message>`, one line, at most 200 characters) and body (`body_<message>`, plain text, at most 4,000 characters, blank lines separate paragraphs) per message, and set a **Subject prefix** (printable ASCII without braces, at most 40 characters, put before every subject). The placeholder allowlist is strict: `{first_name}` (falls back to "there"), `{event_title}`, `{starts_at_local}` (the occurrence start in the occurrence time zone, e.g. `Tue 3 Nov 2026, 14:00 GMT`; UTC when the zone is unknown; "the scheduled time" when unparsable), `{timezone}`, `{duration_minutes}` (from `startsAt`/`endsAt`, empty when unknown, never invented), `{join_link}`, `{calendar_link}` (`PUBLIC_BASE_URL/api/v1/occurrences/<id>/calendar.ics`), `{event_url}` (the public event page from `PUBLIC_EVENT_URL_TEMPLATE`, else the JSON event API URL) and, only in the recording message, `{recording_link}`. Anything else (unknown names, attribute or index access, conversions such as `!r`, format specs, positional fields, unmatched braces, control characters) is a validation error (`validate_extra`), blocks enabling and dead-letters a send with `native_config_invalid` if stored anyway; `{{` and `}}` are literal braces. Values are one line (control characters removed, whitespace collapsed) so no header injection is possible through a title or name. **The HTML part is generated from the text**: escaped paragraphs, `<br>` line breaks and auto-linked `https://` URLs; operators never supply HTML.
+
+**Link rules (`join_link`).** The managed room URL (`managedRoomUrl`) when the occurrence's waiting room is on: `outbox.occurrence_links` then never puts a provider link in the body, whatever the destination allows. Otherwise the provider `joinUrl`, which is only in the re-filtered body when the destination has **Include private links**. Otherwise the public event URL. `waitingRoomUrl` is never used. Every link must be a public https URL (`validation.validate_public_https_url`); anything else falls back to the event URL. These rules are applied to the body `outbox.refilter_for_send` built at send time, so enabling the room or turning private links off applies to queued messages.
+
+**Settings** (shared `_transactional_email.FIELDS`, after the provider's region/host field): **From address** (plain addr-spec, required; must be a verified sender at the provider), **From name** (optional display name: letters, digits, spaces, `. , ' & ( ) -`), **Reply-to address** (optional), **Subject prefix** (optional), the sixteen optional subject/body overrides, **Transactional email confirmation** (`send_ack = confirmed`, required: the operator states that registrants expect these messages about the session they registered for and that **Required consent** reflects their policy; no marketing content is sent) and **Data processing confirmation** as for every provider. Neither provider forces a consent purpose (the platform has no marketing-email purpose); which consents gate delivery is the operator's **Required consent** choice, checked at enqueue and again at send time.
+
+**Dedupe and headers.** Every message carries `X-Webinar-Delivery-Id` (the outbox delivery id, stable across retries) and `X-Webinar-Event-Type` as custom headers (Resend `headers`; SES `Content.Simple.Headers`, checked against the `MessageHeader` name/value patterns and the 15-header limit before the call).
+
+- **Resend** sends the delivery id as the `Idempotency-Key` request header (VERIFIED, see above): a retry of a request Resend already accepted returns the same response within 24 hours without sending again; a retry with a changed payload (for example after the operator changed a template) answers `409`, which is dead-lettered. After the 24-hour window a retry can send again.
+- **Amazon SES has no idempotency key.** A retry after a timeout, a lost lease or an unreadable response **can send the same message twice**; downstream dedupe can use the delivery id header. The `MessageId` is read from the response and logged at info level when present; a missing id is never a reason to retry.
+
+**Calls.**
+
+| Provider | Call | Auth | Body | Response |
+| --- | --- | --- | --- | --- |
+| Resend | `POST https://api.resend.com/emails` | `Authorization: Bearer <api key>`; `Idempotency-Key: <delivery id>` | `from` (`Name <address>` or the address), `to: [address]`, `reply_to` (optional), `subject`, `text`, `html`, `headers` | `id` (informational) |
+| Amazon SES | `POST https://email.<region>.amazonaws.com/v2/email/outbound-emails` | SigV4 `Authorization` over `content-type;host;x-amz-date`, payload hash of the exact `_encode(payload)` bytes, `X-Amz-Date` from an injectable clock | `FromEmailAddress`, `Destination.ToAddresses`, `ReplyToAddresses` (optional), `Content.Simple` (`Subject`, `Body.Text`, `Body.Html`, each `{Data, Charset: UTF-8}`, `Headers`), `ConfigurationSetName` (optional) | `MessageId` (logged) |
+
+**Credentials.** Resend: **API key** (secret, set-only, sent only as a Bearer token to `api.resend.com`). SES: **Access key ID** (`^[A-Z0-9]{16,128}$`) and **Secret access key**, both secret and set-only; the secret is only ever used to derive the signing key and never leaves the process. Previews show `Authorization: [redacted]` for both; tests assert the secret, access key id and signature are absent from previews, `last_error` and logs. Temporary credentials (session tokens) are not supported. The IAM policy should allow `ses:SendEmail` only.
+
+**Limits (checked before any call).** The rendered subject + text + html must be at most 150,000 UTF-8 bytes and the serialized request at most 200,000 bytes (our own bounds; `send: payload_too_large`). Subjects are cut at 998 characters.
+
+**Responses.** 2xx: delivered. 429 (`Retry-After` honoured; Resend rate limit and quotas, SES `TooManyRequestsException`), 408, 425, 5xx: retried. 3xx: retried, never followed. Other 4xx: dead-lettered (Resend 401/403 key problems, 409 idempotency conflict, 422 validation; SES 400 `MessageRejected` / `SendingPausedException` / `MailFromDomainNotVerifiedException` and friends, 403 signature errors, 404). Errors hold only the step name `send` and a code.
+
+**Unresolved:**
+
+- No account or sandbox verification for either provider; the SES signer is proven against the AWS test suite but not against a live endpoint.
+- Resend: text/html size limit (not documented on the fetched page); whether a `409 invalid_idempotent_request` after an operator template change should be requeued (it is dead-lettered).
+- SES: subject encoding of non-ASCII with `Charset: UTF-8`; sending quotas (default 200 per 24 hours and 1 per second in the sandbox) and the account's sandbox state, which rejects unverified recipients with `MessageRejected`.
+- Neither adapter stores the provider message id (no model field); it is logged (SES) or ignored (Resend).
+
 ## Marketer setup
 
 1. Ask the operator to allowlist the vendor host.
 2. Create the integration, choose the provider and region, and save.
 3. Fill in the settings: the match strategy and its confirmation (HubSpot, Attio and Pipedrive; Salesforce only matches by our person ID), the stable ID properties, attributes, External ID fields or custom field keys, the organization namespace and target (or leave both empty), and for Salesforce your own My Domain host.
 4. Enter secrets in the provider credentials form.
-5. Tick the supported events and the identity, registration and event groups. Choose **Required consent** according to your policy; PostHog, Amplitude, GA4, Mixpanel and RudderStack require Analytics. Then set the data processing confirmation.
+5. Tick the events the provider supports (the form only offers those: CRM and analytics adapters take the person-linked lifecycle events; Resend and Amazon SES take confirmations, reminders, changes, attendance and follow-ups) and the identity, registration and event groups. Choose **Required consent** according to your policy; PostHog, Amplitude, GA4, Mixpanel and RudderStack require Analytics. Then set the data processing confirmation (and, for the email providers, the transactional email confirmation and a verified From address).
 6. Review the redacted preview, then enable. Enabling re-validates.
 
 ## Gaps and assumptions to verify (official docs needed)
@@ -403,6 +461,7 @@ These need checking in the current official docs:
 
 - **Salesforce** (composite and upsert pages read 2026-10-27; see its section): the client credentials token flow, the standard `Account` relationship-by-external-ID syntax, composite size limits, duplicate rules and permissions.
 - **Pipedrive** (v2 OpenAPI file read 2026-10-27; see its section): rate limits, `due_time` time zone, custom-field search semantics, activity type keys.
+- **Resend and Amazon SES** (send-email, idempotency, rate-limit, errors, SendEmail, Message, MessageHeader, endpoints and SigV4 pages read 2026-10-27; see their section): Resend text/html size limit; SES non-ASCII subject handling, quotas and sandbox behaviour; no live send of either.
 
 Other known gaps:
 
@@ -410,6 +469,7 @@ Other known gaps:
   - HubSpot and Attio record writes are upserts or asserts keyed by our IDs. Tests prove a retry resends the same key and never a plain create. That this means no duplicate *in the vendor* depends on the configured property or attribute being unique, which must be verified in the workspace.
   - PostHog events carry stable uuids, but vendor dedupe on them is unverified.
   - Customer.io events have no dedupe ID, and a retry after a partial failure resends the event (covered by a test).
+  - Amazon SES has no idempotency key: a retry after a timeout can send the same email twice (covered by a test; the delivery id header is the dedupe hint). Resend dedupes on the delivery id for 24 hours.
   - The HubSpot association calls and the Attio list-entry assert are assumed idempotent but unverified.
 - There's no "send test to a chosen record" button. That would need a new URL route, and this work doesn't own that file.
 - Deletion and erasure propagation to vendors is not implemented.

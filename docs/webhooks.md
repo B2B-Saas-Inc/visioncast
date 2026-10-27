@@ -1,7 +1,11 @@
 # Webhooks
 
 The platform delivers events to **generic HTTPS webhook destinations** (kinds
-`email`, `crm`, `generic` are labels only — there are no native vendor connectors).
+`email`, `crm`, `generic` are labels only). Native vendor adapters on the same
+outbox, including the **transactional email destinations** (Resend, Amazon SES)
+that send confirmation, reminder, change and follow-up emails to registrants from
+these same events, are documented in [native-integrations.md](native-integrations.md)
+and [email.md](email.md#transactional-email-to-attendees-native-destinations).
 Deliveries come from a PostgreSQL transactional outbox processed by the
 `run_worker` process.
 

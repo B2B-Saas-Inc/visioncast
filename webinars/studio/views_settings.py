@@ -147,6 +147,7 @@ def _native_fields(provider, config, creds):
                 "secret": f.secret,
                 "required": f.required,
                 "choices": f.choices,
+                "multiline": f.multiline,
                 "value": "" if f.secret else config.get(f.name, ""),
                 "is_set": flags.get(f.name, False),
             }
@@ -294,7 +295,7 @@ def _dest_context(request, dest, state, errors=None):
         refusal = native.preview_refusal(stored_provider, creds)
         if refusal:
             readiness.append(f"Preview unavailable ({refusal[0]}): {refusal[1]}")
-    return {
+    context = {
         "provider_choices": native.PROVIDER_CHOICES,
         "provider_label": native.PROVIDER_LABELS.get(state["provider"], ""),
         "native_fields": _native_fields(state["provider"], state["native"], creds if state["provider"] == stored_provider else {}),
@@ -304,10 +305,17 @@ def _dest_context(request, dest, state, errors=None):
         "native_preview": native.preview(stored_provider, creds) if stored_provider else [],
         "native_readiness": readiness,
         "credentials_readable": readable,
-        "native_event_types": native.NATIVE_EVENT_TYPES,
+        # Per provider: a module may declare its own EVENT_TYPES (transactional email sends
+        # reminders and changes; CRM adapters only the person-linked lifecycle events).
+        "native_event_types": native.supported_event_types(state["provider"]),
         "generic_credential_names": [n for n in (services.credential_names(dest) if dest else []) if not n.startswith(native.NATIVE_PREFIX)],
         **_base_context(request, dest, state, errors, rows),
     }
+    if state["provider"] in native.FIELDS:
+        # Only offer what the selected provider can send; validate() refuses anything else anyway.
+        supported = set(context["native_event_types"])
+        context["event_type_options"] = [o for o in context["event_type_options"] if o["value"] in supported]
+    return context
 
 
 def _base_context(request, dest, state, errors, rows):
