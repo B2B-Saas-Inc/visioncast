@@ -473,6 +473,11 @@ test('cookie helpers', () => {
   const config = { sessionCookieName: 'webinar_session' };
   assert.equal(rewriteSetCookie('other=1; Path=/', config), null);
   assert.equal(rewriteSetCookie('webinar_session=a"b; Path=/', config), null);
+  // Django's delete_cookie sends a DQUOTE-wrapped empty value; the expiry must survive (kit flows: "Not you?").
+  assert.equal(rewriteSetCookie('webinar_session=""; expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Max-Age=0; Path=/; SameSite=Lax', config),
+    'webinar_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; HttpOnly; Secure; SameSite=Lax');
+  assert.equal(rewriteSetCookie('webinar_session="quoted"; Path=/', config), 'webinar_session=quoted; Path=/; HttpOnly; Secure; SameSite=Lax');
+  assert.equal(rewriteSetCookie('webinar_session="a b"; Path=/', config), null);
   assert.equal(rewriteSetCookie('webinar_session=v; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Domain=x', config),
     'webinar_session=v; Path=/; Expires=Wed, 21 Oct 2026 07:28:00 GMT; HttpOnly; Secure; SameSite=Lax');
   const parsed = parseCookies('a=1; a=2; bad name=3; b=x=y');

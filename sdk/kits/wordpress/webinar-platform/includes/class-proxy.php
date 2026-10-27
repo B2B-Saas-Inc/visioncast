@@ -479,6 +479,10 @@ final class Webinar_Platform_Proxy {
 		if ( $name !== $session_name ) {
 			return null;
 		}
+		// RFC 6265 allows a DQUOTE-wrapped cookie-value; Django's delete_cookie emits name="".
+		if ( strlen( $value ) >= 2 && '"' === $value[0] && '"' === substr( $value, -1 ) ) {
+			$value = substr( $value, 1, -1 );
+		}
 		if ( '' !== $value && ! preg_match( self::COOKIE_VALUE_RE, $value ) ) {
 			return null;
 		}

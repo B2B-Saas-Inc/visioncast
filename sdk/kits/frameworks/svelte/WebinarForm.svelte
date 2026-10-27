@@ -1,22 +1,28 @@
 <!--
-  Svelte / SvelteKit component for the webinar browser SDK (legacy `export let` syntax,
-  which Svelte 4 and 5 both accept). No dependencies.
+  Svelte 5 / SvelteKit component for the webinar browser SDK (runes syntax). No dependencies.
   Licensed under the Apache License, Version 2.0.
+
+  A fresh SvelteKit project (`npx sv create`) compiles every project file in runes mode, where
+  the legacy `export let` / `$:` syntax is a compile error, so this file uses $props/$derived/
+  $effect. For Svelte 4, replace the $props() line with `export let` declarations, the
+  $derived values with `$:` statements and the $effect with onMount.
 
   Load occurrenceId/formVersion/sdkSrc in +page.server.js with headless/webinar-events.mjs.
   The SDK posts to /webinar-api on this origin (sveltekit/server.js mounts the proxy).
   No secret is referenced here.
 -->
 <script>
-  import { onMount, tick } from 'svelte';
+  import { tick } from 'svelte';
 
-  export let occurrenceId;
-  export let formVersion;
-  export let sdkSrc;
-  export let fields = ['email', 'firstName', 'lastName', 'company'];
-  export let required = ['email'];
-  export let submitLabel = 'Register';
-  export let confirmLabel = '';
+  let {
+    occurrenceId,
+    formVersion,
+    sdkSrc,
+    fields = ['email', 'firstName', 'lastName', 'company'],
+    required = ['email'],
+    submitLabel = 'Register',
+    confirmLabel = ''
+  } = $props();
 
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const FORM_VERSION_RE = /^[A-Za-z0-9._:-]{1,128}$/;
@@ -59,13 +65,12 @@
     return window.__webinarSdkPromise;
   }
 
-  let scope;
-  let mounted = false;
-  $: valid = UUID_RE.test(occurrenceId || '') && FORM_VERSION_RE.test(formVersion || '');
-  $: src = safeScriptSrc(sdkSrc);
-  $: shown = ['email', ...fields.filter((f) => f !== 'email' && Object.hasOwn(FIELDS, f))];
-  $: formKey = `${occurrenceId}:${formVersion}`;
-  $: prefix = `wf-${(occurrenceId || '').slice(0, 8)}`;
+  let scope = $state(null);
+  const valid = $derived(UUID_RE.test(occurrenceId || '') && FORM_VERSION_RE.test(formVersion || ''));
+  const src = $derived(safeScriptSrc(sdkSrc));
+  const shown = $derived(['email', ...fields.filter((f) => f !== 'email' && Object.hasOwn(FIELDS, f))]);
+  const formKey = $derived(`${occurrenceId}:${formVersion}`);
+  const prefix = $derived(`wf-${(occurrenceId || '').slice(0, 8)}`);
 
   async function bind() {
     await tick();
@@ -78,11 +83,11 @@
     }
   }
 
-  onMount(() => {
-    mounted = true;
+  // Runs in the browser after mount and again whenever the session changes.
+  $effect(() => {
+    void formKey;
     bind();
   });
-  $: if (mounted && formKey) bind();
 </script>
 
 {#if valid && src}
