@@ -1,0 +1,105 @@
+# Release image build and push to GitHub Container Registry.
+#
+# PREPARED, NOT YET USED: no image has been published. Pushing a tag `v*` runs this
+# workflow and publishes ghcr.io/<owner>/<repo>; do that only with the owner's
+# approval. Until then, deploy from a local build (deploy/build-image.sh).
+#
+# On a tag v<VERSION> (which must equal the VERSION file):
+#   * builds the `production` target for linux/amd64 and linux/arm64 from the
+#     digest-pinned base image (Dockerfile ARG PYTHON_IMAGE) with the hash-locked
+#     requirements (pip verifies every hash during the build);
+#   * pushes ghcr.io/<owner>/<repo>:<VERSION> and :<VERSION>-<short sha>;
+#   * stamps the OCI labels (version, revision, created, source) and attaches a
+#     BuildKit SBOM and SLSA provenance attestation to the pushed manifest;
+#   * writes the pushed digest to the job summary so docs/validation.md can record it.
+#
+# Required: GitHub-provided GITHUB_TOKEN with packages:write (set below). Nothing
+# else: no third-party registries, no deploy step.
+name: release-image
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write   # provenance attestation subject
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the tagged tree
+        uses: actions/checkout@v4
+
+      - name: Derive version and verify it matches the tag
+        id: meta
+        run: |
+          set -euo pipefail
+          version=$(tr -d '[:space:]' < VERSION)
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$version" != "$tag" ]; then
+            echo "::error::VERSION file ($version) does not match tag ($GITHUB_REF_NAME)"; exit 1
+          fi
+          repo=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          short=$(printf '%s' "$GITHUB_SHA" | cut -c1-12)
+          {
+            echo "version=$version"
+            echo "image=${REGISTRY}/${repo}"
+            echo "short=$short"
+            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: production
+          platforms: linux/amd64,linux/arm64
+          push: true
+          sbom: true
+          provenance: mode=max
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short }}
+          build-args: |
+            WEBINAR_VERSION=${{ steps.meta.outputs.version }}
+            WEBINAR_REVISION=${{ github.sha }}
+            WEBINAR_CREATED=${{ steps.meta.outputs.created }}
+            WEBINAR_SOURCE=${{ github.server_url }}/${{ github.repository }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.meta.outputs.created }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Record the pushed digest
+        run: |
+          {
+            echo "## Published image"
+            echo
+            echo "- \`${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}\`"
+            echo "- \`${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short }}\`"
+            echo "- digest: \`${{ steps.push.outputs.digest }}\`"
+            echo
+            echo "Deploy: \`docker pull ${{ steps.meta.outputs.image }}@${{ steps.push.outputs.digest }}\` then"
+            echo "\`WEBINAR_IMAGE=${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }} WEBINAR_PULL_POLICY=never deploy/upgrade.sh --image ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

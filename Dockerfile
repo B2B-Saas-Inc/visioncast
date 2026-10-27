@@ -2,17 +2,22 @@
 #
 # Single image for the web process and the durable worker.
 #
-# Base image is pinned by tag. For reproducible/supply-chain-safe builds, pin
-# by digest as well, e.g.
-#   docker buildx imagetools inspect python:3.12-slim-bookworm
-#   --build-arg PYTHON_IMAGE=python:3.12-slim-bookworm@sha256:<digest>
-# The digest was not recorded here because it could not be resolved offline.
+# Base image pinned by digest (README "Supply chain notes" explains how to refresh):
+#   docker buildx imagetools inspect python:3.12-slim-bookworm   # index digest below
+# The digest is the multi-platform index, so the same pin resolves on linux/amd64
+# and linux/arm64. Override with --build-arg PYTHON_IMAGE=... only to roll the pin.
+#
+# Build with deploy/build-image.sh: it passes the OCI label build args below
+# (version from the VERSION file, git revision, creation time) and tags the image
+# webinar-platform:<version> and webinar-platform:<version>-<git-sha>. A plain
+# `docker compose build` works too but leaves the labels empty.
 #
 # The build context is restricted by .dockerignore (allow-list): only
-# manage.py, config/, webinars/, docker/, requirements*.txt, LICENSE and the
-# allowlisted public guides (README.md, selected docs/*.md) are sent.
+# manage.py, VERSION, config/, webinars/, docker/, requirements*.txt, LICENSE and
+# the allowlisted public guides (README.md, selected docs/*.md) are sent.
 
-ARG PYTHON_IMAGE=python:3.12-slim-bookworm
+# python:3.12-slim-bookworm, resolved 2026-10-27 (image created 2026-10-26T22:46:30Z)
+ARG PYTHON_IMAGE=python:3.12-slim-bookworm@sha256:6dd8b6dab6b3adc7812bab69eca5dbdc1a5cc690ad28306d234ffb4ef8ac9753
 
 # ---------------------------------------------------------------------------
 # builder: build wheels for every dependency
@@ -32,10 +37,27 @@ RUN pip wheel --require-hashes --only-binary=:all: --wheel-dir /wheels -r requir
 # ---------------------------------------------------------------------------
 FROM ${PYTHON_IMAGE} AS runtime
 
+# OCI labels (https://github.com/opencontainers/image-spec/blob/main/annotations.md).
+# Supplied by deploy/build-image.sh and .github/workflows/release.yml; empty otherwise.
+ARG WEBINAR_VERSION=""
+ARG WEBINAR_REVISION=""
+ARG WEBINAR_CREATED=""
+ARG WEBINAR_SOURCE="https://github.com/B2B-Saas-Inc/visioncast"
+LABEL org.opencontainers.image.title="webinar-platform" \
+      org.opencontainers.image.description="Self-hosted single-tenant webinar registration platform (Django + PostgreSQL); one image for web, worker and migrate roles" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.version="${WEBINAR_VERSION}" \
+      org.opencontainers.image.revision="${WEBINAR_REVISION}" \
+      org.opencontainers.image.created="${WEBINAR_CREATED}" \
+      org.opencontainers.image.source="${WEBINAR_SOURCE}" \
+      org.opencontainers.image.base.name="docker.io/library/python:3.12-slim-bookworm"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    WEBINAR_BUILD_REVISION="${WEBINAR_REVISION}" \
+    WEBINAR_BUILD_CREATED="${WEBINAR_CREATED}"
 
 RUN groupadd --system --gid 10001 app \
  && useradd --system --uid 10001 --gid 10001 --home-dir /app --no-create-home --shell /usr/sbin/nologin app
@@ -47,7 +69,7 @@ COPY --from=builder /wheels /wheels
 RUN pip install --require-hashes --no-index --find-links=/wheels -r /tmp/requirements.txt \
  && rm -rf /wheels /tmp/requirements.txt
 
-COPY --chown=root:root manage.py ./
+COPY --chown=root:root manage.py VERSION ./
 COPY --chown=root:root config/ ./config/
 COPY --chown=root:root webinars/ ./webinars/
 COPY --chown=root:root docker/entrypoint.sh docker/web_healthcheck.py docker/worker_healthcheck.py ./docker/

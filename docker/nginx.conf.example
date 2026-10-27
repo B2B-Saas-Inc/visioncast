@@ -1,9 +1,14 @@
 # Example nginx edge for the webinar platform: TLS, trusted forwarding headers
 # and per-client rate limits.
 #
-# UNTESTED EXAMPLE. It has not been run against this project. Review every
-# value, test it on staging and tune the limits for your traffic before use.
-# It contains no secrets; certificate paths and host names are placeholders.
+# EXAMPLE, checked but not production-tuned. 2026-10-27: `nginx -t` passes in
+# nginx:stable (1.30.6) and, in front of an echo upstream, every location below
+# forwarded the path and query verbatim with X-Forwarded-Proto=https, unknown
+# /webinar-api/* paths answered 404 and the limits returned 429 once a burst was
+# used up (docs/validation.md). It has not been run in front of the real
+# application on an internet-facing host. Review every value, test it on staging
+# and tune the limits for your traffic before use. It contains no secrets;
+# certificate paths and host names are placeholders.
 #
 # Install: include this file inside the `http { }` block (for example as
 # /etc/nginx/conf.d/webinars.conf). `limit_req_zone`, `map` and `log_format`
@@ -130,6 +135,42 @@ server {
     }
     location = /webinar-api/profile {
         limit_req zone=wp_profile burst=20 nodelay;
+        proxy_pass http://webinar_app;
+    }
+    # Registration status and calendar file for the recognised browser (GET).
+    location = /webinar-api/my-registration {
+        limit_req zone=wp_profile burst=20 nodelay;
+        proxy_pass http://webinar_app;
+    }
+    location = /webinar-api/calendar.ics {
+        limit_req zone=wp_profile burst=20 nodelay;
+        proxy_pass http://webinar_app;
+    }
+    # Nothing else exists under /webinar-api/.
+    location /webinar-api/ {
+        return 404;
+    }
+
+    # --- Hosted waiting room, studio login, MCP, Stripe webhook -------------
+    # Waiting room: code requests/guesses are POSTs; page and status polling are GETs.
+    location /w/ {
+        limit_req zone=wp_register burst=10 nodelay;
+        limit_req zone=wp_profile  burst=30 nodelay;
+        proxy_pass http://webinar_app;
+    }
+    location = /studio/login/ {
+        limit_req zone=wp_login burst=5 nodelay;
+        proxy_pass http://webinar_app;
+    }
+    # MCP (agents with API keys): key-based, but still cap unauthenticated probing.
+    location = /mcp {
+        limit_req zone=wp_api burst=50 nodelay;
+        client_max_body_size 64k;        # the endpoint rejects larger bodies anyway
+        proxy_pass http://webinar_app;
+    }
+    # Stripe webhook: signed by Stripe; keep the limit generous (one sender address range).
+    location = /api/v1/payments/stripe/webhook {
+        limit_req zone=wp_api burst=100 nodelay;
         proxy_pass http://webinar_app;
     }
 

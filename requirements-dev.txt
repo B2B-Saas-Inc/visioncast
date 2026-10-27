@@ -1,8 +1,9 @@
 # Development / test dependencies (exact pins).
-# These versions installed and ran in validation (artifacts/install.log). They are
-# not hash-locked yet; hash-locked files are generated as part of release validation.
+# Runtime pins come from the hash-locked requirements.txt; the three tool pins below are
+# exact but not hash-locked (they never enter the production image). pytest was raised
+# to 9.0.3 on 2026-10-27 after pip-audit flagged PYSEC-2026-1845 in 8.4.2.
 -r requirements.txt
 
-pytest==8.4.2
+pytest==9.0.3
 pytest-django==4.11.1
 ruff==0.17.2

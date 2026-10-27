@@ -4,6 +4,7 @@
 *
 
 !manage.py
+!VERSION
 !config/
 !webinars/
 !docker/

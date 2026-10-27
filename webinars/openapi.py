@@ -283,8 +283,8 @@ def build_spec():
             responses={"200": {"description": "text/calendar", "content": {"text/calendar": {"schema": {"type": "string"}}}},
                        **_errors(400, 404, 405)})},
         "/healthz": {"get": _op("Health check", "Operations", security=[], responses={
-            "200": _json({"type": "object", "properties": {"status": {"const": "ok"}}}),
-            "503": _json({"type": "object", "properties": {"status": {"const": "unavailable"}}}, "Database unavailable")})},
+            "200": _json({"type": "object", "properties": {"status": {"const": "ok"}, "version": {"type": "string", "description": "Application version (VERSION file)."}}}),
+            "503": _json({"type": "object", "properties": {"status": {"const": "unavailable"}, "version": {"type": "string"}}}, "Database unavailable")})},
     }
     mg = "Management (content_write)"
     paths.update({

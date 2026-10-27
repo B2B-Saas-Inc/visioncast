@@ -37,6 +37,7 @@ from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
+from webinars import __version__
 from webinars import calendar_links, identity, ratelimit
 from webinars.api import queries
 from webinars.api.auth import api_key_from_request, has_scope
@@ -295,8 +296,8 @@ def healthz(request):
             cursor.execute("SELECT 1")
             cursor.fetchone()
     except Exception:
-        return _json({"status": "unavailable"}, status=503, no_store=True)
-    return _json({"status": "ok"}, no_store=True)
+        return _json({"status": "unavailable", "version": __version__}, status=503, no_store=True)
+    return _json({"status": "ok", "version": __version__}, no_store=True)
 
 
 # ---------------------------------------------------------------------------
