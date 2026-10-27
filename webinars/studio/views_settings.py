@@ -22,6 +22,7 @@ from django.urls import reverse
 
 from webinars import invitations, mail, ratelimit, services
 from webinars import native_integrations as native
+from webinars import webhook_presets as presets
 from webinars.admin import EVENT_TYPES
 from webinars.audit import audit
 from webinars.delivery import requeue_message
@@ -100,6 +101,7 @@ CONSENT_HELP = {
 DEST_LABELS = {
     "name": "Name",
     "provider": "Provider",
+    "preset": "Platform preset",
     "kind": "Destination type",
     "url": "Endpoint URL",
     "enabled": "Enabled",
@@ -128,6 +130,32 @@ def _native_state(dest):
     creds, _ = _stored_credentials(dest)
     provider = native.provider_of(creds)
     return provider, native.config_of(creds, provider)
+
+
+def _apply_preset(state, data, creds, merged, errors):
+    """Workflow-automation preset (Zapier / Make / n8n): validate the URL shape, pin the
+    defaults and record ``webhook_preset`` in the credential dict.
+
+    ``merged`` is ``_apply_native``'s result (None when the provider settings are unchanged).
+    Returns the credential dict to store, or None when nothing changes.
+    """
+    preset = state["preset"]
+    if preset and preset not in presets.PRESETS:
+        errors["preset"] = ["Choose a preset from the list."]
+        return merged
+    base = creds if merged is None else merged
+    if preset and (state["provider"] or native.provider_of(base)):
+        errors["preset"] = ["Choose either a native provider or a platform preset, not both."]
+        return merged
+    if preset:
+        problem = presets.url_problem(preset, data.get("url", ""))
+        if problem:
+            errors["url"] = [problem]
+        presets.pin_defaults(data)
+        state["kind"] = data["kind"]
+        state["include_private_links"] = False
+    out = presets.with_preset(base, preset)
+    return None if out == creds else out
 
 
 def _native_from_post(post, provider):
@@ -196,6 +224,7 @@ def _dest_state(dest):
         return {
             "provider": "",
             "native": {},
+            "preset": "",
             "name": "",
             "kind": Destination.Kind.GENERIC,
             "url": "",
@@ -211,6 +240,7 @@ def _dest_state(dest):
     return {
         "provider": provider,
         "native": config,
+        "preset": presets.destination_preset(dest),
         "name": dest.name,
         "kind": dest.kind,
         "url": dest.url,
@@ -235,6 +265,7 @@ def _dest_state_from_post(post):
     return {
         "provider": provider,
         "native": _native_from_post(post, provider),
+        "preset": (post.get("preset") or "").strip(),
         "name": post.get("name", ""),
         "kind": post.get("kind", ""),
         "url": post.get("url", ""),
@@ -297,6 +328,9 @@ def _dest_context(request, dest, state, errors=None):
     return {
         "provider_choices": native.PROVIDER_CHOICES,
         "provider_label": native.PROVIDER_LABELS.get(state["provider"], ""),
+        "preset_choices": presets.CHOICES,
+        "preset_info": presets.describe(state["preset"]),
+        "stored_preset_info": presets.describe(presets.preset_of(creds)),
         "native_fields": _native_fields(state["provider"], state["native"], creds if state["provider"] == stored_provider else {}),
         "stored_provider": stored_provider,
         "stored_provider_label": native.PROVIDER_LABELS.get(stored_provider, ""),
@@ -359,6 +393,7 @@ def integration_new(request):
         state = _dest_state_from_post(request.POST)
         data, errors = _dest_data(state)
         merged, _notes = _apply_native(None, state, data, {}, errors)
+        merged = _apply_preset(state, data, {}, merged, errors)
         if not errors:
             try:
                 with transaction.atomic():
@@ -397,8 +432,13 @@ def integration_edit(request, pk):
                 errors.setdefault("provider", []).append(
                     "Stored credentials can't be read (encryption key changed?). Re-enter them before changing the provider."
                 )
+            if state["preset"]:
+                errors.setdefault("preset", []).append(
+                    "Stored credentials can't be read (encryption key changed?). Re-enter them before setting a preset."
+                )
         else:
             merged, notes = _apply_native(dest, state, data, creds, errors)
+            merged = _apply_preset(state, data, creds, merged, errors)
         if not errors:
             try:
                 with transaction.atomic():
@@ -451,7 +491,7 @@ def integration_credentials(request, pk):
         value = request.POST.get(f"cred-{i}-value") or ""
         if not name:
             continue
-        if name.startswith(native.NATIVE_PREFIX):
+        if name.startswith(native.NATIVE_PREFIX) or name == presets.PRESET_KEY:
             messages.error(request, f"“{name}” is reserved for provider settings; use the provider form.")
             return redirect("studio:integration-edit", pk=dest.pk)
         if not value.strip():
@@ -459,8 +499,8 @@ def integration_credentials(request, pk):
             continue
         credentials[name] = value.strip()
     generic_count = len(credentials)
-    # The generic set replaces only generic credentials; provider settings and secrets are kept.
-    credentials.update({k: v for k, v in existing.items() if k.startswith(native.NATIVE_PREFIX)})
+    # The generic set replaces only generic credentials; provider settings, secrets and the preset are kept.
+    credentials.update({k: v for k, v in existing.items() if k.startswith(native.NATIVE_PREFIX) or k == presets.PRESET_KEY})
     try:
         services.set_credentials(dest, credentials, user=request.user)
     except ValidationError as exc:

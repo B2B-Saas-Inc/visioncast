@@ -38,6 +38,16 @@
         {% if errors.provider %}<p class="field-error" id="f-provider-err">{{ errors.provider|join:" " }}</p>{% endif %}
       </div>
       <div class="field">
+        <label class="label" for="f-preset">Platform preset</label>
+        <select class="select" id="f-preset" name="preset" aria-describedby="f-preset-help{% if errors.preset %} f-preset-err{% endif %}"{% if errors.preset %} aria-invalid="true"{% endif %}>
+          {% for value, label in preset_choices %}<option value="{{ value }}"{% if value == state.preset %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <p class="help" id="f-preset-help">
+          {% if preset_info %}{{ preset_info.urlRule }}. The destination type is set to generic and private links stay off. Delivery is the same signed webhook; import the verification recipe in <code>{{ preset_info.recipe }}</code> on the {{ preset_info.label }} side.{% else %}For Zapier, Make or n8n: checks the webhook URL for that platform and points you to its verification recipe. Not for native providers.{% endif %}
+        </p>
+        {% if errors.preset %}<p class="field-error" id="f-preset-err">{{ errors.preset|join:" " }}</p>{% endif %}
+      </div>
+      <div class="field">
         <label class="label" for="f-kind">Destination type</label>
         <select class="select" id="f-kind" name="kind"{% if errors.kind %} aria-invalid="true" aria-describedby="f-kind-err"{% endif %}>
           {% for value, label in kinds %}<option value="{{ value }}"{% if value == state.kind %} selected{% endif %}>{{ label }}</option>{% endfor %}
@@ -47,7 +57,7 @@
       <div class="field">
         <label class="label" for="f-url">Endpoint URL</label>
         <input class="input" id="f-url" name="url" type="url" inputmode="url" value="{{ state.url }}" maxlength="1000"{% if state.provider %} readonly{% else %} required{% endif %} placeholder="https://hooks.example.com/webinars" aria-describedby="f-url-help{% if errors.url %} f-url-err{% endif %}"{% if errors.url %} aria-invalid="true"{% endif %}>
-        <p class="help" id="f-url-help">{% if state.provider %}Set from the provider and region; credentials are only sent to the provider's official API host.{% else %}HTTPS only. The host must be on the platform's webhook allowlist.{% endif %}</p>
+        <p class="help" id="f-url-help">{% if state.provider %}Set from the provider and region; credentials are only sent to the provider's official API host.{% elif preset_info %}Paste the {{ preset_info.label }} webhook URL. {{ preset_info.urlRule }}. The host must also be on the platform's webhook allowlist.{% else %}HTTPS only. The host must be on the platform's webhook allowlist.{% endif %}</p>
         {% if errors.url %}<p class="field-error" id="f-url-err">{{ errors.url|join:" " }}</p>{% endif %}
       </div>
       <div class="field" id="f-enabled">
@@ -216,6 +226,17 @@
     </div>
   </section>
   {% else %}
+  {% if stored_preset_info %}
+  <section class="panel" id="preset-recipe">
+    <div class="panel-head"><h2>{{ stored_preset_info.label }} recipe</h2></div>
+    <div class="panel-body">
+      <p class="help">Import the verification recipe from <code>{{ stored_preset_info.recipe }}</code> (in the platform repository; see <code>docs/webhooks.md</code>, “Workflow automation platforms”). It needs the signing secret below.</p>
+      <p class="help">{{ stored_preset_info.verification }}</p>
+      <p class="help">{{ stored_preset_info.retries }}</p>
+      <p class="help">The recipe was exercised only by a Node simulation of the platform's steps, not on a live {{ stored_preset_info.label }} account.</p>
+    </div>
+  </section>
+  {% endif %}
   <section class="panel">
     <div class="panel-head"><h2>Signing secret</h2></div>
     <div class="panel-body">

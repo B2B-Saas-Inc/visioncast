@@ -187,6 +187,57 @@ The connection is opened to the vetted IP (no second lookup, defeating DNS
 rebinding) while TLS SNI, full certificate verification and the `Host` header use
 the hostname.
 
+## Workflow automation platforms
+
+Zapier, Make and n8n receive the same signed webhook as any other destination; nothing
+in delivery changes for them. What the platform adds is a **destination preset**
+(`webinars/webhook_presets.py`) chosen in the studio form ("Platform preset") or with
+MCP `save_destination` `preset: "zapier" | "make" | "n8n"` (`""` clears it), and an
+importable **verification recipe** per platform under `sdk/kits/automation/`. The preset:
+
+* validates the URL shape on every save (studio and MCP), on top of the SSRF policy above —
+  the host still has to be on `WEBHOOK_HOST_ALLOWLIST`;
+* pins `kind` to `generic` and `include_private_links` to `false` (a workflow tool routes
+  messages; it must never hold per-registrant join links);
+* is mutually exclusive with a native provider;
+* is stored as the non-secret key `webhook_preset` in the destination's encrypted
+  credentials (no model field; `credentialNames` leaves it out) and is shown as
+  `preset` by `list_destinations`, `save_destination` and `preview_destination_contract`,
+  together with the recipe path; `send_test_delivery` works unchanged.
+
+| Preset | URL rule (checked on save) | Source |
+|---|---|---|
+| `zapier` | `https://hooks.zapier.com/hooks/catch/<digits>/<id>/` — host exactly `hooks.zapier.com`, no query | [Trigger Zaps from webhooks](https://help.zapier.com/hc/en-us/articles/8496288690317-Trigger-Zaps-from-webhooks) (example `https://hooks.zapier.com/hooks/catch/123456/zbB61`), read 2026-10-27 |
+| `make` | `https://hook.<zone>.make.com/<id>` with zone `eu1`, `eu2`, `us1` or `us2` | zones from [Make API structure](https://developers.make.com/api-documentation/getting-started/api-structure); hook host shape from Make help examples (`https://hook.eu1.make.com/abc123xyz`), read 2026-10-27 |
+| `n8n` | `https://<host>/webhook/<path>` — the **production** URL; `/webhook-test/...` is refused (it only listens during "Listen for test event"). Host: `*.app.n8n.cloud` by suffix, otherwise an **exact** `WEBHOOK_HOST_ALLOWLIST` entry (same rule as native per-destination hosts, `native_integrations.destination_host_problem`) | [Webhook node](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/) (`https://<your-n8n-url>/webhook/my-path`), [endpoint variables](https://docs.n8n.io/hosting/configuration/environment-variables/endpoints/) (`N8N_ENDPOINT_WEBHOOK` = `webhook`, `N8N_ENDPOINT_WEBHOOK_TEST` = `webhook-test`), Cloud host `https://<name>.app.n8n.cloud` from the [n8n API docs](https://docs.n8n.io/connect/n8n-api/authentication), read 2026-10-27 |
+
+**Retries and dedupe.** All three platforms answer the platform's POST before (or regardless
+of) what their workflow does: Zapier always returns 200, Make queues and returns
+`200 Accepted`, n8n's Webhook node responds immediately by default. So the platform sees
+every accepted request as delivered and only retries when the platform itself fails to
+answer 2xx (outage, Make's `400 Queue is full`, a non-2xx *Webhook response*). A retry
+carries the same `Webinar-Delivery-Id`, and none of the three re-runs a failed workflow on
+its own, so each recipe **dedupes on `Webinar-Delivery-Id`** (Zapier StoreClient, Make Data
+store, n8n Remove Duplicates) and the downstream action should be idempotent on it too.
+A delivery the recipe rejects (bad signature, stale timestamp) is dropped, not retried —
+the right outcome for a forged or replayed request.
+
+**What each platform can verify** (`Webinar-Signature` = `v1=` + hex HMAC-SHA256 over
+`"{deliveryId}.{timestamp}." + raw body`, as in [`examples/verify_webhook.py`](../examples/verify_webhook.py)):
+
+| Recipe | Verification | Limits |
+|---|---|---|
+| [`sdk/kits/automation/zapier/`](../sdk/kits/automation/zapier/) — `verify-step.js` + README | *Catch Raw Hook* (raw body + headers) → *Code by Zapier* JavaScript: Node `crypto` HMAC, constant-time compare, 300 s window, rotation header, dedupe via *StoreClient* under one pruned key, parsed fields as output | Zapier has no secret store for Code steps: the signing secret is an Input Data value. Storage: 500 keys/store, no atomic read-modify-write. Field names of the raw hook unverified. |
+| [`sdk/kits/automation/make/`](../sdk/kits/automation/make/) — `blueprint.json`, `simulate.js` + README | Custom webhook with *JSON pass-through* + *Get request headers* → `v1={{sha256(id + "." + ts + "." + body; "hex"; secret)}}` ([Make: "If the key argument is specified, sha256 HMAC hash is returned"](https://help.make.com/text-and-binary-functions)) → router filter `contains(signature; expected)` and `abs(timestamp - ts) <= 300` → Parse JSON → router on `eventType`; dedupe with a Data store (described, not in the blueprint) | No constant-time compare in Make functions. The secret lives in the scenario mapping. Blueprint structure and the raw-body item name are unverified on a Make account. |
+| [`sdk/kits/automation/n8n/`](../sdk/kits/automation/n8n/) — `workflow.json`, `simulate.js` + README | Webhook (*Raw Body*) → Extract from File (text) → Crypto *Hmac* SHA256 hex (secret from a Crypto credential) → IF (`contains` for rotation, age ≤ 300) → Remove Duplicates on the delivery id → Switch on `eventType` | Crypto node compares with a plain string equality (no constant-time compare). Node parameter names unverified on a live instance. |
+
+Every recipe is exercised by `node --test sdk/kits/automation/test/automation.test.js` against
+`sdk/kits/automation/test/fixtures/deliveries.json`, generated by
+`sdk/kits/automation/test/make-fixtures.py` with `examples/verify_webhook.py` (the receiver
+twin of `webinars.crypto.sign_webhook`): valid, rotation, tampered, wrong-secret, stale and
+duplicate deliveries. That is a Node simulation of each platform's steps; none of the three
+platforms was used (see `sdk/kits/manifest.json`, `verified`).
+
 ## Retention
 
 `python manage.py purge_personal_data` replaces outbox payloads with

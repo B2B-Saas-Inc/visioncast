@@ -205,6 +205,7 @@ The shared scheduling functions also write their own entries (`occurrence.cancel
 
 ## Not supported
 
+- Webhook destinations (including the Zapier / Make / n8n `preset` field): studio or MCP `save_destination` only, see [mcp.md](mcp.md) and [webhooks.md](webhooks.md#workflow-automation-platforms).
 - Series creation (use admin).
 - Deleting hosts, topics, forms or occurrences.
 - Bulk operations.

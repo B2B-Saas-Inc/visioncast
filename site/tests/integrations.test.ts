@@ -36,7 +36,7 @@ test('no status claims a live connection', () => {
 });
 
 test('backend test claim is static-mock only', () => {
-  assert.equal(BACKEND_TESTS.passed, 1945);
+  assert.equal(BACKEND_TESTS.passed, 2001);
   assert.equal(BACKEND_TESTS.database, 'PostgreSQL');
   assert.match(BACKEND_TESTS.note, /static mocks/i);
   assert.match(BACKEND_TESTS.note, /no test talks to a live vendor/i);
@@ -55,10 +55,10 @@ test('the page and cards render no connected badge or live-key wording', () => {
 
 const byId = Object.fromEntries(INTEGRATIONS.map((i) => [i.id, i]));
 
-test('only mock-tested outbound and hosting adapters are marked built', () => {
+test('only mock-tested outbound, hosting and automation-preset integrations are marked built', () => {
   assert.deepEqual(idsWith('built'), [
-    'activecampaign', 'amplitude', 'attio', 'brevo', 'customerio', 'ga4', 'hubspot', 'mailchimp', 'mixpanel', 'pipedrive', 'posthog',
-    'rudderstack', 'salesforce', 'segment', 'sequel', 'wistia', 'zoom',
+    'activecampaign', 'amplitude', 'attio', 'brevo', 'customerio', 'ga4', 'hubspot', 'mailchimp', 'make', 'mixpanel', 'n8n',
+    'pipedrive', 'posthog', 'rudderstack', 'salesforce', 'segment', 'sequel', 'wistia', 'zapier', 'zoom',
   ]);
 });
 
@@ -79,8 +79,29 @@ test('every native adapter in the back-end registry is listed as built, never li
     const text = `${item.summary} ${item.details.join(' ')}`;
     assert.doesNotMatch(text, /\b(connected|live|production[- ]?(ready|tested|validated)|verified with)\b/i, id);
   }
-  const nonHosting = INTEGRATIONS.filter((i) => i.status === 'built' && i.category !== 'hosting').map((i) => i.id);
+  const nonHosting = INTEGRATIONS.filter((i) => i.status === 'built' && !['hosting', 'automation'].includes(i.category)).map((i) => i.id);
   assert.deepEqual(nonHosting.sort(), [...NATIVE_PROVIDERS].sort());
+});
+
+// Mirrors PRESETS in webinars/webhook_presets.py and the recipes in sdk/kits/automation/.
+test('workflow-automation presets are built (preset + recipe), simulation-only, never live', () => {
+  const automation = INTEGRATIONS.filter((i) => i.category === 'automation').map((i) => i.id).sort();
+  assert.deepEqual(automation, ['make', 'n8n', 'zapier']);
+  for (const id of automation) {
+    assert.equal(byId[id].status, 'built', id);
+    assert.ok(byId[id].details.some((d) => /destination preset/i.test(d)), `${id}: preset`);
+    assert.ok(byId[id].details.some((d) => /verification recipe/i.test(d)), `${id}: recipe`);
+    assert.ok(byId[id].details.some((d) => /node simulation.*unverified with a real/i.test(d)), `${id}: honest limit`);
+    assert.ok(byId[id].details.some((d) => /delivery id/i.test(d)), `${id}: dedupe`);
+  }
+  assert.ok(byId.n8n.details.some((d) => /never \/webhook-test\//.test(d)));
+  assert.ok(byId.make.details.some((d) => /eu1, eu2, us1, us2/.test(d)));
+  assert.ok(byId.zapier.details.some((d) => /hooks\.zapier\.com/.test(d)));
+  const manifest = JSON.parse(read('..', 'sdk', 'kits', 'manifest.json'));
+  for (const id of automation) {
+    const kit = manifest.kits.find((k: { id: string }) => k.id === id);
+    assert.ok(kit && kit.productionTested === false, `${id}: manifest kit`);
+  }
 });
 
 test('built adapters state their privacy limits', () => {
@@ -126,12 +147,10 @@ test('framework and CMS kits are reference code, never built', () => {
 });
 
 test('roadmap providers are listed and not built', () => {
-  for (const id of [
-    'marketo', 'hubspot-marketing', 'loops', 'intercom', 'resend', 'postmark', 'ses',
-    'n8n', 'zapier', 'make',
-  ]) {
+  for (const id of ['marketo', 'hubspot-marketing', 'loops', 'intercom', 'resend', 'postmark', 'ses']) {
     assert.equal(INTEGRATIONS.find((i) => i.id === id)?.status, 'roadmap', id);
   }
+  assert.deepEqual(idsWith('roadmap'), ['hubspot-marketing', 'intercom', 'loops', 'marketo', 'postmark', 'resend', 'ses']);
 });
 
 test('ids are unique and every category is valid and non-empty', () => {

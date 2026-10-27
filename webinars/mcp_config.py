@@ -129,6 +129,7 @@ def _url_host(url):
 
 def serialize_destination(dest):
     from webinars.services import credential_names
+    from webinars.webhook_presets import destination_preset
 
     return {
         "id": str(dest.pk),
@@ -145,6 +146,8 @@ def serialize_destination(dest):
         "maxAttempts": dest.max_attempts,
         "hasSigningSecret": bool(dest.signing_secret_encrypted),
         "credentialNames": credential_names(dest),
+        # Workflow-automation preset (zapier / make / n8n) or null: a generic signed webhook either way.
+        "preset": destination_preset(dest) or None,
     }
 
 
@@ -398,14 +401,19 @@ DESTINATION_FIELDS = {
     "includePrivateLinks": {"type": "boolean"},
     "fieldMapping": {"type": "object", "additionalProperties": {"type": "string", "maxLength": 200}},
     "maxAttempts": {"type": "integer", "minimum": 1, "maximum": 20},
+    "preset": {"type": "string", "enum": ["", "zapier", "make", "n8n"],
+               "description": "Workflow-automation preset: validates the URL shape for the platform, pins kind=generic "
+                              "and includePrivateLinks=false, and names the verification recipe. '' clears it. "
+                              "Delivery is the same signed webhook either way."},
 }
 _DEST_MODEL = {"name": "name", "kind": "kind", "url": "url", "enabled": "enabled", "eventTypes": "event_types",
                "allowedGroups": "allowed_groups", "requiredConsents": "required_consents",
                "includePrivateLinks": "include_private_links", "fieldMapping": "field_mapping", "maxAttempts": "max_attempts"}
 
 
-def _destination_form(args, instance):
+def _destination_form(args, instance, preset=""):
     from webinars.admin import DestinationForm
+    from webinars.webhook_presets import pin_defaults
 
     data = {}
     if instance is not None:
@@ -422,16 +430,46 @@ def _destination_form(args, instance):
         data.pop("enabled", None)  # unchecked checkbox semantics
     if not data.get("include_private_links"):
         data.pop("include_private_links", None)
+    if preset:
+        pin_defaults(data)
     return DestinationForm(data=data, instance=instance)
+
+
+def _preset_for_save(args, instance):
+    """``(effective preset, stored credentials)`` for a save: the argument wins, else the stored
+    value. Refuses the combination with a native provider (credentials readable or not)."""
+    from webinars import native_integrations as native
+    from webinars.webhook_presets import preset_of
+
+    creds = {}
+    if instance is not None:
+        try:
+            creds = native.load_credentials(instance)
+        except native.CredentialsUnavailable:
+            if args.get("preset"):
+                raise ToolError(409, "conflict", "Stored credentials can't be read; re-enter them before setting a preset.")
+            return "", None
+    preset = args["preset"] if "preset" in args else preset_of(creds)
+    if preset and native.provider_of(creds):
+        raise ToolError(400, "validation_error", "A platform preset can't be combined with a native provider.",
+                        {"preset": "Clear the native provider first."})
+    return preset or "", creds
 
 
 def save_destination(args, key):
     from webinars.audit import audit as _audit
+    from webinars.services import set_credentials
+    from webinars.webhook_presets import describe, url_problem, with_preset
 
     instance = _get(Destination, pk=args["destinationId"]) if args.get("destinationId") else None
     if instance is None and "name" not in args or instance is None and "url" not in args:
         raise ToolError(400, "validation_error", "name and url are required to create a destination.")
-    form = _destination_form(args, instance)
+    preset, creds = _preset_for_save(args, instance)
+    # The platform's URL shape first (the more specific message), then the form's SSRF/allowlist policy.
+    problem = url_problem(preset, args["url"] if "url" in args else instance.url)
+    if problem:
+        raise ToolError(400, "validation_error", "Request validation failed.", {"url": problem})
+    form = _destination_form(args, instance, preset)
     valid = form.is_valid()  # validation only; nothing saved before confirmation
     if not valid:
         raise ToolError(400, "validation_error", "Request validation failed.",
@@ -439,6 +477,7 @@ def save_destination(args, key):
     preview = {"create": instance is None, "changedFields": sorted(form.changed_data),
                "urlHost": _url_host(form.cleaned_data.get("url")), "enabled": form.cleaned_data.get("enabled"),
                "includePrivateLinks": form.cleaned_data.get("include_private_links"),
+               "preset": describe(preset),
                "effect": "Enabled destinations receive registrant data for their event types and groups."}
     gated = _gate("save_destination", key, args, preview, state=str(instance.updated_at) if instance else None)
     if gated:
@@ -446,21 +485,30 @@ def save_destination(args, key):
     with transaction.atomic():
         dest = form.save()
         _audit("destination.saved", api_key=key, obj=dest, created=instance is None, fields=sorted(form.changed_data))
-    return 201 if instance is None else 200, serialize_destination(dest)
+        if creds is not None:
+            merged = with_preset(creds, preset)
+            if merged != creds:
+                set_credentials(dest, merged, user=None)
+    return 201 if instance is None else 200, serialize_destination(Destination.objects.get(pk=dest.pk))
 
 
 def set_destination_credentials(args, key):
     from webinars.services import set_credentials
+    from webinars.webhook_presets import PRESET_KEY, destination_preset, with_preset
 
     dest = _get(Destination, pk=args["destinationId"])
     creds = args["credentials"]
+    if PRESET_KEY in creds:
+        raise ToolError(400, "validation_error", "Request validation failed.",
+                        {"credentials": f"{PRESET_KEY} is set through save_destination's preset argument."})
     preview = {"destinationId": str(dest.pk), "replaceNames": sorted(creds), "currentNames": serialize_destination(dest)["credentialNames"],
                "effect": "Replaces all stored credentials (encrypted at rest; values are never returned)."}
     gated = _gate("set_destination_credentials", key, args, preview, state=str(dest.updated_at))
     if gated:
         return gated
     try:
-        set_credentials(dest, creds, user=None)
+        # The preset marker is a setting, not a credential: it survives a credential replacement.
+        set_credentials(dest, with_preset(creds, destination_preset(dest)), user=None)
     except ValidationError as exc:
         raise _validation(exc)
     audit("destination.credentials_set", api_key=key, obj=dest, fields=len(creds))
@@ -513,12 +561,15 @@ def requeue_dead_messages(args, key):
 def preview_destination_contract(args, key):
     """Dry-run 'test send': what this destination would receive. Nothing is sent or queued."""
     from webinars import outbox
+    from webinars.webhook_presets import describe, destination_preset
 
     dest = _get(Destination, pk=args["destinationId"])
     groups = sorted(set(outbox.ALWAYS_GROUPS) | set(dest.allowed_groups or []))
     return 200, {"dryRun": True, "sent": False, "destination": serialize_destination(dest),
                  "eventTypes": list(dest.event_types or []) or list(outbox.EVENT_TYPES), "payloadGroups": groups,
                  "privateLinks": dest.include_private_links,
+                 # Platform preset: the verification recipe to import on the receiving side (None when plain).
+                 "preset": describe(destination_preset(dest)),
                  "note": "Live test sends are not available over MCP; use the studio integration test or a staging receiver."}
 
 

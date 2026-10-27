@@ -16,6 +16,13 @@ The kits in `sdk/kits/` put webinar RSVP forms and live event data on sites you 
 | SvelteKit | maintained reference | SvelteKit 3.1 / Svelte 5 (runes) with adapter-node, full flow | `sdk/kits/frameworks/{svelte,sveltekit}/` |
 | Webflow, Framer | instructions | snippet verified as a static page behind nginx; the vendors' hosting was not used | `sdk/kits/nocode/embed-snippet.html` |
 | Sanity, Payload, Prismic, Contentful | schema reference | validated with each vendor's package (no CMS instance) | `sdk/kits/cms/` |
+| Zapier (webhook verification) | maintained reference | Node simulation of the Code step on backend-signed fixtures; no Zap created | `sdk/kits/automation/zapier/` |
+| Make (webhook verification) | instructions | Node simulation of the blueprint's expressions; no scenario imported | `sdk/kits/automation/make/` |
+| n8n (webhook verification) | maintained reference | Node simulation of the workflow's nodes; no n8n instance used | `sdk/kits/automation/n8n/` |
+
+The three automation kits are the receiving side of the signed webhooks in
+[webhooks.md](webhooks.md#workflow-automation-platforms), not registration forms; they use
+no proxy route.
 
 "Full flow" means the 30-check browser scenario in `sdk/kits/test/fresh-install/flow.cjs`: profile and CSRF cookie, anonymous form, consent denied by default, registration, thank-you and calendar links, recognised reload with "Confirm my RSVP", "Not you? Start over", `WebinarForm.setConsent`, and 404/405/400 proxy hardening.
 
@@ -248,9 +255,22 @@ Copy `cms/prismic/webinar_reference/model.json` into your Slice Machine library 
 
 **Status: schema reference.** `cms/contentful/webinar-reference.import.json` is in the `contentful space import` format: content type `webinarReference` with Symbol fields `eventSlug` and `occurrenceId`, both regexp-validated. Verified 2026-10-27: the file passes the Joi payload check (`assertPayload`) that `contentful-import` 10.5.7 runs before any API call, and both patterns accept a slug/UUID and reject junk. No space import was run (it needs a space and a management token). Import it yourself, or create the same fields in the web app; the kit makes no remote calls. Then reference the entry from your page type, and pass the delivery entry (`{fields: {eventSlug, occurrenceId}}`) to `resolveWebinarReference(entry)`.
 
+## Zapier
+
+**Status: maintained reference.** `automation/zapier/verify-step.js` is a *Code by Zapier* (JavaScript) step that verifies one platform delivery after a *Catch Raw Hook* trigger: HMAC-SHA256 over `<delivery id>.<timestamp>.<raw body>` with Node's `crypto`, constant-time compare (rotation header accepted), 300 s timestamp window, dedupe on `Webinar-Delivery-Id` through *StoreClient* (one pruned key), and the parsed payload plus lifted fields (`email`, `eventTitle`, `sessionStartsAt`, …) as output. Verified 2026-10-27 only by the Node simulation in `automation/test/automation.test.js` (fixtures signed with `examples/verify_webhook.py`); no Zap was created, and the raw hook's field names in the mapping picker are unverified. Set-up, Input Data table and limits (secret in Input Data, Storage limits, Zapier's 200-regardless response): `automation/zapier/README.md`. Platform side: destination with preset **Zapier** (`docs/webhooks.md`).
+
+## Make
+
+**Status: instructions.** `automation/make/blueprint.json` is a scenario (custom webhook with JSON pass-through and request headers → set variables → `v1={{sha256(id + "." + ts + "." + body; "hex"; secret)}}` → router: `contains(signature; expected)` and `abs(timestamp - ts) <= 300` → Parse JSON → router on `eventType`; rejected requests get a 401 *Webhook response*). The expressions are evaluated by `automation/make/simulate.js` in the Node test; the blueprint's module/filter structure follows Make's export format from memory and is unverified on a Make account, as is the raw-body item name. Dedupe with a Data store keyed by the delivery id (README). Platform side: preset **Make**; the `hook.<zone>.make.com` host must be allowlisted.
+
+## n8n
+
+**Status: maintained reference.** `automation/n8n/workflow.json` imports a chain Webhook (Raw Body) → Extract from File → Crypto *Hmac* SHA256 hex (secret from a Crypto credential) → IF (signature contains `v1=<hmac>`, age ≤ 300 s) → Remove Duplicates on `Webinar-Delivery-Id` → Switch on `eventType`. `automation/n8n/simulate.js` replays each node's documented behaviour in the Node test, and the test pins the workflow's expressions and node types to it. No n8n instance was used; node parameter names were taken from the n8n docs and source (2026-10-27) and may need adjusting on your version. Platform side: preset **n8n**; the production URL only (`/webhook-test/` is refused), host an exact allowlist entry or `*.app.n8n.cloud`.
+
 ## Tests
 
 ```sh
+node --test sdk/kits/automation/test/automation.test.js         # Zapier code step, Make and n8n simulations on backend-signed fixtures
 node --test sdk/kits/test/kits.test.js                          # manifest, route parity, secret scan, PHP guards, mount, headless seam, fresh-install findings
 node --test sdk/test/proxy.test.js sdk/test/webinar-form.test.js # SDK + proxy suites (proxy: quoted cookie values added)
 bash sdk/kits/test/fresh-install.sh [stage]                     # real scaffolds + backend + Chromium; Docker and network; not run by node --test
