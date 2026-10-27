@@ -84,7 +84,9 @@ async function expectNoErrorSummary(page, what) {
 }
 
 async function main() {
-  const browser = await chromium.launch({ headless: HEADLESS });
+  const launch = { headless: HEADLESS };
+  if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE) launch.executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+  const browser = await chromium.launch(launch);
   const staff = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const page = await staff.newPage();
   page.setDefaultTimeout(15000);
