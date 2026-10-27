@@ -399,7 +399,8 @@ def _stop(proc):
 # ---------------------------------------------------------------------------
 #
 # Same URL policy, DNS vetting, pinned TLS, no redirects and hard total deadline as
-# ``post_json_bounded``. Differences: POST or PUT only (the vendor contracts we call), the
+# ``post_json_bounded``. Differences: GET (no body; read-back and dedupe lookups), POST or PUT
+# only (the vendor contracts we call), the
 # response body is returned up to ``MAX_NATIVE_RESPONSE_BYTES`` (larger bodies are dropped
 # and flagged), and ``Retry-After`` is returned parsed and capped. Requests carrying an
 # ``Authorization`` header must name the exact hosts they may go to (``allowed_hosts``),
@@ -407,7 +408,7 @@ def _stop(proc):
 # built by the adapters, not user input.
 
 MAX_NATIVE_RESPONSE_BYTES = 65536
-NATIVE_METHODS = frozenset({"POST", "PUT"})
+NATIVE_METHODS = frozenset({"GET", "POST", "PUT"})
 MAX_RETRY_AFTER_SECONDS = 3600
 _RETRY_AFTER_RAW_CHARS = 64
 
@@ -505,7 +506,7 @@ def request_json_bounded(
     allowed_hosts=None,
     _target=None,
 ):
-    """Bounded POST/PUT returning ``(status, raw_body, retry_after_seconds, truncated)``.
+    """Bounded GET/POST/PUT returning ``(status, raw_body, retry_after_seconds, truncated)``.
 
     ``raw_body`` is at most ``max_response_bytes`` (capped at ``MAX_NATIVE_RESPONSE_BYTES``);
     when the response is larger it is ``b""`` and ``truncated`` is True. Redirects are
@@ -517,7 +518,9 @@ def request_json_bounded(
     method = str(method).upper()
     host, port, path = _validated_target(url)
     _check_native_request(method, host, headers, allowed_hosts)
-    if isinstance(body, str):
+    if method == "GET":
+        body = b""  # lookups never carry a body
+    elif isinstance(body, str):
         body = body.encode("utf-8")
     max_bytes = max(1, min(int(max_response_bytes), MAX_NATIVE_RESPONSE_BYTES))
     total_timeout = max(0.1, float(total_timeout))

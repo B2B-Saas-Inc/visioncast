@@ -89,7 +89,7 @@ def no_spawn(monkeypatch):
     return spawned
 
 
-@pytest.mark.parametrize("method", ["GET", "DELETE", "PATCH", "HEAD", "OPTIONS", "CONNECT", "TRACE", "post\r\nX: y"])
+@pytest.mark.parametrize("method", ["DELETE", "PATCH", "HEAD", "OPTIONS", "CONNECT", "TRACE", "post\r\nX: y"])
 def test_only_post_and_put(allow, no_spawn, method):
     with pytest.raises(ssrf.UnsafeDestination):
         ssrf.request_json_bounded(method, URL, b"{}", {}, 10, 5, allowed_hosts=VENDORS, _target=_ok_child)
@@ -469,3 +469,16 @@ def test_backoff_without_retry_after_unchanged():
             return 1.0
 
     assert delivery.backoff_seconds(1, rng=R()) == 60
+
+
+def _echo_child(conn, host, port, path, method, body, headers, timeout, max_bytes):
+    # Spawned: must be importable. Echoes what reached the child so the parent can assert on it.
+    conn.send(("ok", (200, json.dumps({"method": method, "body": bytes(body or b"").decode()}).encode(), None, False), ""))
+    conn.close()
+
+
+def test_get_lookup_sends_no_body(allow):
+    """GET is allowed for read-back / dedupe lookups and never carries a body."""
+    status, raw, _retry, truncated = ssrf.request_json_bounded("GET", URL, b'{"ignored":1}', {}, 10, 5, allowed_hosts=VENDORS, _target=_echo_child)
+    assert (status, truncated) == (200, False)
+    assert json.loads(raw) == {"method": "GET", "body": ""}

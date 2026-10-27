@@ -40,6 +40,9 @@ from webinars.ssrf import ResolutionFailed, UnsafeDestination, validate_destinat
 
 PROVIDER_KEY = "native_provider"
 NATIVE_PREFIX = "native_"
+# Self-contained provider modules (``webinars/native_providers/*``), filled by ``_register``
+# at the end of this file. Empty while this module is still importing.
+REGISTRY = {}
 MAX_CALLS = 6
 MAX_RESPONSE_BYTES = 65536
 USER_AGENT = "webinar-platform-native/1"
@@ -289,6 +292,8 @@ GA4_REQUIRED_GROUPS = ("consents", "attribution")
 
 # Per provider: the custom-ID field that custom_id matching needs.
 CUSTOM_ID_FIELD = {"hubspot": "contact_id_property", "attio": "person_match_attribute"}
+# Per provider: the organization target setting that must be set together with ``org_namespace``.
+ORG_TARGETS = {"posthog": "group_type", "hubspot": "company_id_property", "customerio": "object_type_id", "attio": "company_match_attribute"}
 
 # Providers whose contract needs a response body (record ids) or PUT.
 NEEDS_REQUEST_TRANSPORT = {"hubspot", "attio"}
@@ -378,8 +383,18 @@ def dataplane_host_problem(host):
     return None
 
 
+# Generic name for provider modules with a per-destination host (same policy as RudderStack).
+def destination_host_problem(host):
+    return dataplane_host_problem(host)
+
+
 def _host(provider, credentials):
     credentials = credentials or {}
+    module = REGISTRY.get(provider)
+    if module is not None and hasattr(module, "host_of"):
+        # Per-destination host (operator-allowlisted, see ``destination_host_problem``) or None.
+        host = module.host_of(credentials)
+        return host if isinstance(host, str) and host else None
     if provider == "rudderstack":
         if credentials.get(NATIVE_PREFIX + "region") != "dataplane":
             return None
@@ -484,11 +499,8 @@ def validate(provider, credentials, *, event_types=(), allowed_groups=(), requir
             add("provider", f"Ask your operator to add exactly {host} (not a wildcard or parent domain) to WEBHOOK_HOST_ALLOWLIST before enabling.")
         elif problem == "unsafe":
             add("native-dataplane_host", "That host is not allowed as a destination.")
-        if not destination_hosts_supported():
-            add("provider", "RudderStack needs per-destination host pinning in delivery, which this installation lacks; it can't be enabled.")
     cfg = config_of(credentials or {}, provider)
-    org_targets = {"posthog": "group_type", "hubspot": "company_id_property", "customerio": "object_type_id", "attio": "company_match_attribute"}
-    if provider in org_targets and bool(cfg.get("org_namespace")) != bool(cfg.get(org_targets[provider])):
+    if provider in ORG_TARGETS and bool(cfg.get("org_namespace")) != bool(cfg.get(ORG_TARGETS[provider])):
         add("native-org_namespace", "Set both the organization ID namespace and the organization target, or neither.")
     bad_events = [e for e in (event_types or []) if e not in NATIVE_EVENT_TYPES]
     if bad_events:
@@ -522,6 +534,11 @@ def validate(provider, credentials, *, event_types=(), allowed_groups=(), requir
             "provider",
             f"{PROVIDER_LABELS[provider]} needs the response-reading transport (ssrf.request_json_bounded), which is missing; it can't be enabled.",
         )
+    if provider in NEEDS_DESTINATION_HOSTS and not destination_hosts_supported():
+        add("provider", f"{PROVIDER_LABELS[provider]} needs per-destination host pinning in delivery, which this installation lacks; it can't be enabled.")
+    module = REGISTRY.get(provider)
+    if module is not None and hasattr(module, "validate_extra"):
+        module.validate_extra(cfg, credentials or {}, add, event_types=event_types, allowed_groups=allowed_groups, required_consents=required_consents)
     return errors
 
 
@@ -1308,6 +1325,12 @@ def execute(provider, credentials, body, event_type, ctx):
             _run_simple(ctx, base, plan_rudderstack(cfg, secrets, facts, event_type))
         elif provider == "brevo":
             _run_simple(ctx, base, plan_brevo(cfg, secrets, facts, event_type, body))
+        elif provider in REGISTRY:
+            if provider in NEEDS_DESTINATION_HOSTS and not destination_hosts_supported():
+                return Outcome("dead", "native_transport_unavailable")
+            if provider in ANALYTICS_PROVIDERS:
+                _analytics_guard(body)
+            REGISTRY[provider].run(ctx, base, cfg, secrets, facts, event_type, body)
         else:
             return Outcome("dead", "native_provider_unknown")
     except Skip as exc:
@@ -1359,8 +1382,9 @@ SAMPLE_BODY = {
 class _PreviewContext:
     """Records the planned calls instead of sending; returns fake ids for chained steps."""
 
-    def __init__(self):
+    def __init__(self, responder=None):
         self.calls = []
+        self._responder = responder
 
     def call(self, step, method, url, payload, headers, read):
         self.calls.append(
@@ -1374,6 +1398,8 @@ class _PreviewContext:
         )
         if not read:
             return None
+        if self._responder is not None:
+            return self._responder(step, method, url, payload)
         return {"results": [{"id": "<returned id>"}], "data": {"id": {"record_id": "<returned id>"}}}
 
 
@@ -1474,7 +1500,11 @@ def _preview(provider, credentials, event_type):
             steps = plan_brevo(cfg, secrets, facts, event_type, sample)
         else:
             steps = None
-        if steps is not None:
+        if provider in REGISTRY:
+            module = REGISTRY[provider]
+            ctx = _PreviewContext(getattr(module, "preview_response", None))
+            module.run(ctx, base, cfg, secrets, facts, event_type, sample)
+        elif steps is not None:
             for s in steps:
                 ctx.call(s["step"], s["method"], base + s["path"], s["json"], _step_headers(s), False)
         elif provider == "hubspot" and cfg.get("participation_object_type") and cfg.get("participation_id_property"):
@@ -1486,3 +1516,55 @@ def _preview(provider, credentials, event_type):
     for c in ctx.calls:
         c["body_json"] = json.dumps(c["body"], indent=2, sort_keys=True)
     return ctx.calls, None
+
+
+# ---------------------------------------------------------------------------
+# Provider modules (webinars/native_providers/): one self-contained module per vendor
+# ---------------------------------------------------------------------------
+#
+# A module declares ``PROVIDER``, ``LABEL``, ``FIELDS`` (``Field`` tuple; first field is the
+# region/host choice unless ``host_of`` is defined), static ``HOSTS`` (``{region: host}``) or a
+# ``host_of(credentials)`` for an operator-allowlisted per-destination host, and
+# ``run(ctx, base, cfg, secrets, facts, event_type, body)`` which performs the vendor calls
+# through ``ctx.call`` and raises ``Skip`` / ``_Stop`` like the built-in adapters. Optional:
+# ``ANALYTICS`` (requires Analytics consent), ``NEEDS_REQUEST_TRANSPORT``, ``PER_DESTINATION_HOST``,
+# ``SECRET_HEADERS``, ``CUSTOM_ID_FIELD``, ``ORG_TARGET``, ``validate_extra(...)`` and
+# ``preview_response(step, method, url, payload)`` (fake read responses for the redacted preview).
+
+
+def _register(module):
+    global VENDOR_HOSTS, SECRET_HEADERS
+    provider = module.PROVIDER
+    if provider in FIELDS:
+        raise RuntimeError(f"native provider {provider!r} registered twice")
+    REGISTRY[provider] = module
+    FIELDS[provider] = tuple(module.FIELDS)
+    hosts = dict(getattr(module, "HOSTS", {}) or {})
+    if hosts:
+        HOSTS[provider] = hosts
+        VENDOR_HOSTS = frozenset(VENDOR_HOSTS | set(hosts.values()))
+    PROVIDER_CHOICES.append((provider, module.LABEL))
+    PROVIDER_LABELS[provider] = module.LABEL
+    if getattr(module, "ANALYTICS", False):
+        ANALYTICS_PROVIDERS.add(provider)
+    if getattr(module, "NEEDS_REQUEST_TRANSPORT", False):
+        NEEDS_REQUEST_TRANSPORT.add(provider)
+    if getattr(module, "PER_DESTINATION_HOST", False) or hasattr(module, "host_of"):
+        NEEDS_DESTINATION_HOSTS.add(provider)
+    if getattr(module, "CUSTOM_ID_FIELD", None):
+        CUSTOM_ID_FIELD[provider] = module.CUSTOM_ID_FIELD
+    if getattr(module, "ORG_TARGET", None):
+        ORG_TARGETS[provider] = module.ORG_TARGET
+    extra_headers = {h.lower() for h in getattr(module, "SECRET_HEADERS", ())}
+    if extra_headers:
+        SECRET_HEADERS = frozenset(SECRET_HEADERS | extra_headers)
+
+
+def _load_provider_modules():
+    from webinars import native_providers
+
+    for module in native_providers.modules():
+        _register(module)
+
+
+_load_provider_modules()
