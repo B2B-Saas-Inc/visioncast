@@ -27,7 +27,7 @@ addopts = "-ra"
 # ~/.config/ruff/ruff.toml are never inherited, so results match on every machine.
 [tool.ruff]
 target-version = "py312"
-extend-exclude = [".runs", "artifacts"]
+extend-exclude = [".runs", "artifacts", ".claude"]
 
 [tool.ruff.lint]
 # Syntax/runtime errors and Pyflakes only; no style rules.
