@@ -2,6 +2,8 @@
 
 **2026-10-27T19:02Z backend update (owner-approved):** source from tag `v0.2.0-pre` (`1462cb7`) installed with `update-test-backend.sh --apply` (database and previous source kept in `/srv/visioncast/backups/20261027T190217Z`); migration `0011_attendance_import` applied, roles synced, static collected, `check` clean, service healthy. Public `/healthz` reports `{"status": "ok", "version": "0.2.0-pre"}`, OpenAPI serves 61 paths (5 attendance-import routes), 4 upcoming demo events unchanged; admin, studio, MCP and management stay 404 publicly. Still no worker, email, destinations or outbound access, so provider pulls and native deliveries cannot run on this host. **2026-10-27T19:10Z frontend redeploy (owner-approved):** `vercel --prod --scope b2b-saas` from `site/` at `fb6b080`; production https://visioncast-fw0al0uau-b2b-saas.vercel.app aliased to https://visioncast-ten.vercel.app. The catalogue now lists Salesforce, Pipedrive, ActiveCampaign and Mailchimp as built (mock-tested).
 
+**2026-10-27T22:35Z frontend redeploy:** `vercel --prod --scope b2b-saas` from `site/` at `a52fade`; production https://visioncast-7njykdj8v-b2b-saas.vercel.app aliased to https://visioncast-ten.vercel.app. The catalogue now also lists beehiiv, Resend, Amazon SES, Zapier, Make and n8n. **The backend still runs `v0.2.0-pre`**: the `v0.3.0-pre` bundle is prepared but the update was not applied (needs the owner to run `update-test-backend.sh --apply`).
+
 - Public site: https://visioncast-ten.vercel.app
 - Immutable deployment: https://visioncast-oxs8a0qen-b2b-saas.vercel.app
 - Requested `visioncast.vercel.app` was unavailable (Vercel alias already in use); never link to that unrelated deployment.
