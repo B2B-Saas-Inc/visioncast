@@ -145,15 +145,99 @@ def _run_worker(limit=20):
     return delivered
 
 
-def test_complete_operational_webinar_workflow(client, stripe, monkeypatch):
-    form = make_form(version="e2e-v1")
-    content_key = make_api_key(("content_write",), name="cms")
-    publish_key = make_api_key(("content_write", "publication"), name="publisher")
-    payments_key = make_api_key(("payments_admin", "content_write"), name="pricing")
-    hosting_key = make_api_key(("hosting_admin", "hosting_provision"), name="hosting")
-    read_key = make_api_key(("config_read",), name="agent")
+def _keys():
+    return {
+        "content": make_api_key(("content_write",), name="cms"),
+        "publish": make_api_key(("content_write", "publication"), name="publisher"),
+        "payments": make_api_key(("payments_admin", "content_write"), name="pricing"),
+        "hosting": make_api_key(("hosting_admin", "hosting_provision"), name="hosting"),
+        "attendance": make_api_key(("attendance_write",), name="attendance"),
+        "read": make_api_key(("config_read",), name="agent"),
+    }
 
-    # ---- 1. Create: event, session, price, waiting room, publish (two-step confirmation)
+
+def _create_and_publish(client, keys, slug):
+    """Steps 1 of the workflow: event, priced session with a waiting room, publication. Returns (event_id, occ)."""
+    form = make_form(version=f"e2e-{slug}")
+    event = call(client, "POST", f"{BASE}/events", keys["content"], {
+        "internalName": "E2E launch webinar", "slug": slug, "publicTitle": "Launching with confidence",
+        "formVersion": form.version, "learningOutcomes": ["Plan", "Ship"], "summary": "A complete launch walkthrough.",
+        "attention": "Ship your next launch with confidence.", "action": "Register now",
+    })
+    assert event.status_code == 201, event.content
+    event_id = event.json()["id"]
+    local_start = (timezone.now() + timedelta(days=5)).strftime("%Y-%m-%dT12:00")
+    session = call(client, "POST", f"{BASE}/events/{event_id}/occurrences", keys["content"],
+                   {"timezone": "Europe/London", "localStart": local_start, "durationMinutes": 45})
+    assert session.status_code == 201, session.content
+    occ_id = session.json()["id"]
+    priced = call(client, "PATCH", f"{BASE}/occurrences/{occ_id}/tickets", keys["payments"], {"priceMinor": 2500, "currency": "usd"})
+    assert priced.status_code == 200, priced.content
+    room = call(client, "PATCH", f"{BASE}/occurrences/{occ_id}/waiting-room", keys["content"], {"enabled": True, "admissionLeadMinutes": 15})
+    assert room.status_code == 200 and room.json()["enabled"] is True, room.content
+    assert call(client, "PATCH", f"{BASE}/events/{event_id}", keys["content"], {"visibility": "public"}).status_code == 403
+    published = confirmed(client, "PATCH", f"{BASE}/events/{event_id}", keys["publish"], {"visibility": "public"})
+    assert published.status_code == 200 and published.json()["visibility"] == "public", published.content
+    public = client.get(f"/api/v1/events/{slug}")
+    assert public.status_code == 200 and public.json()["occurrences"][0]["id"] == occ_id
+    return event_id, Occurrence.objects.get(pk=occ_id)
+
+
+def _provision_zoom(client, keys, occ, monkeypatch):
+    """Step 2: connect Zoom, preview, confirm create. Returns the hosting account id."""
+    account = call(client, "POST", f"{BASE}/hosting/accounts", keys["hosting"], {
+        "provider": "zoom", "name": "Zoom (owner)", "enabled": True,
+        "config": {"host_user_id": "host@example.com"}, "credentials": dict(ZOOM_SECRETS),
+    })
+    assert account.status_code == 201, account.content
+    assert ZOOM_SECRETS["client_secret"] not in account.content.decode()
+    account_id = account.json()["id"]
+    preview = call(client, "POST", f"{BASE}/occurrences/{occ.pk}/hosting/preview", keys["hosting"], {"accountId": account_id, "action": "create"})
+    assert preview.status_code == 200 and preview.json()["problems"] == [], preview.content
+    zoom = Fake(TOKEN, (201, {"id": 81234567890, "join_url": ZOOM_JOIN, "start_url": ZOOM_HOST}))
+    monkeypatch.setattr(base, "default_transport", zoom)
+    linked = confirmed(client, "POST", f"{BASE}/occurrences/{occ.pk}/hosting/execute", keys["hosting"], {"accountId": account_id, "action": "create"})
+    assert linked.status_code == 200 and linked.json()["state"] == "linked", linked.content
+    assert "HOST-SECRET" not in linked.content.decode() and ZOOM_JOIN not in linked.content.decode()
+    base.clear_token_cache()
+    occ.refresh_from_db()
+    assert occ.join_url == ZOOM_JOIN
+    return account_id
+
+
+def _crm_destinations(monkeypatch):
+    make_destination(name="HubSpot", url="https://api.hubapi.com", event_types=["registration.created", "attendance.recorded"],
+                     credentials_encrypted=encrypt_secret(json.dumps(HUBSPOT)), required_consents=[])
+    make_destination(name="Marketing automation", kind=Destination.Kind.EMAIL,
+                     event_types=["registration.created", "attendance.recorded"], include_private_links=False)
+    hubspot = HubSpotFake()
+    monkeypatch.setattr(webinars.ssrf, "request_json_bounded", hubspot)
+    webhook = WebhookFake()
+    monkeypatch.setattr(webinars.delivery, "post_json_pinned", webhook, raising=False)
+    monkeypatch.setattr(webinars.ssrf, "post_json_pinned", webhook)
+    return hubspot, webhook
+
+
+def _register_and_pay(browser, occ, email, first_name):
+    """Step 3: mailbox verification in the room, Stripe Checkout, signed webhook. Returns (registration, capability)."""
+    assert browser.get(_room(occ)).status_code == 200
+    cap = _verify_mailbox(browser, occ, email)
+    checkout = browser.post(_room(occ, "register"), {"firstName": first_name, "idempotency_key": "e2e-" + email.split("@")[0].replace(".", "")[:8] + "a" * 24})
+    assert checkout.status_code == 303 and checkout["Location"].startswith("https://checkout.stripe.com/")
+    order = TicketOrder.objects.get(occurrence=occ, caller_capability_id=cap.pk)
+    assert order.status == "checkout_open" and order.amount_minor == 2500
+    assert not Registration.objects.filter(person=cap.person).exists()
+    assert _deliver(browser, _event(order)).status_code == 200
+    order.refresh_from_db()
+    reg = Registration.objects.get(occurrence=occ, person=cap.person, status="registered")
+    assert order.status == "fulfilled" and order.registration_id == reg.pk and reg.identity_verified is True
+    return reg, cap
+
+
+def test_complete_operational_webinar_workflow(client, stripe, monkeypatch):
+    keys = _keys()
+    content_key, payments_key, hosting_key, read_key = keys["content"], keys["payments"], keys["hosting"], keys["read"]
+    form = make_form(version="e2e-v1")
     event = call(client, "POST", f"{BASE}/events", content_key, {
         "internalName": "E2E launch webinar", "slug": "e2e-launch", "publicTitle": "Launching with confidence",
         "formVersion": form.version, "learningOutcomes": ["Plan", "Ship"], "summary": "A complete launch walkthrough.",
@@ -171,7 +255,7 @@ def test_complete_operational_webinar_workflow(client, stripe, monkeypatch):
     room = call(client, "PATCH", f"{BASE}/occurrences/{occ_id}/waiting-room", content_key, {"enabled": True, "admissionLeadMinutes": 15})
     assert room.status_code == 200 and room.json()["enabled"] is True, room.content
     assert call(client, "PATCH", f"{BASE}/events/{event_id}", content_key, {"visibility": "public"}).status_code == 403
-    published = confirmed(client, "PATCH", f"{BASE}/events/{event_id}", publish_key, {"visibility": "public"})
+    published = confirmed(client, "PATCH", f"{BASE}/events/{event_id}", keys["publish"], {"visibility": "public"})
     assert published.status_code == 200 and published.json()["visibility"] == "public", published.content
     public = client.get("/api/v1/events/e2e-launch")
     assert public.status_code == 200 and public.json()["occurrences"][0]["id"] == occ_id
@@ -284,3 +368,77 @@ def test_complete_operational_webinar_workflow(client, stripe, monkeypatch):
     assert not OutboxMessage.objects.exclude(status=OutboxMessage.Status.DELIVERED).exists()
     summary = call(client, "GET", f"{BASE}/events/{event_id}", read_key)
     assert summary.status_code == 200
+
+
+def test_workflow_with_provider_attendance_import(client, stripe, monkeypatch):
+    """The same workflow, but attendance comes from the Zoom participant report after the session
+    (docs/hosting.md "Attendance import") instead of waiting-room check-ins: pull -> review -> apply
+    -> no-shows, then the attended / no-show follow-ups reach the CRM."""
+    keys = _keys()
+    event_id, occ = _create_and_publish(client, keys, "e2e-import")
+    _provision_zoom(client, keys, occ, monkeypatch)
+    hubspot, webhook = _crm_destinations(monkeypatch)
+
+    # Two buyers through the real paid flow; Nia will attend, Sam will not.
+    nia, _cap = _register_and_pay(Client(), occ, "nia.buyer@example.com", "Nia")
+    sam, _cap2 = _register_and_pay(Client(), occ, "sam.buyer@example.com", "Sam")
+    first_pass = _run_worker()
+    assert sorted(m.event_type for m in first_pass) == ["registration.created"] * 4
+    assert all(m.status == OutboxMessage.Status.DELIVERED for m in first_pass)
+
+    # The session takes place (clock moves past its end); nobody used the hosted room.
+    Occurrence.objects.filter(pk=occ.pk).update(starts_at=timezone.now() - timedelta(hours=2), ends_at=timezone.now() - timedelta(hours=1))
+    assert not CheckIn.objects.exists()
+
+    # ---- 5. Attend: pull the Zoom participant report (authenticated, paginated), review, apply
+    imports_url = f"{BASE}/occurrences/{occ.pk}/attendance/imports"
+    participants = {"page_count": 1, "page_size": 100, "total_records": 2, "next_page_token": "", "participants": [
+        {"id": "p-1", "user_id": "u1", "user_email": "nia.buyer@example.com", "name": "Nia", "join_time": "2026-10-20T10:00:00Z",
+         "leave_time": "2026-10-20T10:40:00Z", "duration": 2400},
+        {"id": "p-2", "user_id": "u2", "user_email": "stranger@example.com", "name": "Someone", "join_time": "2026-10-20T10:05:00Z",
+         "leave_time": "2026-10-20T10:10:00Z", "duration": 300},
+    ]}
+    zoom = Fake(TOKEN, (200, participants))
+    monkeypatch.setattr(base, "default_transport", zoom)
+    pulled = call(client, "POST", imports_url, keys["attendance"], {"source": "provider"})
+    assert pulled.status_code == 201, pulled.content
+    data = pulled.json()
+    assert data["source"] == "zoom" and data["state"] == "needs_review" and data["complete"] is True
+    assert data["counts"]["matched"] == 1 and data["counts"]["unmatched"] == 1
+    assert zoom.calls[-1]["url"] == "https://api.zoom.us/v2/past_webinars/81234567890/participants?page_size=100"
+    assert zoom.calls[-1]["headers"]["Authorization"] == "Bearer zoom-access-token" and zoom.calls[-1]["allowed"] == {"zoom.us", "api.zoom.us"}
+    text = pulled.content.decode()
+    assert "nia.buyer@example.com" not in text and "n***@example.com" in text and "stranger@example.com" not in text
+    assert "client-secret" not in text and "zoom-access-token" not in text
+    import_id = data["id"]
+    listed = call(client, "GET", imports_url, keys["read"])
+    assert listed.status_code == 200 and listed.json()["results"][0]["id"] == import_id
+
+    applied = confirmed(client, "POST", f"{imports_url}/{import_id}/apply", keys["attendance"], {})
+    assert applied.status_code == 200 and applied.json()["state"] == "applied" and applied.json()["counts"]["applied"] == 1, applied.content
+    nia.refresh_from_db()
+    sam.refresh_from_db()
+    assert nia.attendance == Registration.Attendance.ATTENDED and sam.attendance == Registration.Attendance.UNKNOWN
+    assert AttendanceEvent.objects.get(registration=nia).source == "import:zoom"
+    # Applying again records nothing new.
+    again = call(client, "POST", f"{imports_url}/{import_id}/apply", keys["attendance"], {})
+    assert again.status_code == 428 and again.json()["preview"]["toApply"] == 0
+
+    no_shows = confirmed(client, "POST", f"{imports_url}/{import_id}/no-shows", keys["attendance"], {})
+    assert no_shows.status_code == 200 and no_shows.json()["noShows"]["marked"] == 1, no_shows.content
+    sam.refresh_from_db()
+    assert sam.attendance == Registration.Attendance.NO_SHOW
+    assert AttendanceEvent.objects.filter(registration=nia).count() == 1
+
+    # ---- 6. CRM follow-up: attended and no-show both reach HubSpot and the webhook receiver, exactly once
+    second_pass = _run_worker()
+    assert sorted(m.event_type for m in second_pass) == ["attendance.recorded"] * 4
+    assert all(m.status == OutboxMessage.Status.DELIVERED for m in second_pass)
+    participation = [c["json"]["inputs"][0] for c in hubspot.calls if "/objects/2-123/batch/upsert" in c["url"]]
+    outcomes = {p["id"]: p["properties"]["webinar_attendance"] for p in participation if p["properties"]["webinar_last_event_type"] == "attendance.recorded"}
+    assert outcomes == {str(nia.pk): "attended", str(sam.pk): "no_show"}
+    follow_ups = [json.loads(c["body"]) for c in webhook.calls if json.loads(c["body"])["eventType"] == "attendance.recorded"]
+    assert sorted(f["registration"]["attendance"] for f in follow_ups) == ["attended", "no_show"]
+    everything_sent = json.dumps([c["json"] for c in hubspot.calls]) + "".join(c["body"] for c in webhook.calls)
+    assert ZOOM_JOIN not in everything_sent and "HOST-SECRET" not in everything_sent and "hs-token" not in everything_sent
+    assert _run_worker() == [] and not OutboxMessage.objects.exclude(status=OutboxMessage.Status.DELIVERED).exists()
