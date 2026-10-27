@@ -1,6 +1,6 @@
 # Release checklist
 
-Status as of 2026-10-27 (release candidate `0.2.0-pre`, revision `09e104a`). **Nothing on
+Status as of 2026-10-27 (release candidate `0.2.0-pre`, tag `v0.2.0-pre` at `1462cb7`, published to GHCR). **Nothing on
 this page is evidence.** Results are recorded only in [validation.md](validation.md); the
 gaps they close are in [remaining-gaps.md](remaining-gaps.md) (R1–R28). "Last recorded"
 quotes validation.md.
@@ -27,8 +27,8 @@ accepted, and every D item is in place. Any code change (including B) re-opens A
 | A6 | Python suite on PostgreSQL 16 + logical and application restore probe | `tests/run-pg16.sh` (includes `tests/restore_probe.py`) | **1,945 passed**, restore/decrypt/wrong-key/admin probe passed (2026-10-27, Python 3.12.16 / PostgreSQL 16.15). Release tree |
 | A7 | Base-image digests | `PYTHON_IMAGE` (`Dockerfile`) and Postgres (`compose.yaml`) pinned by `@sha256` | **Pinned** (2026-10-27); refresh procedure in README |
 | A8 | Dependency audit | `pip-audit` on the hash lock; dev pins separately | **No known vulnerabilities** (2026-10-27); dev `pytest` 9.0.3 |
-| A9 | OCI image and digest | `deploy/build-image.sh --save` | **`0.2.0-pre` from `09e104a`**, image ID `sha256:3ff6df0d…`, tar SHA-256 `11cd42aa…`, linux/arm64 (2026-10-27). **amd64: not built** (R24) |
-| A10 | Built-image runtime and Compose first run | README quick start against `WEBINAR_IMAGE` | **Passed on the release image** (2026-10-27): migrate, `sync_roles`, `bootstrap_admin`, `create_api_key`, seed, web + worker healthy, `/healthz` version, OpenAPI, `/mcp` (incl. attendance tools), studio login page, uid 10001 |
+| A9 | OCI image and digest | `deploy/build-image.sh --save`; `release.yml` | arm64 `0.2.0-pre` image ID `sha256:3ff6df0d…`, tar SHA-256 `11cd42aa…`; emulated amd64 image ID `sha256:c73a59ec…`; **published** `ghcr.io/b2b-saas-inc/visioncast:0.2.0-pre` digest `sha256:c81ad8b1…` (amd64 + arm64, 2026-10-27) |
+| A10 | Built-image runtime and Compose first run | README quick start against `WEBINAR_IMAGE` | **Passed on the arm64 release image and on the emulated amd64 image** (2026-10-27): migrate, `sync_roles`, `bootstrap_admin`, `create_api_key`, seed, web + worker healthy, `/healthz` version, OpenAPI, `/mcp` (incl. attendance tools), studio login page, uid 10001. The published manifest itself: not pulled from here (no `read:packages` token) |
 | A11 | Backup/restore from the A10 database | `deploy/backup.sh`, `deploy/restore.sh` | **Passed** (2026-10-27, image from `3ec60ad`): restore into a fresh project, migrate no-op, secrets decrypt only with the original key, `--force` guard. Backup repeated on the release image |
 | A12 | Retention dry run | `purge_personal_data --older-than-days N --dry-run` on A10 data | **Passed** (2026-10-27), counts only |
 | A13 | Webhook receiver contract (offline) | `tests/test_verify_webhook_example.py` | **8 tests pass** (valid, tampered, stale, duplicate, wrong secret, rotation) |
@@ -67,7 +67,7 @@ None is approved by this document. External calls need explicit approval and own
 | C10 | Scope decision recorded: no further marketing destinations are committed; transactional email adapters stay unbuilt by design (remaining-gaps §4, §7). Confirm or amend | §4 | No |
 | C11 | Approve a staging host and run launch acceptance ([implementation-guide.md §11.1](implementation-guide.md#111-launch-acceptance-run-on-staging-record-results-in-validationmd)) | §3 | Yes (host) |
 | C12 | Approve live demo backend upgrade and frontend catalogue redeploy, production deployment, any preview renewal | — | Yes |
-| C13 | Approve pushing a `v0.2.0…` tag so `.github/workflows/release.yml` builds linux/amd64 + arm64 and publishes to GHCR (closes R24 when the amd64 first run is repeated) | R24 | Yes (GitHub) |
+| C13 | **Approved and done 2026-10-27:** tag `v0.2.0-pre` pushed; `release.yml` published `ghcr.io/b2b-saas-inc/visioncast:0.2.0-pre` (private). Remaining: decide package visibility or grant deploy hosts a `read:packages` token; run the published manifest on a real amd64 host (C11) | R24 | Yes (GitHub) |
 
 ## D. Operator tasks (target environment)
 

@@ -1,8 +1,9 @@
 # Remaining gaps
 
 Status as of 2026-10-27, reconciled against [validation.md](validation.md) (latest entries
-dated 2026-10-27). **Release candidate `0.2.0-pre`: every local gate has a recorded pass on
-the release tree; what remains needs owner-held accounts, an owner decision, or the target
+dated 2026-10-27). **Release candidate `0.2.0-pre` is tagged and published to GHCR (private package,
+digest `sha256:c81ad8b1…`, amd64 + arm64); every local gate has a recorded pass on the
+release tree; what remains needs owner-held accounts, an owner decision, or the target
 environment.** This page separates what the code implements, what blocks a release, what the
 owner has requested but is not built yet, and what is optional or out of scope. Test evidence
 lives only in [validation.md](validation.md); nothing on this page is a test result. The
@@ -23,11 +24,12 @@ owned by [mcp.md](mcp.md), [native-integrations.md](native-integrations.md),
 | Mocked-backend SDK Chromium (`tests/browser-sdk.cjs`) incl. web calendar links, `payment_required`, `verification_required` | 11/11 (2026-10-27) | Yes |
 | Actual-app Chromium: studio journey, Riverside controls, GTM screen | 13/13, 8/8, 10/10 (2026-10-27, local preview on the merged tree) | Yes |
 | Website kits installed from fresh vendor scaffolds (WordPress 7.1 / PHP 8.2, Next 16, SvelteKit 3, Astro 7, Nuxt 4, static snippet behind nginx) with a 30-check Chromium flow; CMS schemas validated with vendor packages | All flows pass; five kit bugs fixed (2026-10-27) | Yes (`bash sdk/kits/test/fresh-install.sh` to repeat) |
-| Versioned OCI image built from the release tree (`deploy/build-image.sh`) | `0.2.0-pre`, revision `09e104a`, image ID `sha256:3ff6df0d…`, tarball SHA-256 `11cd42aa…`, **linux/arm64** (2026-10-27) | Yes, arm64 only |
-| Clean-server Compose first run, backup/restore, retention dry run, offline receiver contract, `nginx -t` + routing, in-place upgrade from `da04cc7` and rollback | All passed (2026-10-27, distribution entry; first run repeated on the final image) | Upgrade/restore evidence is from commit `3ec60ad`; the first run was repeated on the release image |
+| Versioned OCI image built from the release tree (`deploy/build-image.sh`) | arm64 `0.2.0-pre` (image ID `sha256:3ff6df0d…`, tar SHA-256 `11cd42aa…`) and an emulated amd64 build from the tagged tree `1462cb7` (image ID `sha256:c73a59ec…`), 2026-10-27 | Yes |
+| Published image `ghcr.io/b2b-saas-inc/visioncast:0.2.0-pre` (tag `v0.2.0-pre`, workflow run 40555955145) | digest `sha256:c81ad8b1…`, linux/amd64 + linux/arm64, SBOM + provenance (2026-10-27). Private package | Yes, but the pushed manifest has not been pulled and run from here |
+| Clean-server Compose first run, backup/restore, retention dry run, offline receiver contract, `nginx -t` + routing, in-place upgrade from `da04cc7` and rollback | All passed (2026-10-27, distribution entry; first run repeated on the final arm64 image and on the emulated amd64 image) | Upgrade/restore evidence is from commit `3ec60ad`; the first run was repeated on the release image |
 | Base-image digest pins (`python:3.12-slim-bookworm`, `postgres:16-alpine`) | Pinned by `@sha256` (2026-10-27) | Yes |
 | `pip-audit` on the hash lock | No known vulnerabilities; dev-only `pytest` bumped to 9.0.3 (2026-10-27) | Yes |
-| Live demo | Frontend `visioncast-ten.vercel.app` (catalogue lists fourteen adapters only after the next deploy); backend is the 2026-10-26 build | No (owner-approved upgrade, C12) |
+| Live demo | Frontend `visioncast-ten.vercel.app` (catalogue lists fourteen adapters only after the next deploy); backend is the 2026-10-26 build | No (owner-approved upgrade, C12; `deploy/upgrade.sh --image ghcr.io/b2b-saas-inc/visioncast:0.2.0-pre` once the host can pull it) |
 | Real vendor, Stripe, hosting-provider, SMTP, registry or receiver traffic | None | — |
 
 ## 1. Implemented in code (gates in §2–§3)
@@ -61,12 +63,12 @@ Must be closed or explicitly accepted by the owner before production use.
 | # | Blocker |
 |---|---|
 | R1 | **Closed 2026-10-27:** 1,945 tests, checks and the restore probe pass under `tests/run-pg16.sh` (Python 3.12.16 / PostgreSQL 16.15) on the release tree. |
-| R2 | **Closed for arm64, open for amd64.** The release image (`0.2.0-pre`, revision `09e104a`) was built, saved with a recorded SHA-256, and passed the clean-server Compose first run (migrate, `sync_roles`, `bootstrap_admin`, `create_api_key`, seed, web + worker healthy, `/healthz` with version, OpenAPI, `/mcp`, studio login page, retention dry run, backup). **No linux/amd64 image has been built or run** (the host is Apple Silicon; the release workflow builds both). See R24. |
+| R2 | **Closed.** The release image (`0.2.0-pre`) was built for arm64 (saved with a recorded SHA-256) and, from the tagged tree, for amd64 under emulation; both passed the clean-server Compose first run (migrate, `sync_roles`, `bootstrap_admin`, `create_api_key`, seed, web + worker healthy, `/healthz` with version, OpenAPI, `/mcp`, studio login page, retention dry run, backup). The published multi-arch manifest is `sha256:c81ad8b1…`. |
 | R3 | **Closed:** SDK/kit tests, the actual-app Chromium journeys (studio 13/13, Riverside 8/8, GTM 10/10) and the mocked-backend SDK Chromium suite (11/11, now covering web calendar links and the paid-session 202 states) were rerun on the merged release tree. |
 | R4 | **Closed:** `PYTHON_IMAGE` and the Compose Postgres image are pinned by digest; refresh procedure in README "Supply chain notes". |
 | R5 | **Closed:** `pip-audit` on the hash lock reports no known vulnerabilities; the only finding was dev-only `pytest` (bumped to 9.0.3). |
 | R6 | **Closed locally:** retention dry run, offline receiver contract (`tests/test_verify_webhook_example.py`: valid, tampered, stale, duplicate, wrong secret, rotation), `nginx -t` plus routing and rate-limit checks on both nginx files (two routing bugs fixed). A receiver over the internet is C5. |
-| R24 | **Open (owner/CI):** build and smoke the **linux/amd64** image, either by running `.github/workflows/release.yml` on a `v0.2.0…` tag (publishes to GHCR; needs approval, C13) or `deploy/build-image.sh --platform linux/amd64` on an amd64 host, then repeat the Compose first run there. |
+| R24 | **Mostly closed:** `release.yml` ran on `v0.2.0-pre` and published amd64 + arm64 to GHCR; the amd64 first run passed under emulation from the same tagged tree. **Open:** pull the published manifest (`read:packages` token or a public package) and repeat the first run on a real amd64 host (C11 staging). |
 
 ### 2b. Known code defects and gaps still open
 
