@@ -29,7 +29,7 @@ owned by [mcp.md](mcp.md), [native-integrations.md](native-integrations.md),
 | Clean-server Compose first run, backup/restore, retention dry run, offline receiver contract, `nginx -t` + routing, in-place upgrade from `da04cc7` and rollback | All passed (2026-10-27, distribution entry; first run repeated on the final arm64 image and on the emulated amd64 image) | Upgrade/restore evidence is from commit `3ec60ad`; the first run was repeated on the release image |
 | Base-image digest pins (`python:3.12-slim-bookworm`, `postgres:16-alpine`) | Pinned by `@sha256` (2026-10-27) | Yes |
 | `pip-audit` on the hash lock | No known vulnerabilities; dev-only `pytest` bumped to 9.0.3 (2026-10-27) | Yes |
-| Live demo | Backend updated to `v0.2.0-pre` on 2026-10-27 (no worker, email, destinations or outbound access); frontend `visioncast-ten.vercel.app` catalogue lists the four new adapters only after the next `site/` deploy | Backend yes; frontend no (C12) |
+| Live demo | Backend and frontend on `v0.3.0-pre` (2026-10-27; no worker, email, destinations or outbound access on the demo host) | Yes |
 | Real vendor, Stripe, hosting-provider, SMTP, registry or receiver traffic | None | — |
 
 ## 1. Implemented in code (gates in §2–§3)

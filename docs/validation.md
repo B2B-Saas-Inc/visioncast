@@ -5,7 +5,7 @@ Test evidence, newest first. Implemented with Claude Code orchestrators and boun
 ## Published image v0.3.0-pre — 2026-10-27T22:25Z
 
 - The owner pushed `main` (`24e3493..12c96f4`) and tag `v0.3.0-pre` (at `12c96f4`). `.github/workflows/release.yml` run [40594223872](https://github.com/B2B-Saas-Inc/visioncast/actions/runs/40594223872) succeeded: built linux/amd64 + linux/arm64 from the pinned base and pushed **`ghcr.io/b2b-saas-inc/visioncast:0.3.0-pre`** and `:0.3.0-pre-12c96f4…`, manifest digest **`sha256:fa723b88ee7be73b8a1c8184471b9c0c0ed8218aedeeb272547feeaaf148e96d`**, with SBOM and provenance. Package still private. The digest was read from the workflow log; the manifest was not pulled or run from this machine (no `read:packages` token). The locally tested arm64 image (`sha256:8934f6ef…`) was built from `24e3493`, one docs-only commit before the tag.
-- The demo backend and frontend still run `v0.2.0-pre`.
+- **Demo updated** (owner-approved, 2026-10-27T22:35Z/23:12Z): frontend redeployed from `a52fade` (https://visioncast-ten.vercel.app lists all six new integrations); backend updated from the `v0.3.0-pre` bundle with `update-test-backend.sh --apply` (backup `/srv/visioncast/backups/20261027T231153Z`, no new migration, roles/static/check clean, healthy; public `/healthz` → `0.3.0-pre`, admin/studio/MCP/management still 404 publicly). No worker, email, destinations or outbound access on the demo host.
 
 ## Release candidate 0.3.0-pre: harness, image and first run on the integrations tree — 2026-10-27T22:10Z
 
