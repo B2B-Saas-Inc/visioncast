@@ -205,7 +205,7 @@ def room_state(occ, now=None):
     elif mode == Occurrence.Admission.HOLD:
         state = HOLD
     elif mode == Occurrence.Admission.OPEN or now >= opens_at:
-        state = OPEN if occ.join_url else PREPARING
+        state = OPEN if _has_join_destination(occ) else PREPARING
     else:
         state = WAITING
     return RoomState(state=state, opens_at=opens_at, starts_at=occ.starts_at, ends_at=occ.ends_at, closes_at=closes_at)
@@ -490,7 +490,7 @@ def _complete(occ, row):
                 if person is None:
                     person = Person.objects.create(email=row.email, email_key=row.email_key)
                     new_person = True
-                token = identity.issue_capability(person)
+                token = identity.issue_capability(person, mailbox_verified=True)
                 audit("waiting_room.verified", obj=occ, person_id=str(person.pk), new_person=new_person)
             return Verified(token=token, person_id=person.pk, new_person=new_person)
         except IntegrityError:
@@ -510,7 +510,7 @@ def missing_field_keys(occ, capability):
     return identity.missing_fields(person, occ.event.form_version)
 
 
-def register_in_room(occ, capability, *, profile, custom_fields, consents, idempotency_key):
+def register_in_room(occ, capability, *, profile, custom_fields, consents, idempotency_key, rate_key=None):
     """Register the capability holder through the shared registration service.
 
     Unknown browsers never reach this: they must verify first (the view enforces a
@@ -533,7 +533,8 @@ def register_in_room(occ, capability, *, profile, custom_fields, consents, idemp
         "consents": consents,
         "attribution": {"parameters": {}, "identifiers": {}, "pageUrl": "", "referrer": ""},
     }
-    return register(payload=payload, capability=capability, api_key=None, trusted=False, allow_started=True)
+    return register(payload=payload, capability=capability, api_key=None, trusted=False, allow_started=True,
+                    rate_key=rate_key)
 
 
 # ---------------------------------------------------------------------------
@@ -579,6 +580,14 @@ def admit(occ, capability, now=None):
             reg = Registration.objects.select_for_update(of=("self",)).get(pk=registration.pk)
             if reg.status != Registration.Status.REGISTERED:
                 return Admission(False, state, reason="not_registered")
+            from webinars import payments
+
+            if payments.blocks_admission(reg):
+                # Paid ticket flagged for refund or refunded: never admitted.
+                return Admission(False, state, reason="refund")
+            join_url = _attendee_join_url(occ, reg)
+            if not join_url:
+                return Admission(False, state, reason="no_link")
             generation = occ.admission_generation
             check_in = CheckIn.objects.filter(occurrence=occ, registration=reg).first()
             late = now > occ.starts_at
@@ -602,7 +611,32 @@ def admit(occ, capability, now=None):
     except IntegrityError:
         # A concurrent request inserted the check-in first; its transaction owns the event.
         created = False
-    return Admission(True, OPEN, join_url=occ.join_url, created=created)
+        join_url = _attendee_join_url(occ, registration)
+        if not join_url:
+            return Admission(False, OPEN, reason="no_link")
+    return Admission(True, OPEN, join_url=join_url, created=created)
+
+
+def _has_join_destination(occ):
+    """Doors may open: the shared link, or (linked Riverside) an enabled account whose
+    per-registrant links are checked at admission. Fails closed (``preparing``)."""
+    try:
+        from webinars.hosting import service
+
+        return service.has_join_destination(occ)
+    except Exception:
+        return False
+
+
+def _attendee_join_url(occ, registration):
+    """Per-registrant provider link (e.g. Riverside) when linked, else the occurrence link.
+    Fails closed: an unexpected error admits nobody rather than handing out a shared link."""
+    try:
+        from webinars.hosting import service
+
+        return service.attendee_join_url(occ, registration) or None
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------

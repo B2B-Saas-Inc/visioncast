@@ -1,0 +1,95 @@
+---
+/*
+ * Astro component for the webinar browser SDK. Server-rendered markup, no framework runtime.
+ * Licensed under the Apache License, Version 2.0.
+ *
+ * Usage (in an SSR or prerendered page):
+ *   import WebinarForm from '../components/WebinarForm.astro';
+ *   import { getWebinarEvent, pickOccurrence, formProps, sdkScriptUrl } from '../lib/webinar-events.mjs';
+ *   const event = await getWebinarEvent(Astro.params.slug);
+ *   const props = formProps(event, pickOccurrence(event));
+ *   {props && <WebinarForm {...props} sdkSrc={sdkScriptUrl()} />}
+ *
+ * The SDK posts to /webinar-api on this origin; serve that path with the proxy
+ * (docs/kits.md "Serving /webinar-api"). No secret is referenced here.
+ */
+import { safeScriptSrc, UUID_RE, FORM_VERSION_RE } from '../lib/webinar-events.mjs';
+
+interface Props {
+  occurrenceId: string;
+  formVersion: string;
+  sdkSrc: string;
+  fields?: string[];
+  required?: string[];
+  submitLabel?: string;
+  confirmLabel?: string;
+}
+
+const FIELDS: Record<string, { label: string; type: string; autocomplete: string }> = {
+  email: { label: 'Email', type: 'email', autocomplete: 'email' },
+  firstName: { label: 'First name', type: 'text', autocomplete: 'given-name' },
+  lastName: { label: 'Last name', type: 'text', autocomplete: 'family-name' },
+  name: { label: 'Full name', type: 'text', autocomplete: 'name' },
+  phone: { label: 'Phone', type: 'tel', autocomplete: 'tel' },
+  company: { label: 'Company', type: 'text', autocomplete: 'organization' },
+  jobTitle: { label: 'Job title', type: 'text', autocomplete: 'organization-title' },
+};
+
+const {
+  occurrenceId,
+  formVersion,
+  sdkSrc,
+  fields = ['email', 'firstName', 'lastName', 'company'],
+  required = ['email'],
+  submitLabel = 'Register',
+  confirmLabel = '',
+} = Astro.props;
+
+const valid = UUID_RE.test(occurrenceId || '') && FORM_VERSION_RE.test(formVersion || '');
+const src = safeScriptSrc(sdkSrc);
+const shown = ['email', ...fields.filter((f) => f !== 'email' && Object.hasOwn(FIELDS, f))];
+const prefix = `wf-${(occurrenceId || '').slice(0, 8)}`;
+---
+{valid && src && (
+  <form
+    data-webinar-form
+    data-occurrence-id={occurrenceId.toLowerCase()}
+    data-form-version={formVersion}
+    data-confirm-label={confirmLabel ? confirmLabel.slice(0, 60) : undefined}
+  >
+    {shown.map((name) => (
+      <div data-webinar-field>
+        <label for={`${prefix}-${name}`}>{FIELDS[name].label}</label>
+        <input
+          id={`${prefix}-${name}`}
+          name={name}
+          type={FIELDS[name].type}
+          autocomplete={FIELDS[name].autocomplete}
+          required={name === 'email' || required.includes(name)}
+        />
+      </div>
+    ))}
+    <button type="submit">{submitLabel}</button>
+    <div data-webinar-status></div>
+  </form>
+)}
+{valid && src && (
+  <script is:inline define:vars={{ src }}>
+    (function () {
+      window.WebinarFormConfig = window.WebinarFormConfig || { proxyBase: '/webinar-api' };
+      if (document.querySelector('script[data-webinar-sdk]')) {
+        if (window.WebinarForm) window.WebinarForm.init(); // second form on the page
+        return;
+      }
+      var s = document.createElement('script');
+      s.src = src;
+      s.defer = true;
+      s.setAttribute('data-webinar-sdk', '');
+      document.head.appendChild(s); // auto-inits every form[data-webinar-form] on load
+      // With <ClientRouter /> view transitions, re-bind forms on each navigation.
+      document.addEventListener('astro:page-load', function () {
+        if (window.WebinarForm) window.WebinarForm.init();
+      });
+    })();
+  </script>
+)}

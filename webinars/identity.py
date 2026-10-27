@@ -30,8 +30,10 @@ def _hash(token):
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def issue_capability(person):
-    """Create a capability for ``person`` and return the raw token (shown once)."""
+def issue_capability(person, *, mailbox_verified=False):
+    """Create a capability for ``person`` and return the raw token (shown once).
+
+    ``mailbox_verified`` only after an emailed code/link proved the address."""
     token = secrets.token_urlsafe(32)
     now = timezone.now()
     BrowserCapability.objects.create(
@@ -40,6 +42,7 @@ def issue_capability(person):
         created_at=now,
         last_seen_at=now,
         expires_at=now + _ttl(),
+        mailbox_verified_at=now if mailbox_verified else None,
     )
     return token
 

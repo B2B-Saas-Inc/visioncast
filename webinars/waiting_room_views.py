@@ -58,19 +58,21 @@ def _fields_for(occ, cap):
     return schema, [f for f in schema["fields"] if f["key"] in missing]
 
 
-def _render(request, occ, *, step=None, errors=None, values=None, status=200, email_error=None):
+def _render(request, occ, *, step=None, errors=None, values=None, status=200, email_error=None, verify_first=False):
     cap = identity.resolve_capability(request)
     payload = wr.status_payload(occ, cap)
     view = "unknown"
     fields, schema = [], None
-    if cap is not None:
+    if verify_first:
+        pass  # email step even for a recognised browser (paid checkout needs mailbox proof)
+    elif step == "code" and request.COOKIES.get(wr.PENDING_COOKIE) and (cap is None or not payload["viewer"]["registered"]):
+        view = "code"  # also for a recognised browser that asked for a code (paid verify step)
+    elif cap is not None:
         if payload["viewer"]["registered"]:
             view = "registered"
         else:
             view = "complete"
             schema, fields = _fields_for(occ, cap)
-    elif step == "code" and request.COOKIES.get(wr.PENDING_COOKIE):
-        view = "code"
     ctx = {
         "occ": occ,
         "event": occ.event,
@@ -203,10 +205,31 @@ def room_register(request, code):
     if form.sms_disclosure_version and any(f["key"] == "phone" for f in fields):
         consents["sms"] = {"granted": request.POST.get("sms_consent") == "on", "disclosureVersion": form.sms_disclosure_version}
     key = request.POST.get("idempotency_key") or ("wr-" + secrets.token_hex(16))
-    result = wr.register_in_room(occ, cap, profile=profile, custom_fields=custom, consents=consents, idempotency_key=key)
+    # A paid retry (reload, back button, double submit) with a fresh key gets this browser's
+    # open hold and its checkout back (registration._paid_hold), never a second seat.
+    result = wr.register_in_room(occ, cap, profile=profile, custom_fields=custom, consents=consents, idempotency_key=key,
+                                 rate_key=("paid_hold", "ip:" + ratelimit.client_ip(request)))
     if result.status_code in (200, 201):
         return _room_redirect(occ)
     body = result.body or {}
+    if result.status_code == 202 and body.get("status") == "verification_required":
+        # Paid session, and this browser is only recognised (e.g. from a free
+        # registration), not mailbox-verified: show the email step. Verifying replaces
+        # the cookie with a verified one; nothing was held.
+        return _render(request, occ, verify_first=True,
+                       email_error="To buy a ticket, confirm your email address first.", status=202)
+    if result.status_code == 202 and body.get("status") == "payment_required":
+        # Paid session: the shared registration service held a seat; nothing is
+        # registered until Stripe's verified webhook. Send the visitor to hosted Checkout.
+        checkout = (body.get("order") or {}).get("checkoutUrl")
+        if checkout:
+            response = _no_store(HttpResponse(status=303))
+            response["Location"] = checkout
+            response["Referrer-Policy"] = "no-referrer"  # after _no_store, which sets same-origin
+            return response
+        return _render(request, occ, errors={"_": "We're preparing your checkout. Submit again in a minute to continue "
+                                                  "to payment; your seat stays held."},
+                       values=values, status=202)
     errors = dict(body.get("fieldErrors") or {})
     if not errors:
         errors["_"] = (body.get("error") or {}).get("message", "We couldn't save that. Try again.")
@@ -219,7 +242,7 @@ def room_enter(request, code):
     if not ratelimit.hit(request, "wr_enter"):
         return _too_many(request, occ)
     admission = wr.admit(occ, identity.resolve_capability(request))
-    if not admission.admitted:
+    if not admission.admitted or not admission.join_url:
         return _room_redirect(occ)
     response = HttpResponse(status=303)
     response["Location"] = admission.join_url

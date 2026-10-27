@@ -290,6 +290,10 @@ def _dest_context(request, dest, state, errors=None):
             required_consents=dest.required_consents,
         )
         readiness = [m for msgs in problems.values() for m in msgs]
+        # Bounded code + fixed guidance only; never the sample payload or provider text.
+        refusal = native.preview_refusal(stored_provider, creds)
+        if refusal:
+            readiness.append(f"Preview unavailable ({refusal[0]}): {refusal[1]}")
     return {
         "provider_choices": native.PROVIDER_CHOICES,
         "provider_label": native.PROVIDER_LABELS.get(state["provider"], ""),
@@ -576,6 +580,9 @@ SCOPE_HELP = {
     "delivery_admin": "Manage integrations, set-only secrets, retries and test sends. Superuser-granted.",
     "keys_admin": "Create and revoke API keys within the scopes this key holds. Superuser-granted.",
     "team_admin": "Invite and manage Editors and Analysts. Superuser-granted.",
+    "payments_admin": "Configure Stripe (set-only keys) and record refunds made in Stripe. Superuser-granted.",
+    "hosting_admin": "Connect Zoom, Wistia, Sequel, Riverside or StreamYard accounts (set-only credentials). Superuser-granted.",
+    "hosting_provision": "Preview and confirm creating, updating or attaching provider sessions. Superuser-granted.",
 }
 
 

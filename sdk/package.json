@@ -10,7 +10,7 @@
     "node": ">=18.17"
   },
   "scripts": {
-    "test": "node --test test/proxy.test.js test/webinar-form.test.js",
+    "test": "node --test test/proxy.test.js test/webinar-form.test.js test/gtm-loader.test.js",
     "proxy": "node proxy/server.js",
     "demo": "node demo/demo-server.js"
   }

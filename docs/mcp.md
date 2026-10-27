@@ -19,6 +19,9 @@ Auth: API keys (`Authorization: Bearer wbk_...`). `tools/list` shows only tools 
 | delivery_admin | destinations, set-only credentials and signing secret, contract preview, test send, requeue (gated) | superuser / owner shell only |
 | keys_admin | list/create/revoke API keys, bounded delegation | superuser / owner shell only |
 | team_admin | list team; invite, revoke, change role/email/active for **Editors and Analysts only**, bounded by the key's own scopes (gated; see below) | superuser / owner shell only |
+| payments_admin | Stripe account (set-only secrets), event and session prices, order lists, recording refunds made in Stripe and releasing reconciling unpaid orders (gated). **No money moves through MCP or REST.** | superuser / owner shell only |
+| hosting_admin | hosting accounts: list, create, update, set-only credentials (gated) | superuser / owner shell only |
+| hosting_provision | providers, session hosting state, execute create/update/attach, reconcile unknown outcomes (sessions and Riverside registrants), manual links (gated) | superuser / owner shell only |
 
 `create_api_key` (MCP) can grant only public_read, register, proxy, reporting, content_write, attendance_write, config_read — and only those the calling key holds. Privileged scopes (`trusted`, publication, delivery_admin, keys_admin, team_admin) are never delegable and are granted only by a superuser in the studio or `manage.py create_api_key`. The MCP `create_api_key` tool also rejects names that are blank after trimming.
 
@@ -64,6 +67,18 @@ Publishing a not-ready event (no upcoming session, Attention/summary or Action) 
 | create_api_key, revoke_api_key | keys_admin | yes |
 | list_team | team_admin | |
 | invite_member, revoke_invitation, update_member | team_admin | yes |
+| get_session_tickets | content_write, payments_admin or config_read | |
+| set_session_tickets | content_write (capacity, showRemaining) / payments_admin (price) | |
+| set_event_price, get_payment_account, list_session_orders | payments_admin | |
+| set_payment_account, mark_order_refunded, release_unpaid_order | payments_admin | yes |
+| list_hosting_providers, get_session_hosting | hosting_provision or config_read | |
+| execute_session_hosting, reconcile_session_hosting, set_session_manual_link | hosting_provision | yes |
+| list_session_registrants | hosting_provision or config_read | |
+| reconcile_session_registrant | hosting_provision | yes |
+| list_hosting_accounts | hosting_admin or config_read | |
+| create_hosting_account, update_hosting_account | hosting_admin | yes |
+
+Ticket and hosting tools call the same handlers as the REST routes in [tickets.md](tickets.md) and [hosting.md](hosting.md), with the same field validation; input schemas are generated from those handlers' schemas (no free-form payload). Confirmation state: hosting accounts bind a digest of name/enabled/config and the credential ciphertext; reconcile and manual link bind the session state and schedule generation; order actions bind order status and `paidAt`. Previews never echo secrets: credentials appear only as the names being set, manual links only as hosts. `mark_order_refunded` records a refund you already made in Stripe; `release_unpaid_order` re-checks Stripe and refuses if the checkout was paid. `list_session_registrants` returns stalled Riverside registrants of one session as registration IDs and state only (no names, emails or links; no provider call). `reconcile_session_registrant` records what you verified in Riverside (`created` with that registrant's own join link, which is set-only and never echoed; or `not_created`). Its token binds the exact arguments and the registrant's state, attempt and update time. Other-session IDs are refused as not found, and non-Riverside or non-stalled registrants as conflicts. Nothing is sent to Riverside (see hosting.md).
 
 `send_test_delivery` queues one fixed synthetic payload (`eventType: webhook.test`, no person, no links) for an existing **enabled** destination; the worker delivers it through the normal path (SSRF-pinned signed webhook, or the destination's native provider). No URL, header or payload is accepted. Invitation links are delivered by email only and never returned.
 
@@ -76,7 +91,7 @@ Covers: `set_event_cover` accepts PNG/JPEG/WebP up to 40 KB (base64 inside the 6
 | URI | Scopes |
 |---|---|
 | webinar://playbook/implementation (checklist + full README, operations and integration guides) | any key |
-| webinar://guides/{name} (readme, implementation-guide, operations, integration, mcp, management-api, api-reference, webhooks, field-dictionary, field-mapping, waiting-room, studio, email, browser-integration, native-integrations, security) | any key |
+| webinar://guides/{name} (readme, implementation-guide, operations, integration, mcp, management-api, api-reference, webhooks, field-dictionary, field-mapping, waiting-room, studio, email, browser-integration, native-integrations, security, tickets, hosting, kits) | any key |
 | webinar://docs/field-dictionary (generated from code) | any key |
 | webinar://openapi (generated from `webinars/openapi.build_spec`) | any key |
 | webinar://contracts/webhooks | any key |
@@ -106,4 +121,4 @@ curl -s https://webinars.example.com/mcp -H "Authorization: Bearer $KEY" -H 'Con
 # then repeat with "dryRun": false, "confirmToken": "<token from the preview>"
 ```
 
-Tests: `tests/test_mcp.py`, `tests/test_mcp_config.py`, `tests/test_management_api.py`.
+Tests: `tests/test_mcp.py`, `tests/test_mcp_config.py`, `tests/test_mcp_expansion.py`, `tests/test_management_api.py`.

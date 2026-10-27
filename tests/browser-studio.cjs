@@ -106,6 +106,16 @@ async function main() {
       await page.screenshot({ path: 'artifacts/studio-dashboard.png', fullPage: true });
     });
 
+    await step('Tracking & GTM screen', async () => {
+      await page.getByRole('link', { name: 'Tracking & GTM', exact: true }).click();
+      await page.waitForURL('**/studio/tracking/');
+      await expectNoServerError(page);
+      const code = await page.locator('pre').allTextContents();
+      if (!code.some(text => text.includes('webinarFormGtmInstall'))) throw new Error('Missing GTM install snippet');
+      if (code.some(text => text.includes('wbk_'))) throw new Error('API key in snippet');
+      await page.screenshot({ path: 'artifacts/studio-tracking-gtm.png', fullPage: true });
+    });
+
     await step('create event from feature-release starter', async () => {
       await page.goto(url('/studio/events/new/'));
       await expectNoServerError(page);

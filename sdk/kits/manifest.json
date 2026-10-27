@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "statuses": {
+    "installable-plugin": "Copy/install as-is; configured in the host's admin UI.",
+    "maintained-reference": "Copyable reference code kept in step with the SDK/proxy contract; adapt into your app.",
+    "instructions": "Step-by-step setup using the reference snippet; vendor UI particulars unverified.",
+    "schema-reference": "CMS field/schema definitions plus the shared resolver; no vendor SDK calls."
+  },
+  "contract": {
+    "proxyRoutes": [
+      "/webinar-api/profile",
+      "/webinar-api/registrations",
+      "/webinar-api/reset",
+      "/webinar-api/my-registration",
+      "/webinar-api/calendar.ics"
+    ],
+    "sdkScriptPath": "/static/webinar-sdk/webinar-form.js",
+    "publicEventsApi": "/api/v1/events/{slug}",
+    "paidSessions": "202 {status:'payment_required', order:{checkoutUrl,...}} handled by the SDK (checkout.stripe.com only)"
+  },
+  "kits": [
+    {
+      "id": "wordpress",
+      "status": "installable-plugin",
+      "productionTested": false,
+      "docs": "docs/kits.md#wordpress",
+      "prerequisites": ["WordPress >= 6.3", "PHP >= 7.4", "pretty permalinks or front-controller routing", "proxy-scoped API key"],
+      "files": [
+        "sdk/kits/wordpress/webinar-platform/webinar-platform.php",
+        "sdk/kits/wordpress/webinar-platform/uninstall.php",
+        "sdk/kits/wordpress/webinar-platform/readme.txt",
+        "sdk/kits/wordpress/webinar-platform/includes/class-settings.php",
+        "sdk/kits/wordpress/webinar-platform/includes/class-proxy.php",
+        "sdk/kits/wordpress/webinar-platform/includes/class-form.php",
+        "sdk/kits/wordpress/webinar-platform/blocks/webinar-form/block.json",
+        "sdk/kits/wordpress/webinar-platform/blocks/webinar-form/index.js",
+        "sdk/kits/wordpress/webinar-platform/blocks/webinar-form/index.asset.php"
+      ],
+      "browserFiles": ["sdk/kits/wordpress/webinar-platform/blocks/webinar-form/index.js"]
+    },
+    {
+      "id": "node-proxy-mount",
+      "status": "maintained-reference",
+      "productionTested": false,
+      "docs": "docs/kits.md#serving-webinar-api",
+      "prerequisites": ["Node >= 18.17", "sdk/proxy/server.js (reused unchanged)", "PROXY_* environment"],
+      "files": ["sdk/kits/node/mount.cjs", "sdk/kits/node/nginx-webinar-api.conf"],
+      "browserFiles": []
+    },
+    {
+      "id": "headless",
+      "status": "maintained-reference",
+      "productionTested": false,
+      "docs": "docs/kits.md#headless-seam",
+      "prerequisites": ["Node >= 18.17 (native fetch, AbortSignal.timeout)", "WEBINAR_API_BASE (server-only)"],
+      "files": ["sdk/kits/headless/webinar-events.mjs"],
+      "browserFiles": []
+    },
+    {
+      "id": "nextjs",
+      "status": "maintained-reference",
+      "productionTested": false,
+      "docs": "docs/kits.md#nextjs",
+      "prerequisites": ["Next.js App Router", "React 18+", "self-hosted Node for server.mjs; Vercel uses site/ route handlers"],
+      "files": [
+        "sdk/kits/frameworks/react/WebinarForm.jsx",
+        "sdk/kits/frameworks/nextjs/server.mjs",
+        "sdk/kits/frameworks/nextjs/app/webinars/[slug]/page.jsx"
+      ],
+      "browserFiles": ["sdk/kits/frameworks/react/WebinarForm.jsx"]
+    },
+    {
+      "id": "react",
+      "status": "maintained-reference",
+      "productionTested": false,
+      "docs": "docs/kits.md#react",
+      "prerequisites": ["React 18+", "/webinar-api served on the page's origin"],
+      "files": ["sdk/kits/frameworks/react/WebinarForm.jsx"],
+      "browserFiles": ["sdk/kits/frameworks/react/WebinarForm.jsx"]
+    },
+    {
+      "id": "astro",
+      "status": "maintained-reference",
+      "productionTested": false,
+      "docs": "docs/kits.md#astro",
+      "prerequisites": ["Astro 4+", "/webinar-api served on the page's origin"],
+      "files": ["sdk/kits/frameworks/astro/WebinarForm.astro"],
+      "browserFiles": ["sdk/kits/frameworks/astro/WebinarForm.astro"]
+    },
+    {
+      "id": "nuxt-vue",
+      "status": "maintained-reference",
+      "productionTested": false,
+      "docs": "docs/kits.md#nuxt--vue",
+      "prerequisites": ["Vue 3 / Nuxt 3", "/webinar-api served on the page's origin"],
+      "files": ["sdk/kits/frameworks/vue/WebinarForm.vue"],
+      "browserFiles": ["sdk/kits/frameworks/vue/WebinarForm.vue"]
+    },
+    {
+      "id": "sveltekit",
+      "status": "maintained-reference",
+      "productionTested": false,
+      "docs": "docs/kits.md#sveltekit",
+      "prerequisites": ["SvelteKit with @sveltejs/adapter-node", "Svelte 4 or 5"],
+      "files": ["sdk/kits/frameworks/svelte/WebinarForm.svelte", "sdk/kits/frameworks/sveltekit/server.js"],
+      "browserFiles": ["sdk/kits/frameworks/svelte/WebinarForm.svelte"]
+    },
+    {
+      "id": "webflow",
+      "status": "instructions",
+      "productionTested": false,
+      "docs": "docs/kits.md#webflow",
+      "prerequisites": ["A first-party reverse proxy in front of the Webflow-hosted domain (plan-dependent; unverified)"],
+      "files": ["sdk/kits/nocode/embed-snippet.html"],
+      "browserFiles": ["sdk/kits/nocode/embed-snippet.html"]
+    },
+    {
+      "id": "framer",
+      "status": "instructions",
+      "productionTested": false,
+      "docs": "docs/kits.md#framer",
+      "prerequisites": ["A first-party reverse proxy in front of the Framer-hosted domain (plan-dependent; unverified)"],
+      "files": ["sdk/kits/nocode/embed-snippet.html", "sdk/kits/frameworks/react/WebinarForm.jsx"],
+      "browserFiles": ["sdk/kits/nocode/embed-snippet.html"]
+    },
+    {
+      "id": "sanity",
+      "status": "schema-reference",
+      "productionTested": false,
+      "docs": "docs/kits.md#sanity",
+      "prerequisites": ["Sanity Studio v3"],
+      "files": ["sdk/kits/cms/sanity/webinarReference.js", "sdk/kits/cms/resolve-reference.mjs"],
+      "browserFiles": []
+    },
+    {
+      "id": "payload",
+      "status": "schema-reference",
+      "productionTested": false,
+      "docs": "docs/kits.md#payload",
+      "prerequisites": ["Payload 3 (Payload 2: change the type import)"],
+      "files": ["sdk/kits/cms/payload/webinarReference.ts", "sdk/kits/cms/resolve-reference.mjs"],
+      "browserFiles": []
+    },
+    {
+      "id": "prismic",
+      "status": "schema-reference",
+      "productionTested": false,
+      "docs": "docs/kits.md#prismic",
+      "prerequisites": ["Prismic with Slice Machine"],
+      "files": ["sdk/kits/cms/prismic/webinar_reference/model.json", "sdk/kits/cms/resolve-reference.mjs"],
+      "browserFiles": []
+    },
+    {
+      "id": "contentful",
+      "status": "schema-reference",
+      "productionTested": false,
+      "docs": "docs/kits.md#contentful",
+      "prerequisites": ["Contentful space; contentful-cli for import (or create the type in the web app)"],
+      "files": ["sdk/kits/cms/contentful/webinar-reference.import.json", "sdk/kits/cms/resolve-reference.mjs"],
+      "browserFiles": []
+    }
+  ]
+}

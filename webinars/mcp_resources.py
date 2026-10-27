@@ -54,6 +54,16 @@ webinar://guides/implementation-guide for the end-to-end website rollout.
     get_report_summary (aggregates only).
 11. Team (team_admin): list_team, invite_member / update_member / revoke_invitation for
     Editors and Analysts. Administrators and superusers are managed by a superuser only.
+12. Tickets (webinar://guides/tickets): set_session_tickets (capacity: content_write;
+    prices: payments_admin), set_event_price, get/set_payment_account (payments_admin,
+    set-only Stripe secrets). Paid seats need SMTP and an enabled waiting room, and the
+    buyer must prove their mailbox (202 verification_required). Refunds are never
+    automated: refund in Stripe, then mark_order_refunded; release_unpaid_order only for
+    reconciling orders Stripe confirms unpaid.
+13. Hosting (webinar://guides/hosting): list/create/update_hosting_account (hosting_admin,
+    set-only credentials), execute_session_hosting, reconcile_session_hosting,
+    set_session_manual_link (hosting_provision). Capabilities differ by provider; read
+    list_hosting_providers before promising provisioning.
 
 Gated tools: dry run (default) returns a preview and a single-use confirmToken bound to
 the tool, key, exact arguments and target state, valid 10 minutes. It shows the same key
@@ -81,6 +91,9 @@ GUIDES = {
     "browser-integration": "docs/browser-integration.md",
     "native-integrations": "docs/native-integrations.md",
     "security": "docs/security.md",
+    "tickets": "docs/tickets.md",
+    "hosting": "docs/hosting.md",
+    "kits": "docs/kits.md",
 }
 GUIDE_PREFIX = "webinar://guides/"
 MAX_GUIDE_BYTES = 512 * 1024

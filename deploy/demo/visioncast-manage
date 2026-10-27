@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Run a manage.py command as the unprivileged visioncast user with the root-only
+# environment loaded. Installed to /usr/local/sbin/visioncast-manage (root, 0700).
+#
+#   visioncast-manage <manage.py args>          e.g. visioncast-manage seed_public_demo --dry-run
+#   visioncast-manage --bootstrap <action> ...  deploy/demo/bootstrap_demo.py (see its docstring)
+#
+# The environment is passed to the child process, never printed or placed on a command
+# line. Do not run `env`, `printenv` or `manage.py diffsettings` through this wrapper.
+set -euo pipefail
+
+ENV_FILE=/etc/visioncast/visioncast.env
+APP=/srv/visioncast/app
+PY=/srv/visioncast/venv/bin/python
+
+[[ $EUID -eq 0 ]] || { echo "visioncast-manage: run as root" >&2; exit 1; }
+[[ $# -gt 0 ]] || { echo "usage: visioncast-manage [--bootstrap] <args>" >&2; exit 2; }
+
+set -a
+# shellcheck source=/dev/null
+. "$ENV_FILE"
+set +a
+export PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+cd "$APP"
+
+if [[ $1 == --bootstrap ]]; then
+    shift
+    exec runuser -u visioncast -- "$PY" /srv/visioncast/deploy/bootstrap_demo.py "$@"
+fi
+exec runuser -u visioncast -- "$PY" "$APP/manage.py" "$@"

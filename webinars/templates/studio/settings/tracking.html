@@ -1,0 +1,106 @@
+{% extends "studio/base.html" %}
+{% block title %}Tracking & GTM{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Connect</p>
+    <h1>Tracking &amp; GTM</h1>
+    <p class="lede">One Google Tag Manager tag for your whole site. It loads the registration form script once, reads the visitor's consent from your dataLayer and recognises returning visitors on the forms you have embedded. It is not a page-view or analytics tracker.</p>
+  </div>
+</div>
+
+{% include "studio/settings/_errors.html" %}
+
+<p class="callout" role="note">Nothing is installed automatically and Studio cannot tell whether the tag is live. You paste the tag into GTM, and your own server must route the proxy path to the first-party proxy with a <code>proxy</code>-scoped key from <a href="{% url 'studio:api-keys' %}">API keys</a>. The tag itself contains no keys, private links or personal data.</p>
+
+<div class="layout-split">
+  <div class="stack">
+    <section class="panel" aria-labelledby="snippet-title">
+      <div class="panel-head">
+        <h2 id="snippet-title">Custom HTML tag</h2>
+        <button class="btn btn-ghost btn-sm" type="button" data-copy="#gtm-snippet">{% include "studio/_icon.html" with name="copy" size=16 %} Copy</button>
+      </div>
+      <div class="panel-body stack-sm">
+        <p class="help">Generated from the settings on the right. Change a setting and choose “Regenerate tag”; the tag is rebuilt on the server and nothing is saved.</p>
+        {% if custom_script_host %}<p class="callout" role="alert" id="custom-host-notice"><strong>This tag loads the script from {{ custom_script_host }}, not from this platform.</strong> Only use a host you control; whoever serves that file controls every page the tag runs on. The platform's copy is <code>{{ default_script_src }}</code>.</p>{% endif %}
+        <pre class="reveal-value" style="white-space:pre;overflow:auto;max-height:32rem"><code id="gtm-snippet">{{ snippet }}</code></pre>
+      </div>
+    </section>
+
+    {% if values.consent_mode == "cmp" %}
+    <section class="panel" aria-labelledby="bridge-title">
+      <div class="panel-head">
+        <h2 id="bridge-title">What your consent platform must push</h2>
+        <button class="btn btn-ghost btn-sm" type="button" data-copy="#gtm-bridge">{% include "studio/_icon.html" with name="copy" size=16 %} Copy</button>
+      </div>
+      <div class="panel-body stack-sm">
+        <p class="help">The tag reads the newest <code>dataLayer</code> message that has the key <code>{{ values.consent_key }}</code>. Each purpose is granted only when its value is exactly <code>granted</code>, <code>true</code> or the boolean <code>true</code>; anything else, a missing key or a malformed message means denied. This is <strong>not</strong> an automatic integration with any consent platform: you (or your CMP's GTM template) must push this message after consent is resolved and again whenever it changes, with the real statuses in place of the example values. Only these two statuses are read; never put personal data in this message.</p>
+        <pre class="reveal-value" style="white-space:pre;overflow:auto"><code id="gtm-bridge">{{ bridge_example }}</code></pre>
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="panel" aria-labelledby="what-title">
+      <div class="panel-head"><h2 id="what-title">What the tag does</h2></div>
+      <div class="panel-body">
+        <ul class="small stack-sm">
+          <li><strong>Loads the script once.</strong> On every fire it checks for an existing <code>window.WebinarForm</code> and only injects the script element the first time, so duplicate triggers, GTM previews and single-page navigations never load it twice. If the first load fails (404 or blocked by your CSP) the next fire retries.</li>
+          <li><strong>Binds embedded forms only.</strong> The script enhances <code>form[data-webinar-form]</code> elements that you pasted from a session's <em>Embed on your site</em> page. It never touches other forms, never pre-fills stored values and reads nothing on pages without an embedded form.</li>
+          <li><strong>Recognises returning visitors (functional, not consent-gated).</strong> On every page with an embedded form the script calls <code>GET {{ values.proxy_base }}/profile</code> with the proxy's own first-party recognition cookie, with or without marketing consent, and hides the fields the visitor already gave. That cookie and the CSRF cookie are functional; no values are pre-filled.</li>
+          <li><strong>Consent gates attribution.</strong> With consent denied, nothing from the URL, the referrer or third-party cookies is kept or sent. With analytics consent it sends UTM parameters, the <code>_ga</code> cookie's client ID and the origin + path of the page and of the referrer. With advertising consent it sends ad click IDs and the matching first-party ad cookies. All of it goes only in the registration request when the visitor submits.</li>
+          <li><strong>Reads consent, never code.</strong> The tag contains no GTM variable references. It looks at the newest <code>dataLayer</code> message with your consent key and compares the two values as plain text. A quote, newline or script in that message is just a value and counts as denied; it is never executed.</li>
+          <li><strong>One dataLayer event.</strong> After a successful registration, and only with analytics consent, it pushes <code>webinar_registration</code> with the occurrence ID and form version. No personal data is pushed.</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <aside class="stack">
+    <section class="panel" aria-labelledby="settings-title">
+      <div class="panel-head"><h2 id="settings-title">Tag settings</h2></div>
+      <form method="get" action="{% url 'studio:tracking' %}" class="panel-body" novalidate>
+        <div class="field">
+          <label class="label" for="f-script_src">SDK script URL</label>
+          <input class="input" id="f-script_src" name="script_src" value="{{ values.script_src }}" maxlength="512" aria-describedby="script-src-help{% if errors.script_src %} script-src-err{% endif %}"{% if errors.script_src %} aria-invalid="true"{% endif %}>
+          <p class="help" id="script-src-help">A path on your site or an https URL. Default: this platform's copy at <code>{{ default_script_src }}</code>. You can host the same file on your own origin or CDN; a different host is called out above the tag.</p>
+          {% if errors.script_src %}<p class="field-error" id="script-src-err">{{ errors.script_src|join:" " }}</p>{% endif %}
+        </div>
+        <div class="field">
+          <label class="label" for="f-proxy_base">Proxy path</label>
+          <input class="input" id="f-proxy_base" name="proxy_base" value="{{ values.proxy_base }}" maxlength="128" aria-describedby="proxy-base-help{% if errors.proxy_base %} proxy-base-err{% endif %}"{% if errors.proxy_base %} aria-invalid="true"{% endif %}>
+          <p class="help" id="proxy-base-help">The same-origin path your server routes to the first-party proxy. Keep <code>{{ defaults.proxy_base }}</code> unless your reverse proxy rewrites another path back to it.</p>
+          {% if errors.proxy_base %}<p class="field-error" id="proxy-base-err">{{ errors.proxy_base|join:" " }}</p>{% endif %}
+        </div>
+        <fieldset class="fieldset" id="f-consent_mode" style="margin-top:var(--s-4)"{% if errors.consent_mode %} aria-describedby="consent-mode-err"{% endif %}>
+          <legend>Consent source</legend>
+          {% if errors.consent_mode %}<p class="field-error" id="consent-mode-err">{{ errors.consent_mode|join:" " }}</p>{% endif %}
+          <label class="choice-card" style="margin-bottom:var(--s-2)"><input type="radio" name="consent_mode" value="cmp"{% if values.consent_mode == "cmp" %} checked{% endif %}><span><strong>Read from the dataLayer</strong><br><span class="small">Your consent platform pushes a message with the key below. Anything other than an explicit <code>granted</code> or <code>true</code> counts as denied.</span></span></label>
+          <label class="choice-card"><input type="radio" name="consent_mode" value="denied"{% if values.consent_mode == "denied" %} checked{% endif %}><span><strong>Always denied</strong><br><span class="small">Forms still work and returning visitors are still recognised. No attribution or dataLayer event is collected. Use this until your consent platform is wired up.</span></span></label>
+        </fieldset>
+        <div class="field" style="margin-top:var(--s-4)">
+          <label class="label" for="f-consent_key">dataLayer consent key</label>
+          <input class="input" id="f-consent_key" name="consent_key" value="{{ values.consent_key }}" maxlength="64" aria-describedby="consent-key-help{% if errors.consent_key %} consent-key-err{% endif %}"{% if errors.consent_key %} aria-invalid="true"{% endif %}>
+          <p class="help" id="consent-key-help">The property name of the consent object in the message your consent platform pushes, for example <code>{{ defaults.consent_key }}</code>. Letters, digits and underscores only. Ignored when consent is always denied.</p>
+          {% if errors.consent_key %}<p class="field-error" id="consent-key-err">{{ errors.consent_key|join:" " }}</p>{% endif %}
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Regenerate tag</button> <a class="btn btn-ghost" href="{% url 'studio:tracking' %}">Reset to defaults</a></div>
+      </form>
+    </section>
+
+    <section class="panel" aria-labelledby="install-title">
+      <div class="panel-head"><h2 id="install-title">Install in GTM</h2></div>
+      <div class="panel-body">
+        <ol class="small stack-sm">
+          <li><strong>Serve the proxy first.</strong> Route <code>{{ values.proxy_base }}/*</code> on your site to the first-party proxy (<code>sdk/proxy/server.js</code> or an equivalent same-origin route), with <code>PROXY_API_KEY</code> set to a <code>proxy</code>-scoped key from <a href="{% url 'studio:api-keys' %}">API keys</a> and <code>PROXY_ALLOWED_ORIGINS</code> set to your exact https origin. The key stays on the server, never in GTM.</li>
+          <li><strong>Push consent to the dataLayer</strong> (if reading from your consent platform): from your CMP's callback, push the message shown under “What your consent platform must push” once consent is resolved and again on every change, with the key <code>{{ values.consent_key }}</code> and the event name <code>{{ consent_event }}</code> (or the event your site already uses for consent updates). The tag never reads anything else from the dataLayer.</li>
+          <li><strong>Create a Custom HTML tag</strong>, paste the tag above, and tick “Support document.write” off. Give it two triggers: <em>All Pages – DOM Ready</em> (or Initialization if your CMP resolves consent before it) and a <em>Custom Event</em> trigger on <code>{{ consent_event }}</code> (or the matching event your CMP pushes after consent changes). Under <em>Advanced settings</em> leave <em>Tag firing options</em> at <em>Unlimited</em>: with “Once per page”, consent changes after load would be swallowed.</li>
+          <li><strong>Single-page apps.</strong> Fire the tag on a custom dataLayer event your app pushes <strong>after</strong> the view containing the form has rendered, or call <code>window.WebinarForm.init()</code> yourself after render. A <em>History Change</em> trigger alone usually fires too early (before the form is in the DOM) and only works for routers that render synchronously.</li>
+          <li><strong>Preview.</strong> In GTM Preview, open a page with an embedded form. The tag should fire once on load and again on each consent update. In the browser's network panel you should see <code>GET {{ values.proxy_base }}/profile</code> succeed; a <code>404</code> or <code>403</code> there means the proxy route or origin is not set up yet. If the tag shows as fired but no <code>/profile</code> request appears and the console reports the script blocked by Content Security Policy, allow the script host{% if custom_script_host %} ({{ custom_script_host }}){% endif %} in <code>script-src</code>; the next fire retries the load.</li>
+          <li><strong>Embed forms per session.</strong> Open a session and choose <em>Embed on your site</em> to copy the form markup. With this site-wide tag installed, remove the <code>&lt;script src&gt;</code> line from that snippet. If it is left in place, that script boots first and the proxy path set here is ignored (<code>{{ defaults.proxy_base }}</code> is used); consent from this tag still applies and the console warns about it.</li>
+        </ol>
+        <p class="help" style="margin-top:var(--s-4)">Full guide: <a href="{% url 'developers' %}">Developers</a> and <code>docs/browser-integration.md</code> §6–§7.</p>
+      </div>
+    </section>
+  </aside>
+</div>
+{% endblock %}

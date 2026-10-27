@@ -1,0 +1,60 @@
+{% extends "studio/base.html" %}
+{% block title %}Hosting providers{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Hosting providers</h1>
+    <p class="lede">Connect the accounts that run your live sessions. Nothing is created automatically: on each session you preview a request, then confirm it.</p>
+  </div>
+  <div><a class="btn btn-primary" href="{% url 'studio:hosting-account-new' %}">Connect a provider</a></div>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><h2>Connected accounts</h2></div>
+  <div class="panel-body">
+    {% if accounts %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th scope="col">Name</th><th scope="col">Provider</th><th scope="col">Status</th><th scope="col">Checks</th></tr></thead>
+        <tbody>
+          {% for a in accounts %}
+          <tr>
+            <td><a href="{% url 'studio:hosting-account-edit' pk=a.id %}">{{ a.name }}</a></td>
+            <td>{{ a.provider }}</td>
+            <td>{% if a.enabled %}<span class="badge badge-success">Enabled</span>{% else %}<span class="badge">Disabled</span>{% endif %}</td>
+            <td>{% if a.warnings %}<ul>{% for w in a.warnings %}<li class="small">{{ w }}</li>{% endfor %}</ul>{% else %}<span class="small">No problems found (checked without contacting the provider).</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <p class="help">No hosting accounts yet.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>What each provider supports</h2></div>
+  <div class="panel-body">
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th scope="col">Provider</th><th scope="col">Create</th><th scope="col">Update</th><th scope="col">Attach existing</th><th scope="col">Per-attendee links</th><th scope="col">Manual link</th><th scope="col">Contract</th></tr></thead>
+        <tbody>
+          {% for p in providers %}
+          <tr>
+            <td>{{ p.label }}</td>
+            <td>{% if p.capabilities.create %}Yes{% else %}No{% endif %}</td>
+            <td>{% if p.capabilities.update %}Yes{% else %}No{% endif %}</td>
+            <td>{% if p.capabilities.attach %}Yes{% else %}No{% endif %}</td>
+            <td>{% if p.capabilities.registerAttendees %}Yes{% else %}No{% endif %}</td>
+            <td>{% if p.capabilities.manualLink %}Yes{% else %}No{% endif %}</td>
+            <td><span class="small">{% if p.contract == "none" %}No API{% elif p.contract == "unverified" %}Unverified{% else %}Documented, not yet sandbox-verified{% endif %}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endblock %}

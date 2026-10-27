@@ -3,9 +3,9 @@ from django.urls import include, path
 from django.views.decorators.http import require_safe
 
 from webinars import covers, developers, mcp, waiting_room_views
-from webinars.api import management, views
+from webinars.api import management, urls_hosting, urls_tickets, views
 
-urlpatterns = [
+urlpatterns = urls_tickets.urlpatterns + urls_hosting.urlpatterns + [
     # Marketer studio (session auth, Django permissions; webinars/studio/)
     path("studio/", include("webinars.studio.urls")),
     # Hosted waiting room (public; docs/waiting-room.md)

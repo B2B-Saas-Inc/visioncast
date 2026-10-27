@@ -1,0 +1,42 @@
+# One-shot: collect static files into /srv/visioncast/static (served by WhiteNoise in
+# visioncast-web). Started explicitly by deploy/demo/deploy.sh; never enabled.
+[Unit]
+Description=VisionCast demo collectstatic (one-shot)
+
+[Service]
+Type=oneshot
+User=visioncast
+Group=visioncast
+WorkingDirectory=/srv/visioncast/app
+EnvironmentFile=/etc/visioncast/visioncast.env
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ExecStart=/srv/visioncast/venv/bin/python /srv/visioncast/app/manage.py collectstatic --noinput
+TimeoutStartSec=300
+
+# Writable paths: the static directory only (owned by visioncast). Files must stay
+# world-readable for the web service, hence UMask=0022 here.
+ReadWritePaths=/srv/visioncast/static
+UMask=0022
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+MemoryMax=512M

@@ -652,6 +652,10 @@ def event_detail(request, key, body, pk):
                 raise _conflict("Only draft events can be deleted; unpublish with PATCH visibility=draft first.")
             if Registration.objects.filter(occurrence__event=event).exists():
                 raise _conflict("Events with registrations cannot be deleted; set visibility instead.")
+            from webinars.models import TicketOrder
+
+            if TicketOrder.objects.filter(occurrence__event=event).exists():
+                raise _conflict("Events with ticket orders cannot be deleted; set visibility instead.")
             audit("event.deleted", api_key=key, obj=event, revision=event.revision)
             event.delete()
         return 204, None

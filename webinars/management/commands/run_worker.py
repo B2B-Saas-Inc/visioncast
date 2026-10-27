@@ -34,6 +34,24 @@ def _write_heartbeat(path):
         logger.warning("Could not write heartbeat file: %s", type(exc).__name__)
 
 
+def _side_sweeps():
+    """Ticket reconciliation (webinars.payments.sweep) and provider registrant links
+    (webinars.hosting.service.sweep_registrants). Each is isolated: a failure in one
+    never stops delivery. Both are no-ops without paid orders / attached sessions."""
+    from webinars import payments
+    from webinars.hosting import service as hosting_service
+
+    done = 0
+    for name, func in (("tickets", payments.sweep), ("hosting", hosting_service.sweep_registrants)):
+        try:
+            done += int(func() or 0)
+        except Exception as exc:
+            logger.error("Worker %s sweep error: %s", name, type(exc).__name__)
+        finally:
+            close_old_connections()
+    return done
+
+
 class Command(BaseCommand):
     help = "Run the durable outbox delivery and reminder worker."
 
@@ -66,6 +84,7 @@ class Command(BaseCommand):
                 logger.error("Worker loop error: %s", type(exc).__name__)
             finally:
                 close_old_connections()
+            processed += _side_sweeps()
             _write_heartbeat(heartbeat)
             if processed:
                 logger.info("Worker %s processed %d message(s)", worker_id, processed)

@@ -1,0 +1,61 @@
+# VisionCast demo web process: gunicorn on 127.0.0.1:8000 behind nginx.
+# Installed to /etc/systemd/system/visioncast-web.service by deploy/demo/deploy.sh.
+# No worker unit exists on purpose: nothing is delivered off-host.
+[Unit]
+Description=VisionCast demo web (gunicorn, loopback only)
+After=network.target postgresql.service
+Wants=postgresql.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=visioncast
+Group=visioncast
+WorkingDirectory=/srv/visioncast/app
+EnvironmentFile=/etc/visioncast/visioncast.env
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ExecStart=/srv/visioncast/venv/bin/gunicorn --config /srv/visioncast/deploy/gunicorn.conf.py config.wsgi:application
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=40
+KillMode=mixed
+
+# Writable paths: only the tmpfs runtime directory (gunicorn worker heartbeat files).
+# Code, venv and /srv/visioncast/static are read-only here; static files are written
+# only by visioncast-collectstatic.service.
+RuntimeDirectory=visioncast-web
+RuntimeDirectoryMode=0700
+UMask=0077
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# Unix socket for PostgreSQL; TCP only for the loopback listener.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+# 1 GB host shared with PostgreSQL and nginx (plus 2 GB swap).
+MemoryHigh=384M
+MemoryMax=512M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

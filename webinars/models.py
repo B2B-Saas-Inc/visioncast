@@ -152,10 +152,18 @@ class Event(TimestampedModel):
         help_text=f"Shown when a recognised visitor has nothing left to fill in. Blank uses “{DEFAULT_CONFIRM_LABEL}”.",
     )
     revision = models.PositiveIntegerField(default=1)
+    # Event-level ticket price (webinars/payments.py). Null = free (the default); an
+    # occurrence may override. Integer minor units (e.g. cents) + ISO 4217 lower-case.
+    ticket_price_minor = models.PositiveIntegerField(null=True, blank=True)
+    ticket_currency = models.CharField(max_length=3, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
         constraints = [
+            models.CheckConstraint(
+                condition=Q(ticket_price_minor__isnull=True) | ~Q(ticket_currency=""),
+                name="event_price_requires_currency",
+            ),
             models.CheckConstraint(
                 condition=Q(thank_you_mode="message") | ~Q(thank_you_url=""),
                 name="event_redirect_requires_url",
@@ -258,9 +266,25 @@ class Occurrence(TimestampedModel):
     admission_generation = models.PositiveIntegerField(default=1)
     attendance_finalized_at = models.DateTimeField(null=True, blank=True)
 
+    # ---- Capacity and tickets (webinars/capacity.py, webinars/payments.py)
+    # Null capacity = unlimited (the default). Counted under this row's lock: confirmed
+    # registrations + unexpired/unreconciled ticket holds.
+    capacity = models.PositiveIntegerField(null=True, blank=True)
+    show_remaining = models.BooleanField(default=False)
+    # Null = inherit Event.ticket_price_minor (itself null = free). 0 is not a price:
+    # use null for free so "free" has one representation.
+    ticket_price_minor = models.PositiveIntegerField(null=True, blank=True)
+    ticket_currency = models.CharField(max_length=3, blank=True)
+
     class Meta:
         ordering = ["starts_at"]
-        constraints = [models.CheckConstraint(condition=Q(ends_at__gt=models.F("starts_at")), name="occurrence_end_after_start")]
+        constraints = [
+            models.CheckConstraint(condition=Q(ends_at__gt=models.F("starts_at")), name="occurrence_end_after_start"),
+            models.CheckConstraint(
+                condition=Q(ticket_price_minor__isnull=True) | ~Q(ticket_currency=""),
+                name="occurrence_price_requires_currency",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.event.internal_name} @ {self.starts_at:%Y-%m-%d %H:%M}Z"
@@ -309,6 +333,9 @@ class BrowserCapability(models.Model):
     expires_at = models.DateTimeField()
     revoked_at = models.DateTimeField(null=True, blank=True)
     revoked_reason = models.CharField(max_length=64, blank=True)
+    # Set only when the capability was issued after an emailed code/link proved the
+    # mailbox (waiting_room._complete). Paid checkout requires it (docs/tickets.md).
+    mailbox_verified_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name_plural = "browser capabilities"
@@ -654,6 +681,10 @@ class ApiKey(models.Model):
         DELIVERY_ADMIN = "delivery_admin", "Delivery admin (destinations, set-only secrets, retries; superuser-granted)"
         KEYS_ADMIN = "keys_admin", "API key admin (bounded delegation; superuser-granted)"
         TEAM_ADMIN = "team_admin", "Team admin (Editor/Analyst invitations and members; superuser-granted)"
+        # Tickets and hosting (docs/tickets.md, docs/hosting.md).
+        PAYMENTS_ADMIN = "payments_admin", "Payments admin (Stripe set-only secrets, prices, refunds bookkeeping; superuser-granted)"
+        HOSTING_ADMIN = "hosting_admin", "Hosting admin (provider set-only credentials; superuser-granted)"
+        HOSTING_PROVISION = "hosting_provision", "Hosting provision (preview/confirm create, update, attach sessions)"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
@@ -678,6 +709,233 @@ class ConfirmationUse(models.Model):
     action = models.CharField(max_length=64)
     api_key = models.ForeignKey(ApiKey, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     used_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+
+# --------------------------------------------------------------------------
+# Tickets (Stripe hosted Checkout; webinars/payments.py, docs/tickets.md)
+# --------------------------------------------------------------------------
+
+
+class PaymentAccount(TimestampedModel):
+    """Owner-controlled Stripe configuration. At most one row is ``enabled``.
+
+    Secrets are Fernet-encrypted with INTEGRATION_MASTER_KEY, set-only and never
+    rendered. ``mode`` must match the secret key prefix (sk_test_/rk_test_ vs live).
+    """
+
+    class Mode(models.TextChoices):
+        TEST = "test", "Test"
+        LIVE = "live", "Live"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.CharField(max_length=16, default="stripe")
+    name = models.CharField(max_length=200, default="Stripe")
+    mode = models.CharField(max_length=8, choices=Mode.choices, default=Mode.TEST)
+    secret_key_encrypted = models.TextField(blank=True)
+    webhook_secret_encrypted = models.TextField(blank=True)
+    # Optional expected Stripe account id (acct_...); when set, webhook events from any
+    # other account are rejected.
+    expected_account_id = models.CharField(max_length=64, blank=True)
+    enabled = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["enabled"], condition=Q(enabled=True), name="uniq_enabled_payment_account"),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.mode})"
+
+
+class TicketOrder(TimestampedModel):
+    """A seat hold + checkout for one person and occurrence. Immutable price snapshot.
+
+    A Registration is created only by verified-webhook fulfillment (``fulfilled``).
+    ``pending_payload`` holds the registration envelope until then (PII: cleared on
+    fulfillment, expiry and by purge_personal_data).
+    """
+
+    class Status(models.TextChoices):
+        HOLD = "hold", "Seat held (creating checkout)"
+        CHECKOUT_OPEN = "checkout_open", "Checkout open"
+        FULFILLED = "fulfilled", "Paid and registered"
+        EXPIRED = "expired", "Expired (seat released)"
+        CANCELLED = "cancelled", "Cancelled before payment"
+        NEEDS_RECONCILIATION = "needs_reconciliation", "Needs reconciliation"
+        REFUND_REQUIRED = "refund_required", "Paid but not admitted: refund required"
+        REFUNDED = "refunded", "Refunded (recorded by staff)"
+
+    # Statuses that consume a seat.
+    HOLDING = ("hold", "checkout_open", "needs_reconciliation")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    occurrence = models.ForeignKey(Occurrence, on_delete=models.PROTECT, related_name="ticket_orders")
+    # SET_NULL: orders are the financial record and outlive a deleted person.
+    person = models.ForeignKey(Person, null=True, blank=True, on_delete=models.SET_NULL, related_name="ticket_orders")
+    # Case-folded email of the submission (PII, cleared with the envelope): per-person
+    # hold reuse and erasure of holds whose person did not exist yet.
+    email_key = models.CharField(max_length=254, blank=True, db_index=True)
+    # Capability id (not a token) of the browser that created the hold; replays of the
+    # same idempotency key from any other browser context are refused.
+    caller_capability_id = models.UUIDField(null=True, blank=True)
+    account = models.ForeignKey(PaymentAccount, null=True, blank=True, on_delete=models.PROTECT, related_name="orders")
+    status = models.CharField(max_length=24, choices=Status.choices, default=Status.HOLD, db_index=True)
+    mode = models.CharField(max_length=8, choices=PaymentAccount.Mode.choices)
+    amount_minor = models.PositiveIntegerField()
+    currency = models.CharField(max_length=3)
+    price_snapshot = models.JSONField(default=dict)
+    # Registration idempotency key of the intent that created the hold.
+    idempotency_key = models.CharField(max_length=128, unique=True)
+    request_hash = models.CharField(max_length=64)
+    # Opaque status capability for the browser (only the SHA-256 is stored).
+    capability_hash = models.CharField(max_length=64, unique=True)
+    capability_expires_at = models.DateTimeField()
+    hold_expires_at = models.DateTimeField(db_index=True)
+    checkout_session_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    checkout_url = models.URLField(max_length=2000, blank=True)
+    checkout_expires_at = models.DateTimeField(null=True, blank=True)
+    payment_intent_id = models.CharField(max_length=255, blank=True)
+    pending_payload = models.JSONField(default=dict, blank=True)
+    registration = models.ForeignKey(
+        Registration, null=True, blank=True, on_delete=models.SET_NULL, related_name="ticket_orders"
+    )
+    paid_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=300, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["occurrence", "status"], name="webinars_ti_occurre_3f1c2a_idx")]
+
+
+class StripeEventRecord(models.Model):
+    """Durable dedupe of verified Stripe webhook event ids. No payload or PII stored."""
+
+    event_id = models.CharField(max_length=255, unique=True)
+    event_type = models.CharField(max_length=100)
+    livemode = models.BooleanField(default=False)
+    order = models.ForeignKey(TicketOrder, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    outcome = models.CharField(max_length=64, blank=True)
+    received_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+
+# --------------------------------------------------------------------------
+# Hosting providers (webinars/hosting/, docs/hosting.md)
+# --------------------------------------------------------------------------
+
+
+class HostingAccount(TimestampedModel):
+    """Owner-controlled credentials for one hosting provider account (encrypted, set-only)."""
+
+    class Provider(models.TextChoices):
+        ZOOM = "zoom", "Zoom Webinars"
+        WISTIA = "wistia", "Wistia Webinars"
+        SEQUEL = "sequel", "Sequel (Introvoke)"
+        RIVERSIDE = "riverside", "Riverside (attach existing event)"
+        STREAMYARD = "streamyard", "StreamYard (manual link)"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.CharField(max_length=16, choices=Provider.choices)
+    name = models.CharField(max_length=200)
+    # Non-secret settings (e.g. Zoom host user id, Sequel company id); validated per adapter.
+    config = models.JSONField(default=dict, blank=True)
+    credentials_encrypted = models.TextField(blank=True)
+    enabled = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.name} ({self.provider})"
+
+
+class HostedSession(TimestampedModel):
+    """Link between an occurrence and an external session. Never auto-deleted remotely."""
+
+    class Mode(models.TextChoices):
+        PROVISIONED = "provisioned", "Created by this platform"
+        ATTACHED = "attached", "Attached to an existing provider event"
+        MANUAL = "manual", "Manual link / embed"
+
+    class State(models.TextChoices):
+        DRAFT = "draft", "Not yet created"
+        IN_FLIGHT = "in_flight", "Request in flight"
+        LINKED = "linked", "Linked"
+        OUT_OF_DATE = "out_of_date", "Schedule changed; update pending"
+        NEEDS_RECONCILIATION = "needs_reconciliation", "Outcome unknown: reconcile before retrying"
+        FAILED = "failed", "Failed (safe to retry)"
+        DETACHED = "detached", "Detached (external session left untouched)"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    occurrence = models.OneToOneField(Occurrence, on_delete=models.CASCADE, related_name="hosted_session")
+    account = models.ForeignKey(HostingAccount, null=True, blank=True, on_delete=models.PROTECT, related_name="sessions")
+    provider = models.CharField(max_length=16, choices=HostingAccount.Provider.choices)
+    mode = models.CharField(max_length=16, choices=Mode.choices)
+    state = models.CharField(max_length=24, choices=State.choices, default=State.DRAFT)
+    external_id = models.CharField(max_length=255, blank=True)
+    # Private host/start URL (encrypted; never public, never in webhooks).
+    host_url_encrypted = models.TextField(blank=True)
+    # Manual embed (StreamYard): https URL of an allowlisted embed host; private until admission.
+    embed_url = models.URLField(max_length=1000, blank=True)
+    synced_schedule_generation = models.PositiveIntegerField(null=True, blank=True)
+    last_error = models.CharField(max_length=300, blank=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+
+
+class ProvisioningOperation(models.Model):
+    """Durable record of one outbound create/update/attach call."""
+
+    class Action(models.TextChoices):
+        CREATE = "create", "Create"
+        UPDATE = "update", "Update"
+        ATTACH = "attach", "Attach existing"
+        REGISTER = "register", "Register attendee"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        IN_FLIGHT = "in_flight", "In flight"
+        SUCCEEDED = "succeeded", "Succeeded"
+        FAILED = "failed", "Failed (definitive)"
+        UNKNOWN = "unknown", "Unknown outcome"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(HostedSession, on_delete=models.CASCADE, related_name="operations")
+    action = models.CharField(max_length=16, choices=Action.choices)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    idempotency_key = models.CharField(max_length=128, unique=True)
+    schedule_generation = models.PositiveIntegerField(null=True, blank=True)
+    status_code = models.PositiveSmallIntegerField(null=True, blank=True)
+    error = models.CharField(max_length=300, blank=True)
+    actor_user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    actor_api_key = models.ForeignKey("ApiKey", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(default=timezone.now)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class ProviderRegistrant(models.Model):
+    """Per-registration provider link (e.g. Riverside unique join link). Private."""
+
+    class State(models.TextChoices):
+        PENDING = "pending", "Pending"
+        LINKED = "linked", "Linked"
+        NEEDS_RECONCILIATION = "needs_reconciliation", "Needs reconciliation"
+        FAILED = "failed", "Failed"
+
+    registration = models.OneToOneField(Registration, on_delete=models.CASCADE, related_name="provider_registrant")
+    session = models.ForeignKey(HostedSession, on_delete=models.CASCADE, related_name="registrants")
+    state = models.CharField(max_length=24, choices=State.choices, default=State.PENDING)
+    external_id = models.CharField(max_length=255, blank=True)
+    join_url_encrypted = models.TextField(blank=True)
+    # Binding: the provider event (and account) this record's attempts and link belong to,
+    # captured before any provider call. The session row is reused across detach/re-attach,
+    # so the link counts only while this matches the session's current account + event ID.
+    # Blank (rows from before this field) never matches: fail closed, reconcile by hand.
+    event_account = models.ForeignKey(HostingAccount, null=True, blank=True, on_delete=models.SET_NULL,
+                                      related_name="+")
+    event_external_id = models.CharField(max_length=255, blank=True, default="")
+    attempts = models.PositiveSmallIntegerField(default=0)
+    last_error = models.CharField(max_length=300, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
 
 
 class AuditLog(models.Model):

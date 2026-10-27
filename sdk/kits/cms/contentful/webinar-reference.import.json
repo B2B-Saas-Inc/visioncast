@@ -1,0 +1,33 @@
+{
+  "contentTypes": [
+    {
+      "sys": { "id": "webinarReference" },
+      "name": "Webinar reference",
+      "description": "Reference to a platform webinar. Title, times and hosts are loaded live; never copied here.",
+      "displayField": "eventSlug",
+      "fields": [
+        {
+          "id": "eventSlug",
+          "name": "Event slug",
+          "type": "Symbol",
+          "localized": false,
+          "required": true,
+          "validations": [{ "regexp": { "pattern": "^[-a-zA-Z0-9_]{1,200}$", "flags": null } }]
+        },
+        {
+          "id": "occurrenceId",
+          "name": "Pinned session UUID (optional)",
+          "type": "Symbol",
+          "localized": false,
+          "required": false,
+          "validations": [
+            { "regexp": { "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", "flags": null } }
+          ]
+        }
+      ]
+    }
+  ],
+  "entries": [],
+  "assets": [],
+  "locales": []
+}

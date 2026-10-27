@@ -1,0 +1,88 @@
+{% extends "studio/base.html" %}
+{% block title %}Seats &amp; tickets · {{ event.internal_name }}{% endblock %}
+{% block breadcrumbs %}<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="{% url 'studio:events' %}">Events</a> / <a href="{% url 'studio:event-edit' event.pk %}">{{ event.internal_name }}</a> / <a href="{% url 'studio:session' occ.pk %}">Session</a> / <span aria-current="page">Seats &amp; tickets</span></nav>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Seats &amp; tickets</h1>
+    <p class="lede">{{ event.public_title }} · {{ price_display }}{% if occ.capacity %} · {{ remaining }} of {{ occ.capacity }} seats left{% else %} · unlimited seats{% endif %}</p>
+  </div>
+</div>
+
+{% if errors.items %}
+<div class="callout callout-warn" role="alert"><ul>{% for k, msg in errors.items %}<li>{{ msg }}</li>{% endfor %}</ul></div>
+{% endif %}
+{% if price and not payments_ready %}<p class="callout callout-warn" role="note">This session has a price but ticket sales are not configured, so visitors cannot register. Ask the workspace owner to set up Payments.</p>{% endif %}
+
+<div class="layout-split">
+<div class="stack">
+  <form method="post" action="{% url 'studio:session-tickets' occ.pk %}" class="panel">
+    {% csrf_token %}<input type="hidden" name="op" value="seats">
+    <div class="panel-head"><h2>Seats</h2></div>
+    <div class="panel-body">
+      <div class="field">
+        <label class="label" for="f-capacity">Seat limit</label>
+        <input class="input" id="f-capacity" name="capacity" inputmode="numeric" value="{{ occ.capacity|default_if_none:'' }}" aria-describedby="f-capacity-help">
+        <p class="help" id="f-capacity-help">Leave empty for unlimited. Free, paid, waiting-room and API registrations all share this limit; held checkouts count as taken.</p>
+      </div>
+      <div class="field">
+        <label class="switch"><input type="checkbox" name="show_remaining" value="on"{% if occ.show_remaining %} checked{% endif %}><span class="switch-track" aria-hidden="true"></span> Show remaining seats publicly</label>
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Save seats</button></div>
+    </div>
+  </form>
+
+  {% if can_price %}
+  <form method="post" action="{% url 'studio:session-tickets' occ.pk %}" class="panel">
+    {% csrf_token %}<input type="hidden" name="op" value="price">
+    <div class="panel-head"><h2>Price for this session</h2></div>
+    <div class="panel-body">
+      <div class="row" style="gap:var(--s-3)">
+        <div class="field"><label class="label" for="f-price">Price</label><input class="input" id="f-price" name="price" inputmode="decimal" placeholder="{% if event_price %}Event price: {{ event_price }}{% else %}Free{% endif %}"></div>
+        <div class="field"><label class="label" for="f-currency">Currency</label>
+          <select class="select" id="f-currency" name="currency">{% for value, label in currencies %}<option value="{{ value }}"{% if occ.ticket_currency == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      </div>
+      <p class="help">Currently: {% if occ_price %}{{ occ_price }}{% else %}no override{% endif %}. Leave empty and save to use the event price (or free). Changing a price never changes checkouts already started.</p>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Save price</button></div>
+    </div>
+  </form>
+  <form method="post" action="{% url 'studio:session-tickets' occ.pk %}" class="panel">
+    {% csrf_token %}<input type="hidden" name="op" value="event_price">
+    <div class="panel-head"><h2>Default price for every session of this event</h2></div>
+    <div class="panel-body">
+      <div class="row" style="gap:var(--s-3)">
+        <div class="field"><label class="label" for="f-eprice">Price</label><input class="input" id="f-eprice" name="event_price" inputmode="decimal" placeholder="Free"></div>
+        <div class="field"><label class="label" for="f-ecurrency">Currency</label>
+          <select class="select" id="f-ecurrency" name="event_currency">{% for value, label in currencies %}<option value="{{ value }}"{% if event.ticket_currency == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      </div>
+      <p class="help">Currently: {% if event_price %}{{ event_price }}{% else %}free{% endif %}. Leave empty and save to make the event free.</p>
+      <div class="form-actions"><button class="btn" type="submit">Save event price</button></div>
+    </div>
+  </form>
+  {% endif %}
+</div>
+
+<aside>
+  <section class="panel">
+    <div class="panel-head"><h2>Orders</h2></div>
+    <div class="panel-body">
+      {% if not orders %}<p class="help">No ticket orders yet.</p>{% endif %}
+      <ul class="stack-sm">
+      {% for o in orders %}
+        <li>
+          <strong>{{ o.display }}</strong> · {{ o.status }}{% if o.lastError %} <span class="small muted">({{ o.lastError }})</span>{% endif %}
+          {% if can_price and o.status == "needs_reconciliation" %}
+          <form method="post" action="{% url 'studio:session-tickets' occ.pk %}" data-confirm="Only if Stripe shows this checkout was NOT paid. Release the seat?">{% csrf_token %}<input type="hidden" name="op" value="release"><input type="hidden" name="order" value="{{ o.id }}"><button class="btn btn-sm" type="submit">Not paid: release seat</button></form>
+          {% endif %}
+          {% if can_price and o.status == "refund_required" or can_price and o.status == "fulfilled" %}
+          <form method="post" action="{% url 'studio:session-tickets' occ.pk %}" data-confirm="Record that you refunded this payment in Stripe? This cancels the registration.">{% csrf_token %}<input type="hidden" name="op" value="refunded"><input type="hidden" name="order" value="{{ o.id }}"><button class="btn btn-sm" type="submit">Refunded in Stripe</button></form>
+          {% endif %}
+        </li>
+      {% endfor %}
+      </ul>
+      <p class="small">Refunds are never automatic: refund in Stripe, then record it here.</p>
+    </div>
+  </section>
+</aside>
+</div>
+{% endblock %}

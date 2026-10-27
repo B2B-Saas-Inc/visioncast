@@ -716,6 +716,249 @@ def revoke_api_key(args, key):
 
 
 # ---------------------------------------------------------------------------
+# Tickets and hosting (thin wrappers over webinars.api.tickets / webinars.api.hosting)
+# ---------------------------------------------------------------------------
+
+
+def _tickets_api():
+    from webinars.api import tickets
+
+    return tickets
+
+
+def _hosting_api():
+    from webinars.api import hosting
+
+    return hosting
+
+
+def set_payment_account(args, key):
+    changes = dict(args["changes"])
+    preview = {k: ("[set-only secret]" if k in ("secretKey", "webhookSecret") else v) for k, v in changes.items()}
+    gated = _gate("set_payment_account", key, args, preview)
+    if gated:
+        return gated
+    return _mgmt(_tickets_api().payment_account, "PATCH", key, changes)
+
+
+def execute_session_hosting(args, key):
+    hosting = _hosting_api()
+    body = {k: args[k] for k in ("accountId", "action", "externalId") if k in args}
+    status, preview = _mgmt(hosting.occurrence_hosting_preview, "POST", key, dict(body), pk=args["occurrenceId"])
+    if status != 200:
+        return status, preview
+    if preview.get("problems"):
+        raise ToolError(409, "conflict", "This action cannot run yet: " + "; ".join(preview["problems"]))
+    occ = _get(Occurrence, pk=args["occurrenceId"])
+    gated = _gate("execute_session_hosting", key, args, preview, state=str(occ.schedule_generation))
+    if gated:
+        return gated
+    request = SimpleNamespace(method="POST", headers={}, hosting_confirmed=True)
+    return management._run(hosting.occurrence_hosting_execute.logic, request, key, body, (), {"pk": args["occurrenceId"]})
+
+
+def _account_state(account):
+    """Gate state for a hosting account: any save (name, flags, config or secrets) invalidates tokens.
+    Only a digest of the ciphertext is used; secrets are never decrypted here."""
+    if account is None:
+        return "new"
+    cipher = account.credentials_encrypted or ""
+    if isinstance(cipher, str):
+        cipher = cipher.encode()
+    return hashlib.sha256(json.dumps([account.name, account.enabled, account.config or {}], sort_keys=True).encode()
+                          + b"|" + bytes(cipher)).hexdigest()
+
+
+def _account_preview(args, account):
+    changes = {k: v for k, v in args.items() if k in ("provider", "name", "enabled", "config")}
+    changes["credentialsSet"] = sorted(k for k, v in (args.get("credentials") or {}).items() if str(v).strip())
+    return {"accountId": str(account.pk) if account else None, "changes": changes,
+            "effect": "Credentials are encrypted and never returned; blank values keep the stored secret."}
+
+
+def create_hosting_account(args, key):
+    body = {k: args[k] for k in ("provider", "name", "enabled", "config", "credentials") if k in args}
+    if body.get("provider") not in _hosting_api().PROVIDERS:
+        raise ToolError(400, "validation_error", "Request validation failed.", {"provider": "Unknown provider."})
+    gated = _gate("create_hosting_account", key, args, _account_preview(body, None), state=_account_state(None))
+    if gated:
+        return gated
+    return _mgmt(_hosting_api().hosting_accounts, "POST", key, body)
+
+
+def update_hosting_account(args, key):
+    from webinars.models import HostingAccount
+
+    account = _get(HostingAccount, pk=args["accountId"])
+    body = {k: args[k] for k in ("name", "enabled", "config", "credentials") if k in args}
+    gated = _gate("update_hosting_account", key, args, _account_preview(body, account), state=_account_state(account))
+    if gated:
+        return gated
+    return _mgmt(_hosting_api().hosting_account_detail, "PATCH", key, body, pk=args["accountId"])
+
+
+def _session_state(occ):
+    from webinars.hosting import service
+
+    session = service.session_for(occ)
+    return f"{session.state if session is not None else 'none'}:{occ.schedule_generation}"
+
+
+def reconcile_session_hosting(args, key):
+    occ = _get(Occurrence, pk=args["occurrenceId"])
+    body = {k: args[k] for k in ("decision", "externalId") if k in args}
+    state = _session_state(occ)
+    if not state.startswith("needs_reconciliation:"):
+        raise ToolError(409, "conflict", "This session does not need reconciliation.")
+    preview = {"occurrenceId": str(occ.pk), "currentState": state.split(":")[0], **body,
+               "effect": "Records what you verified in the provider; nothing is sent to the provider."}
+    gated = _gate("reconcile_session_hosting", key, args, preview, state=state)
+    if gated:
+        return gated
+    return _mgmt(_hosting_api().occurrence_hosting_reconcile, "POST", key, body, pk=args["occurrenceId"])
+
+
+def reconcile_session_registrant(args, key):
+    """Same checks as the REST route; the gate binds the exact args (link HMAC'd only) and the
+    registrant's attempt/state. The preview never contains the link."""
+    hosting = _hosting_api()
+    occ = _get(Occurrence, pk=args["occurrenceId"])
+    body = {k: args[k] for k in ("registrationId", "decision", "joinUrl", "externalId") if k in args}
+    try:
+        pr = hosting.registrant_target(occ, args["registrationId"])
+        decision, join_url, external_id = hosting.registrant_values(pr, body)
+    except management._Invalid as exc:
+        raise ToolError(exc.status, exc.code, exc.message, exc.fields)
+    state = hosting.registrant_state(pr)
+    gated = _gate("reconcile_session_registrant", key, args,
+                  hosting.registrant_preview(occ, pr, decision, join_url, external_id), state=state)
+    if gated:
+        return gated
+    request = SimpleNamespace(method="POST", headers={}, hosting_confirmed=True, hosting_expected_state=state)
+    return management._run(hosting.occurrence_registrant_reconcile.logic, request, key, body, (),
+                           {"pk": args["occurrenceId"]})
+
+
+def set_session_manual_link(args, key):
+    occ = _get(Occurrence, pk=args["occurrenceId"])
+    body = {k: args[k] for k in ("accountId", "joinUrl", "embedUrl") if k in args}
+    # Links can embed passcodes: the preview shows hosts only.
+    preview = {"occurrenceId": str(occ.pk), "accountId": args["accountId"], "currentState": _session_state(occ).split(":")[0],
+               "joinUrlHost": _url_host(args["joinUrl"]), "embedUrlHost": _url_host(args.get("embedUrl")),
+               "effect": "Links the session to a provider room by URL; no provider API call."}
+    gated = _gate("set_session_manual_link", key, args, preview, state=_session_state(occ))
+    if gated:
+        return gated
+    return _mgmt(_hosting_api().occurrence_hosting_manual_link, "POST", key, body, pk=args["occurrenceId"])
+
+
+def _order_tool(name, view, effect):
+    def handler(args, key):
+        from webinars import payments
+        from webinars.models import TicketOrder
+
+        order = _get(TicketOrder, pk=args["orderId"])
+        preview = {"order": payments.serialize_order_admin(order), "effect": effect}
+        gated = _gate(name, key, args, preview, state=f"{order.status}:{order.paid_at}")
+        if gated:
+            return gated
+        return _mgmt(view, "POST", key, {"confirm": True}, pk=args["orderId"])
+
+    return handler
+
+
+def _ticket_tools():
+    t, h = _tickets_api(), _hosting_api()
+    pay = (S.PAYMENTS_ADMIN,)
+    tickets_rw = (S.CONTENT_WRITE, S.PAYMENTS_ADMIN)
+    provision = (S.HOSTING_PROVISION,)
+    admin = (S.HOSTING_ADMIN,)
+    return [
+        {"name": "get_session_tickets", "scopes": tickets_rw + (S.CONFIG_READ,), "readOnly": True,
+         "handler": lambda a, k: _mgmt(t.occurrence_tickets, "GET", k, pk=a["occurrenceId"]),
+         "description": "Seat limit, remaining seats, price and order counts for one session (no personal data).",
+         "inputSchema": _schema({"occurrenceId": _UUID}, ["occurrenceId"])},
+        {"name": "set_session_tickets", "scopes": tickets_rw,
+         "handler": lambda a, k: _mgmt(t.occurrence_tickets, "PATCH", k, a["changes"], pk=a["occurrenceId"]),
+         "description": "Set capacity/showRemaining (content_write) or a price override (payments_admin). Null capacity = unlimited.",
+         "inputSchema": _schema({"occurrenceId": _UUID, "changes": t.OCCURRENCE_TICKETS_INPUT_SCHEMA}, ["occurrenceId", "changes"])},
+        {"name": "set_event_price", "scopes": pay,
+         "handler": lambda a, k: _mgmt(t.event_tickets, "PATCH", k, {"priceMinor": a["priceMinor"], "currency": a["currency"]},
+                                       pk=a["eventId"]),
+         "description": "Event ticket price in minor units (null = free). Existing checkouts keep their price.",
+         "inputSchema": _schema({"eventId": _UUID, **t.EVENT_TICKETS_INPUT_SCHEMA["properties"]}, ["eventId", "priceMinor", "currency"])},
+        {"name": "get_payment_account", "scopes": pay, "readOnly": True,
+         "handler": lambda a, k: _mgmt(t.payment_account, "GET", k),
+         "description": "Redacted Stripe configuration (set/unset flags, mode, webhook URL, problems).", "inputSchema": _schema({})},
+        {"name": "set_payment_account", "scopes": pay, "handler": set_payment_account, "gated": True,
+         "description": "Configure Stripe (mode, set-only secret key / webhook secret, enable). Gated.",
+         "inputSchema": _schema({"changes": t.PAYMENT_ACCOUNT_INPUT_SCHEMA}, ["changes"], gated=True)},
+        {"name": "list_session_orders", "scopes": pay, "readOnly": True,
+         "handler": lambda a, k: _mgmt(t.occurrence_orders, "GET", k, pk=a["occurrenceId"]),
+         "description": "Ticket orders for a session: status, amount, no personal data.",
+         "inputSchema": _schema({"occurrenceId": _UUID}, ["occurrenceId"])},
+        {"name": "list_hosting_providers", "scopes": provision + (S.CONFIG_READ,), "readOnly": True,
+         "handler": lambda a, k: _mgmt(h.hosting_providers, "GET", k),
+         "description": "Hosting adapters, their capabilities (provisioning vs manual link) and contract status.",
+         "inputSchema": _schema({})},
+        {"name": "get_session_hosting", "scopes": provision + (S.CONFIG_READ,), "readOnly": True,
+         "handler": lambda a, k: _mgmt(h.occurrence_hosting, "GET", k, pk=a["occurrenceId"]),
+         "description": "Provider link state for a session. Never returns join or host links.",
+         "inputSchema": _schema({"occurrenceId": _UUID}, ["occurrenceId"])},
+        {"name": "execute_session_hosting", "scopes": provision, "handler": execute_session_hosting, "gated": True,
+         "description": "Create/update/attach a provider session. dryRun returns the exact request preview; unknown "
+                        "outcomes stop for reconciliation in the studio. Gated.",
+         "inputSchema": _schema({"occurrenceId": _UUID, **h.PREVIEW_INPUT_SCHEMA["properties"]},
+                                ["occurrenceId", "accountId", "action"], gated=True)},
+        {"name": "reconcile_session_hosting", "scopes": provision, "handler": reconcile_session_hosting, "gated": True,
+         "description": "After an unknown provider outcome, record what you verified in the provider (created + "
+                        "externalId, or not_created). Only for sessions in needs_reconciliation. Gated.",
+         "inputSchema": _schema({"occurrenceId": _UUID, **h.RECONCILE_INPUT_SCHEMA["properties"]},
+                                ["occurrenceId", "decision"], gated=True)},
+        {"name": "list_session_registrants", "scopes": provision + (S.CONFIG_READ,), "readOnly": True,
+         "handler": lambda a, k: _mgmt(h.occurrence_registrants, "GET", k, pk=a["occurrenceId"]),
+         "description": "Riverside registrants of one session whose provider outcome is unknown: registration IDs and "
+                        "state only (no names, emails or links). No provider call.",
+         "inputSchema": _schema({"occurrenceId": _UUID}, ["occurrenceId"])},
+        {"name": "reconcile_session_registrant", "scopes": provision, "handler": reconcile_session_registrant,
+         "gated": True,
+         "description": "Record what you verified in Riverside for one stalled registrant of this session: created + "
+                        "that registrant's own join link (set-only, never returned), or not_created (sweep may retry). "
+                        "Nothing is sent to Riverside. Gated.",
+         "inputSchema": _schema({"occurrenceId": _UUID, **h.REGISTRANT_RECONCILE_INPUT_SCHEMA["properties"]},
+                                ["occurrenceId", "registrationId", "decision"], gated=True)},
+        {"name": "set_session_manual_link", "scopes": provision, "handler": set_session_manual_link, "gated": True,
+         "description": "Link a session to a provider room by URL (no provider API call). Links are write-only: the "
+                        "preview shows hosts only and responses carry hasJoinUrl flags. Gated.",
+         "inputSchema": _schema({"occurrenceId": _UUID, **h.MANUAL_LINK_INPUT_SCHEMA["properties"]},
+                                ["occurrenceId", "accountId", "joinUrl"], gated=True)},
+        {"name": "list_hosting_accounts", "scopes": admin + (S.CONFIG_READ,), "readOnly": True,
+         "handler": lambda a, k: _mgmt(h.hosting_accounts, "GET", k),
+         "description": "Hosting accounts: provider, config, secretsSet flags (never values), capabilities, warnings.",
+         "inputSchema": _schema({})},
+        {"name": "create_hosting_account", "scopes": admin, "handler": create_hosting_account, "gated": True,
+         "description": "Create a hosting provider account. Credentials are set-only (encrypted, never returned). Gated.",
+         "inputSchema": _schema(dict(h.ACCOUNT_INPUT_SCHEMA["properties"]), ["provider", "name"], gated=True)},
+        {"name": "update_hosting_account", "scopes": admin, "handler": update_hosting_account, "gated": True,
+         "description": "Update a hosting account's name, enabled flag, config or set-only credentials (blank keeps the "
+                        "stored secret). The provider cannot change. Gated.",
+         "inputSchema": _schema({"accountId": _UUID, **h.ACCOUNT_UPDATE_SCHEMA["properties"]}, ["accountId"], gated=True)},
+        {"name": "mark_order_refunded", "scopes": pay, "gated": True,
+         "handler": _order_tool("mark_order_refunded", t.order_mark_refunded,
+                                "Records a refund you already made in Stripe and cancels the seat if nothing else pays "
+                                "for it. Bookkeeping only: no money moves."),
+         "description": "Record a refund already issued in Stripe (no money moves; refunds are never automated). Gated.",
+         "inputSchema": _schema({"orderId": _UUID}, ["orderId"], gated=True)},
+        {"name": "release_unpaid_order", "scopes": pay, "gated": True,
+         "handler": _order_tool("release_unpaid_order", t.order_release,
+                                "Releases the held seat of a needs_reconciliation order after re-checking Stripe; refused "
+                                "if Stripe reports it paid."),
+         "description": "Release a reconciling order that Stripe confirms unpaid. Gated.",
+         "inputSchema": _schema({"orderId": _UUID}, ["orderId"], gated=True)},
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Tool registry
 # ---------------------------------------------------------------------------
 
@@ -849,7 +1092,7 @@ TOOLS = [
     {"name": "revoke_api_key", "scopes": KEYS, "handler": revoke_api_key, "gated": True,
      "description": "Revoke a key whose scopes you hold (not keys_admin keys). Gated.",
      "inputSchema": _schema({"keyId": _UUID}, ["keyId"], gated=True)},
-]
+] + _ticket_tools()
 
 
 def call(tool, args, key):

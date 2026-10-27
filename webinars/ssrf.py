@@ -443,16 +443,16 @@ def _check_native_request(method, host, headers, allowed_hosts):
     if allowed_hosts is not None:
         if host not in {_normalize_host(h) for h in allowed_hosts}:
             raise UnsafeDestination("Host is not an allowed vendor host")
-    elif any(k.lower() == "authorization" for k in (headers or {})):
+    elif any(k.lower() in {"authorization", "api-key"} for k in (headers or {})):
         raise UnsafeDestination("Credentialed requests need an explicit vendor host")
 
 
-def _request_validated(host, port, path, method, body, headers, timeout, max_bytes):
+def _request_validated(host, port, path, method, body, headers, timeout, max_bytes, methods=NATIVE_METHODS):
     """DNS vetting + pinned TLS request. Returns ``(status, raw, retry_after_raw, truncated)``.
 
     Uses no Django settings, so it can run in a child.
     """
-    if method not in NATIVE_METHODS:
+    if method not in methods:
         raise UnsafeDestination("Method not allowed")
     addresses = resolve_safe_addresses(host, port)
     clean_headers = {k: v for k, v in (headers or {}).items() if k.lower() not in ("host", "content-length", "connection")}
@@ -543,6 +543,121 @@ def request_json_bounded(
         status, raw, retry_after_raw, truncated = result[1]
         raw = bytes(raw or b"")
         if len(raw) > max_bytes:  # do not trust the child's bound
+            raw, truncated = b"", True
+        return int(status), raw, parse_retry_after(retry_after_raw), bool(truncated)
+    finally:
+        _stop(proc)
+        proc.join(TERMINATE_GRACE_SECONDS)
+        recv_conn.close()
+        try:
+            proc.close()
+        except ValueError:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Vendor API request (hosting providers, Stripe): adds GET and PATCH
+# ---------------------------------------------------------------------------
+#
+# ``request_json_bounded`` keeps its POST/PUT-only policy unchanged. Hosting and payment
+# adapters also need GET (read back / reconcile) and PATCH (Zoom update). This variant
+# always requires ``allowed_hosts`` (a constant pinned set of vendor hosts, never a URL
+# typed by a user), sends no body with GET, never follows redirects (a 3xx is returned
+# to the adapter, which treats it as failure, so credentials never follow a Location)
+# and runs under the same hard total deadline in a spawned child.
+
+VENDOR_METHODS = frozenset({"GET", "POST", "PUT", "PATCH"})
+
+
+class TransportUnavailable(UnsafeDestination):
+    """The request process could not be started: nothing reached the network."""
+
+
+def _vendor_request_child(conn, host, port, path, method, body, headers, timeout, max_bytes):
+    try:
+        result = ("ok", _request_validated(host, port, path, method, body, headers, timeout, max_bytes, VENDOR_METHODS), "")
+    except ResolutionFailed:
+        result = ("resolution_failed", "", "")
+    except UnsafeDestination as exc:
+        result = ("unsafe", str(exc)[:200], "")
+    except (socket.timeout, TimeoutError):
+        result = ("timeout", "", "")
+    except ssl.SSLError as exc:
+        result = ("tls", type(exc).__name__, "")
+    except http.client.HTTPException as exc:
+        result = ("http", type(exc).__name__, "")
+    except Exception as exc:  # never send exception text (may contain PII)
+        result = ("os", type(exc).__name__, "")
+    try:
+        conn.send(result)
+    finally:
+        conn.close()
+
+
+def vendor_request_bounded(
+    method,
+    url,
+    body,
+    headers,
+    timeout,
+    total_timeout,
+    *,
+    allowed_hosts,
+    max_response_bytes=MAX_NATIVE_RESPONSE_BYTES,
+    _target=None,
+):
+    """Bounded GET/POST/PUT/PATCH to a pinned vendor host.
+
+    Returns ``(status, raw_body, retry_after_seconds, truncated)`` like
+    ``request_json_bounded``. ``allowed_hosts`` is mandatory and must be non-empty; the
+    URL must still pass ``validate_destination_url`` (https, port, operator allowlist).
+    """
+    import multiprocessing
+
+    method = str(method).upper()
+    if method not in VENDOR_METHODS:
+        raise UnsafeDestination("Method not allowed")
+    if not allowed_hosts:
+        raise UnsafeDestination("Vendor requests need an explicit vendor host")
+    host, port, path = _validated_target(url)
+    if host not in {_normalize_host(h) for h in allowed_hosts}:
+        raise UnsafeDestination("Host is not an allowed vendor host")
+    if method == "GET":
+        body = b""
+    elif isinstance(body, str):
+        body = body.encode("utf-8")
+    body = body or b""
+    max_bytes = max(1, min(int(max_response_bytes), MAX_NATIVE_RESPONSE_BYTES))
+    total_timeout = max(0.1, float(total_timeout))
+    per_op = max(0.1, min(float(timeout), total_timeout))
+    ctx = multiprocessing.get_context("spawn")
+    recv_conn, send_conn = ctx.Pipe(duplex=False)
+    proc = ctx.Process(
+        target=_target or _vendor_request_child,
+        args=(send_conn, host, port, path, method, body, dict(headers or {}), per_op, max_bytes),
+        daemon=True,
+    )
+    try:
+        proc.start()
+    except (AssertionError, OSError, RuntimeError):
+        # E.g. a daemonic caller cannot have children. Nothing was sent, so this is a
+        # definitive failure (callers map UnsafeDestination to "failed"), never "unknown".
+        recv_conn.close()
+        send_conn.close()
+        raise TransportUnavailable("could not start the request process") from None
+    try:
+        send_conn.close()
+        if not recv_conn.poll(total_timeout):
+            raise DeadlineExceeded("vendor request exceeded total deadline")
+        try:
+            result = recv_conn.recv()
+        except (EOFError, OSError):
+            raise OSError("child_exited") from None
+        if result[0] != "ok":
+            _raise_child_result(result)
+        status, raw, retry_after_raw, truncated = result[1]
+        raw = bytes(raw or b"")
+        if len(raw) > max_bytes:
             raw, truncated = b"", True
         return int(status), raw, parse_retry_after(retry_after_raw), bool(truncated)
     finally:

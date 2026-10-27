@@ -1,8 +1,10 @@
 from django.urls import path
 
 from webinars.studio import views_settings as v
+from webinars.studio import views_tracking
 
 urlpatterns = [
+    path("tracking/", views_tracking.tracking, name="tracking"),
     path("integrations/", v.integrations, name="integrations"),
     path("integrations/new/", v.integration_new, name="integration-new"),
     path("integrations/<uuid:pk>/", v.integration_edit, name="integration-edit"),

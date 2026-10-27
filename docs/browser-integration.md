@@ -389,6 +389,109 @@ single source, including in the bounded preview). Then create a **Custom HTML** 
 <script src="https://www.example.com/assets/webinar-form.js"></script>
 ```
 
+### Site-wide install tag (Studio › Tracking & GTM)
+
+Administrators can copy a ready-made Custom HTML tag from **Studio › Connect ›
+Tracking & GTM** (`/studio/tracking/`). It wraps the public helper
+`webinars/static/webinar-sdk/gtm-loader.js` (inlined verbatim between its
+`@gtm-loader-start/end` markers) and a JSON config built server-side from
+native inputs: SDK script URL, proxy path, consent source and the **dataLayer
+consent key** (default `webinarConsent`). Nothing is persisted; the tag is
+regenerated on each request.
+
+The tag contains **no `{{variable}}` references**. GTM substitutes variables
+as raw text inside the script, so a variable that resolves to a quote, a
+newline or attacker-influenced text (URL/Query variables) would break or
+inject the tag. Instead the tag carries only the *name* of a dataLayer key and
+reads consent itself at fire time:
+
+- It walks `window.dataLayer` from the newest message backwards and takes the
+  first **plain object** that has the key as an **own property** (no prototype
+  lookups, no eval, no dynamic code). Messages without the key (page views,
+  `gtm.*` events) are skipped.
+- Each purpose is granted only when that object's own `analytics` /
+  `advertising` value is exactly `'granted'`, `'true'` or boolean `true`.
+  Anything else (`denied`, `yes`, `1`, `GRANTED`, a quoted string, a script)
+  is a value, never code, and counts as denied.
+- If the newest message with the key is malformed (a string, array, `null`,
+  empty object, inherited properties, other purpose names), consent is
+  **denied**; it never falls back to an older grant.
+- No dataLayer is monkeypatched and nothing else in it is read. The only
+  dataLayer write ever made is the SDK's own `webinar_registration` event
+  after a consented registration.
+- "Always denied" mode writes `"consentKey": null` and ignores the dataLayer.
+
+What the tag does on every fire:
+
+1. If `window.WebinarForm` exists: `setConsent({analytics, advertising})`
+   from the dataLayer, then `WebinarForm.init()` to bind forms rendered since
+   the last fire (SPA, modals). Already-bound forms are skipped by the SDK.
+   If the SDK was loaded by a per-session `<script src>` before the tag ran, a
+   non-default proxy path in the tag is ignored and the console warns once.
+2. Otherwise: stage `window.WebinarFormConfig = {proxyBase, autoInit: true,
+   consent}` and inject one `<script async src>` for the SDK. A loading guard
+   (`__webinarFormGtmLoading`) stops duplicate fires from injecting a second
+   script; later fires only update the staged consent, which the SDK reads at
+   boot. If the file fails to load (404, CSP), `onerror` clears the guard so
+   the next fire retries.
+
+**Your CMP must push the message.** Studio shows a copyable example with
+literal values; this is not an automatic integration with any consent platform.
+From the CMP's callback, once consent is resolved and again on every change:
+
+```html
+<script>
+  window.dataLayer = window.dataLayer || [];
+  window.dataLayer.push({
+    event: 'webinar_consent_update',
+    webinarConsent: { analytics: 'granted', advertising: 'denied' }   // the visitor's real statuses
+  });
+</script>
+```
+
+Triggers: *All Pages – DOM Ready* (or Initialization if your CMP resolves
+consent earlier) and a *Custom Event* trigger on `webinar_consent_update` (or
+the event your CMP already pushes after consent changes). Leave *Tag firing
+options* at **Unlimited**; "Once per page" would swallow consent changes after
+load. For single-page apps fire the tag on a custom event your app pushes
+**after** the view containing the form has rendered, or call
+`WebinarForm.init()` yourself after render; a *History Change* trigger fires
+on `pushState`, usually before the form is in the DOM, and only works for
+routers that render synchronously.
+
+What is and is not consent-gated: on every page with a
+`form[data-webinar-form]` the SDK calls `GET <proxyBase>/profile` with the
+proxy's own first-party recognition cookie, with or without consent (a
+functional cookie; the CSRF cookie is also functional). With consent denied
+nothing from the URL, the referrer or third-party cookies is kept or sent.
+With analytics consent it sends UTM parameters, the `_ga` cookie's client ID
+and the origin + path of the page **and of the referrer**; with advertising
+consent, ad click IDs and the matching first-party ad cookies; all only in the
+registration request. On pages without such a form nothing is bound or
+requested. The tag is not a page-view tracker and does not replace your
+analytics tags.
+
+Validation on the Studio screen: the script source must be a plain absolute
+path (`/assets/webinar-form.js`) or an `https://` URL with a host, no
+credentials, query, fragment, `..`, `//` anywhere in the path, or backslashes
+(`http://` only for `localhost`/`127.0.0.1`); a script host other than the
+platform's is called out visibly above the tag. The proxy path follows the
+SDK's `safeProxyBase` rules. The consent key is a plain identifier (letters,
+digits, underscores, max 64; `__proto__`, `constructor`, `prototype`,
+`event` and similar are refused). All values are serialised with `json.dumps`
+(ASCII only) and `</` and `<!--` are escaped, so no input can close the
+`<script>` element. Invalid inputs show an error and fall back to the default.
+Studio cannot verify the tag is live; use GTM Preview and check that
+`GET <proxyBase>/profile` succeeds.
+
+Tests: `sdk/test/gtm-loader.test.js` fires the exact generated tag
+(`sdk/test/fixtures/gtm-tag.html`, asserted byte-for-byte by
+`tests/test_gtm_tracking.py`) in a sandboxed window for denied/grant/revoke,
+malformed and injection-string messages, `sessionStorage` clearing, failed
+load retry, duplicate fires and late forms. `tests/browser-gtm.cjs` runs the
+same fixture plus the real SDK in Chromium with every route intercepted
+(no network, no backend).
+
 - **Trigger.** Fire on the pages that contain the form, for example
   "Page View – DOM Ready" filtered on the page path. Fire it once per page. The
   script ignores a second load if `window.WebinarForm` already exists.
@@ -417,17 +520,19 @@ single source, including in the bounded preview). Then create a **Custom HTML** 
   overrides `setConsent` state. Pass a non-function to remove it.
 - `WebinarForm.getConsent()` returns the current normalised state.
 
-Example only, adapt it to your CMP. Suppose your CMP pushes a `consent_update`
-event to the dataLayer and you have mapped its purposes into GTM Data Layer
-Variables. Create a Custom HTML tag with a Custom Event trigger on
-`consent_update`:
+Example only, adapt it to your CMP. Do **not** paste GTM `{{variables}}` into
+a Custom HTML tag that calls `setConsent`: GTM substitutes them as raw text
+inside the script, so a non-plain value breaks the tag or executes. Either use
+the site-wide tag above (it reads a dataLayer key safely) or, if you call the
+SDK yourself, pass only values your own code produced:
 
 ```html
 <script>
+  // From your CMP's callback, after consent is resolved and on every change.
   if (window.WebinarForm) {
     WebinarForm.setConsent({
-      analytics: {{DLV - consent analytics}} === 'granted',     // e.g. maps to analytics_storage
-      advertising: {{DLV - consent advertising}} === 'granted'  // e.g. ad_storage / ad_user_data
+      analytics: myCmp.isAllowed('statistics') === true,   // e.g. maps to analytics_storage
+      advertising: myCmp.isAllowed('marketing') === true   // e.g. ad_storage / ad_user_data
     });
   }
 </script>

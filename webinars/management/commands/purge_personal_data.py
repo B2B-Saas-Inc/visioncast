@@ -50,6 +50,7 @@ from webinars.models import (
     Person,
     PreviewMessage,
     Registration,
+    TicketOrder,
     WaitingRoomVerification,
 )
 
@@ -85,6 +86,7 @@ def erase_person(person_id, *, user=None):
     with transaction.atomic():
         person = Person.objects.select_for_update().get(pk=person_id)
         counts = person_counts(person)
+        original_email_key = person.email_key
         if person.email_key:
             # Waiting-room verification rows carry the address until they expire.
             WaitingRoomVerification.objects.filter(email_key=person.email_key).delete()
@@ -111,6 +113,13 @@ def erase_person(person_id, *, user=None):
         )
         OutboxMessage.objects.filter(person=person).update(payload=PURGED)
         IdempotencyRecord.objects.filter(registration__person=person).delete()
+        # Ticket orders keep the registration envelope and email key (PII) only until
+        # fulfillment. Holds made before the person existed are found by email key. The
+        # order rows themselves stay: they are the financial record (amount, status, ids).
+        orders = Q(person=person)
+        if original_email_key:
+            orders |= Q(email_key=original_email_key)
+        TicketOrder.objects.filter(orders).update(pending_payload={}, email_key="", updated_at=now)
 
         audit("person.purged", user=user, obj=person, **counts)
     return counts
@@ -148,8 +157,13 @@ def housekeeping(dry_run=False):
     )
     verifications = WaitingRoomVerification.objects.filter(expires_at__lt=now - timedelta(hours=1))
     preview_messages = PreviewMessage.objects.filter(created_at__lt=now - PREVIEW_MESSAGE_RETENTION)
+    # Ticket envelopes: closed orders never need them; open ones past retention are stale.
+    ticket_payloads = TicketOrder.objects.exclude(Q(pending_payload={}) & Q(email_key="")).filter(
+        ~Q(status__in=TicketOrder.HOLDING) | Q(created_at__lt=old_cutoff)
+    )
     if dry_run:
         return {
+            "ticket_payloads_purged": ticket_payloads.count(),
             "idempotency_deleted": idem.count(),
             "outbox_payloads_purged": outbox.count(),
             "outbox_stale_pending_cancelled": stale_pending.count(),
@@ -171,7 +185,10 @@ def housekeeping(dry_run=False):
         orphan_count = orphaned.filter(status__in=UNDELIVERED).update(last_error="person_deleted", **cancel)
         orphan_count += orphaned.update(payload=PURGED)
         purged = outbox.update(payload=PURGED)
+        # Note: this bumps updated_at, which also restarts the sweep's recheck timer.
+        tickets_purged = ticket_payloads.update(pending_payload={}, email_key="", updated_at=now)
     return {
+        "ticket_payloads_purged": tickets_purged,
         "idempotency_deleted": deleted,
         "outbox_payloads_purged": purged,
         "outbox_stale_pending_cancelled": stale,

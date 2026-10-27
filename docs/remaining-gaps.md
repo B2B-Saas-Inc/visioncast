@@ -1,121 +1,161 @@
 # Remaining gaps
 
-Status as of 2026-10-23, reconciled against the review follow-up recorded in
-[validation.md](validation.md) (18:23Z). **Preview, not production-ready.** This page
-separates what the code implements, what blocks a release, what must happen outside the
-code, and what is not implemented. Test evidence lives only in
+Status as of 2026-10-26, reconciled against [validation.md](validation.md) (latest entry
+2026-10-26T14:36:34Z). **Preview, not production-ready.** This page separates what the
+code implements, what blocks a release, what the owner has requested but is not built
+yet, and what is optional or out of scope. Test evidence lives only in
 [validation.md](validation.md); nothing on this page is a test result. The ordered,
-tickable list of what remains is [release-checklist.md](release-checklist.md). Detailed MCP
-and native-integration behaviour is owned by [mcp.md](mcp.md) and
-[native-integrations.md](native-integrations.md); where those docs and this page
-disagree on detail, theirs win.
+tickable list is [release-checklist.md](release-checklist.md). Detailed behaviour is
+owned by [mcp.md](mcp.md), [native-integrations.md](native-integrations.md),
+[tickets.md](tickets.md), [hosting.md](hosting.md) and [kits.md](kits.md); where they
+disagree with this page on detail, theirs win.
 
-Earlier versions of this page said the completion and continuation waves had never been
-executed and that the image predated them. That is superseded: validation.md records
-788 and then 803 PostgreSQL 15 passes, SDK/proxy and actual-app Chromium passes, and an
-OCI archive built after the review fixes. What that evidence does **not** cover is listed
-in §2 and §3.
+## 0. Current evidence (summary; validation.md is authoritative)
 
-## 1. Implemented in code (verified in preview only; release gates in §2 and §3)
+| What | Latest recorded | Covers the current tree? |
+|---|---|---|
+| Python suite, PostgreSQL 15 / Python 3.12, Ruff, system check, migration drift | **1,244 passed** (2026-10-26T14:36Z) | Yes |
+| Site (`site/`) tests, typecheck, production build | **50 tests** passed (2026-10-26T14:36Z) | Yes |
+| OCI image | `artifacts/pi-build-d49e1bea-a7ab-4752-88c4-7b59259f0a08/image.tar` (2026-10-26) | Built from the current tree. **No SHA-256 recorded; never loaded, run or smoke-tested** |
+| Python suite on PostgreSQL 16 + logical and application restore probe (`tests/run-pg16.sh`, `tests/restore_probe.py`) | 1,274 passed, restore/decrypt/wrong-key/admin probe passed (2026-10-26, Python3.12.15/PostgreSQL16.15) | **Yes, from source.** Does not prove built-image runtime |
+| Transitive hash lock (`requirements.in` → hashed `requirements.txt`), hash-enforced install | Adopted 2026-10-24 | Yes, unless dependencies changed since; dev packages not hash-locked |
+| `pip-audit` | No known vulnerabilities (2026-10-24, 837 tree) | Rerun for the release tree |
+| SDK + kit tests | 60 passed (2026-10-25T04:49Z) | Not rerun at the 1,244 tree |
+| Actual-app Chromium studio journey | 12/12 (2026-10-25T04:49Z) | Not rerun at the 1,244 tree |
+| Mocked-backend SDK Chromium (`tests/browser-sdk.cjs`) | 8/8 in an early wave | No; predates web-calendar links and paid/verification SDK states |
+| Live demo | Frontend `visioncast-ten.vercel.app` updated 2026-10-26 (catalogue lists ten adapters) | **Backend is the 2026-10-24 build** (no tickets, hosting or the newer adapters); no worker, email or destinations |
+| Real vendor, Stripe, hosting-provider, SMTP or receiver traffic | None | — |
+
+## 1. Implemented in code (preview only; gates in §2–§3)
 
 | Area | Where |
 |---|---|
-| Public read API (list/filter/paginate, event by slug, form schema, ICS) | `webinars/api/views.py`, `queries.py`; [api-reference.md](api-reference.md) |
-| Registration, idempotency, dedupe, progressive profile, reset | `webinars/registration.py`, `identity.py` |
-| Same-origin direct endpoints `/webinar-api/{profile,registrations,reset,my-registration,calendar.ics}` | `webinars/api/views.py` |
-| Node first-party proxy, incl. `/webinar-api/calendar.ics` rewrite and allowlisted `my-registration` projection (nested `thankYou`/`calendar` keys; web calendar links must match the exact service endpoint, else `null`) | `sdk/proxy/server.js`; [browser-integration.md](browser-integration.md) |
-| Browser SDK (GTM, consent, attribution, SPA `init`); thank-you state shows the ICS link plus validated Google/Outlook/Microsoft 365 links (text-only, new tab, `noopener noreferrer`, accessible label) | `webinars/static/webinar-sdk/webinar-form.js` (`_renderCalendar`, `calendarWebLinks`) |
-| Management REST API (`content_write`, `attendance_write`; `publication` for visibility changes and recordings, with 428 + `Webinar-Confirm-Token` and `409 not_ready`); `GET` also accepts `config_read` (B7) | `webinars/api/management.py`; [management-api.md](management-api.md) |
-| Scheduling: reminders, late skip, cancel, reschedule, DST validation, recordings | `webinars/scheduling.py`, `timeutils.py` |
-| Signed outbox webhooks, retries, dead letters (admin requeue), SSRF policy, send-time re-filtering | `webinars/outbox.py`, `delivery.py`, `ssrf.py`; [webhooks.md](webhooks.md) |
-| Hosted waiting room `/w/<code>/`, check-in, finalization | `webinars/waiting_room*.py`; [waiting-room.md](waiting-room.md) |
+| Public read API, registration, idempotency, dedupe, progressive profile, reset, same-origin direct endpoints | `webinars/api/views.py`, `queries.py`, `registration.py`, `identity.py`; [api-reference.md](api-reference.md) |
+| Node first-party proxy with allowlisted projections and ICS rewrite | `sdk/proxy/server.js`; [browser-integration.md](browser-integration.md) |
+| Browser SDK (GTM, consent, attribution, SPA `init`, ICS + validated web calendar links, `payment_required` / `verification_required` handling) | `webinars/static/webinar-sdk/webinar-form.js` |
+| Management REST API with confirmation-token publication gates; `config_read` GET | `webinars/api/management.py`; [management-api.md](management-api.md) |
+| Scheduling, reminders, DST validation, recordings | `webinars/scheduling.py`, `timeutils.py` |
+| Signed outbox webhooks, retries, dead letters, SSRF policy, per-destination host pinning | `webinars/outbox.py`, `delivery.py`, `ssrf.py`; [webhooks.md](webhooks.md) |
+| Hosted waiting room, mailbox verification, check-in, finalization | `webinars/waiting_room*.py`; [waiting-room.md](waiting-room.md) |
 | Operational SMTP (room codes, invitations only) | `webinars/mail.py`; [email.md](email.md) |
-| Publication readiness (`services.publish_problems`) on every publish path: studio, REST, MCP and Django `/admin/`. In admin, `AdminEventForm` checks the submitted event, and `OccurrenceInlineFormSet` re-checks the upcoming-session rule on the sessions as submitted in the same POST (closes review F1) | `webinars/services.py`, `admin.py`, `api/management.py`, `mcp_config.py` |
-| `my-registration` rate limit: always on the direct route; on `/api/v1/my-registration` (proxy target) only when `RATE_LIMIT_TRUST_X_FORWARDED_FOR` is on (review F3) | `webinars/api/views.py` `_my_registration_within_limit` |
-| Calendar: configurable event page URL in ICS (`PUBLIC_EVENT_URL_TEMPLATE`, system check `webinars.E101`); Google/Outlook/Microsoft 365 links in public occurrences (`calendarLinks`) and registration responses; join links stay private | `webinars/calendar_links.py`, `ics.py`, `apps.py`, `registration.py` |
-| Studio, Django admin, roles, audit, `purge_personal_data` (persons, attribution, org IDs, capabilities, queued and in-flight payloads) | `webinars/studio/`, `admin.py`, `roles.py`, `management/commands/purge_personal_data.py` |
-| MCP `/mcp`: content, publication (gated), attendance, reporting, redacted readiness, destinations and synthetic test send (gated), bounded key delegation, Editor/Analyst team management (gated), resources (incl. packaged `webinar://guides/implementation-guide`), prompts | `webinars/mcp.py`, `mcp_config.py`, `mcp_resources.py`, `confirmation.py`, `invitations.py`; [mcp.md](mcp.md) |
-| Single-use confirmation tokens (bound to action, key, arguments and state; 10 minutes) | `webinars/confirmation.py`, migration `0007_confirmation_use` |
-| Privileged scopes (`trusted`, `publication`, `delivery_admin`, `keys_admin`, `team_admin`) granted only by a superuser or `manage.py create_api_key` | `webinars/services.py` `PRIVILEGED_SCOPES` |
-| Native adapters: PostHog, Customer.io, HubSpot, Attio on the bounded vendor-host-pinned transport, with data-processing and match-strategy confirmations and per-step consent re-checks | `webinars/native_integrations.py`, `delivery.py`, `ssrf.request_json_bounded`; [native-integrations.md](native-integrations.md). **Vendor contracts unverified; not production-ready (B3).** |
+| Publication readiness on studio, REST, MCP and Django admin (incl. same-POST inline sessions) | `webinars/services.py`, `admin.py` |
+| Studio, admin, roles, audit, `purge_personal_data` | `webinars/studio/`, `admin.py`, `roles.py` |
+| MCP `/mcp` incl. ticket/hosting parity tools (gated where they mutate) | `webinars/mcp.py`, `mcp_config.py`; [mcp.md](mcp.md) |
+| Ten native adapters: PostHog, Customer.io, HubSpot, Attio, Segment, GA4, Amplitude, Mixpanel, RudderStack, Brevo. Multi-step sends stop if destination config changes mid-send (2026-10-26 fix). **Mock-tested only** | `webinars/native_integrations.py`, `delivery.py`; [native-integrations.md](native-integrations.md) |
+| Capacity and Stripe Checkout tickets with mailbox verification before holds. **Stripe mocked only** | `webinars/capacity.py`, `payments.py`, `api/tickets.py`; [tickets.md](tickets.md) |
+| Hosting: Zoom create/update/attach; Wistia, Sequel create; Riverside attach + per-registrant links; StreamYard manual link; operation reconciliation. **No adapter sandbox-verified** | `webinars/hosting/`, `api/hosting.py`; [hosting.md](hosting.md) |
+| Website kits: WordPress plugin, framework/headless/proxy references, no-code and CMS schema references. Invariant tests pass; **not run against real WordPress, frameworks or CMSs** | `sdk/kits/`; [kits.md](kits.md) |
 
 ## 2. Release blockers
 
-These must be closed or explicitly accepted by the owner before any production use.
-[release-checklist.md](release-checklist.md) turns each into a checkable step.
+Must be closed or explicitly accepted by the owner before production use.
 
-| # | Blocker | Owner |
-|---|---|---|
-| B1 | **Re-run evidence after any later change.** [validation.md](validation.md) records 803 PostgreSQL 15 passes, Ruff, `manage.py check`, `makemigrations --check`, SDK/proxy tests and actual-app Chromium 12/12 for the tree as of 18:23Z (review fixes F1–F3 and the SDK web calendar links included). Any code change after that, including the in-progress operational-settings change (`config/settings.py`, `.env.example`, `tests/test_operational_settings.py`), is unverified until a new run is recorded. The mocked-backend SDK Chromium run (`tests/browser-sdk.cjs`, last recorded 8/8 in an earlier wave) is not recorded after the SDK calendar change, and no browser test exercises the new web links (unit tests only). | Pi / release validator |
-| B2 | **Image provenance and runtime.** The latest archive is `artifacts/pi-build-df010e6b-a961-4760-9f52-ee0b8b069d7d/image.tar`. validation.md records no SHA-256 for it, and it has never been loaded, run, Compose-started or smoke-tested. Rebuild after any B1 change and record the digest. | Pi |
-| B3 | **Native adapters must stay disabled** until each vendor's request shapes are checked against current official docs and in an owner-approved sandbox (HubSpot 409 on email collision, Attio `matching_attribute` and list-entry semantics, PostHog dedupe, Customer.io event dedupe). Vendor writes are never recalled, and there is no vendor-side erasure propagation. | Owner |
-| B4 | **Human publication authority is an accepted policy, not a gate.** Staff with `change_event` (Editors and Administrators) publish in the studio and in Django `/admin/` without confirmation tokens. The readiness check is enforced on all paths, including same-POST inline session edits in admin. Residuals: a session *added* inline in the publishing POST fails closed (save as draft first), and a concurrent cancel/reschedule between validation and save can still leave a just-published event without an upcoming session (same window as REST/MCP; post-publish cancellation is allowed anyway). A `team_admin` key can invite Editors, so it is at least as powerful as `content_write` + `publication`. The owner must accept this. | Owner |
-| B5 | **Confirmation tokens are not human approval.** They prove the same key asked twice. Any process that needs a human sign-off must add it outside the platform. | Owner |
-| B6 | **Edge controls** (§3): TLS, edge rate limits, MFA/SSO/VPN for `/admin/` and `/studio/`. The platform has per-process limits only. `/api/v1/my-registration` behind the Node proxy has **no** backend limit unless `RATE_LIMIT_TRUST_X_FORWARDED_FOR` is on with a correctly configured trusted proxy, so the edge must limit the proxy's `my-registration` route. | Operator |
-| B7 | **`config_read` reads drafts over REST.** The read-only management scope reuses `config_read`, so existing `config_read` keys can read unpublished event copy and `internalName` (never links or person data). The owner must accept this or ask for a dedicated `content_read` scope ([continuation-api.md §5.1](continuation-api.md)); none exists in the code. | Owner |
-| B8 | **Direct-mode calendar link changed.** `WEBINAR_DIRECT_ICS_REWRITE` defaults to true, so direct registrations link `/webinar-api/calendar.ics`. Mode B edges built from the earlier guide (forwarding only `profile`, `registrations`, `reset`) must add that path (and `my-registration` if used) or set the flag to false ([implementation-guide.md §5.1](implementation-guide.md#51-choose-a-proxy-mode)). | Operator |
-| B9 | **Web calendar deep links are unverified against the live services.** Google/Outlook/Microsoft 365 URL formats are tested only for shape. The endpoint origin/path is duplicated in `webinars/calendar_links.py`, `sdk/proxy/server.js` and the SDK, so a change to one must be made in all three or links are silently dropped (`null`). Verifying against the live services needs owner approval (external calls). | Owner |
+### 2a. Evidence on the exact release tree and image (Pi can do locally)
 
-## 3. External release gates (no code change expected; must be done and recorded)
+| # | Blocker |
+|---|---|
+| R1 | **Closed for source verification, 2026-10-26:** Python3.12.15/PostgreSQL16.15 passes 1,274 tests plus logical/application restore, decryption, wrong-key rejection and authenticated admin request. Built-image runtime proof remains outstanding (R2). |
+| R2 | **Image digest and runtime.** Record the SHA-256 of the d49e1bea archive (or of a rebuild), then load it and run the Compose smoke test (`compose.yaml`, `postgres:16-alpine`): migrate, `sync_roles`, `create_api_key`, web and worker healthchecks, `/healthz`, studio login, OpenAPI, `/mcp`. Never done for any image. |
+| R3 | **Rerun SDK/kit tests, actual-app Chromium and mocked-backend SDK Chromium** on the release tree; add browser scenarios for web calendar links and the paid / verification-required SDK states (unit tests only today). |
+| R4 | **Base-image digest pins.** `Dockerfile` `PYTHON_IMAGE` and `compose.yaml` Postgres are still tags. Resolve, pin, rebuild. |
+| R5 | **`pip-audit` on the release lock**, and record findings. |
+| R6 | **Local operational rehearsals:** retention dry run, local webhook receiver contract (`examples/verify_webhook.py`: valid, tampered, stale, duplicate), `nginx -t` on `docker/nginx.conf.example` (untested). |
 
-- Built-image runtime and Compose smoke test (`compose.yaml` targets `postgres:16-alpine`);
-  a PostgreSQL 16 test run (all evidence so far is PostgreSQL 15; `tests/run-pg.sh`
-  hard-codes cluster 15).
-- TLS termination, edge rate limits (`/webinar-api/*` incl. `my-registration`, `/w/`,
-  `/mcp`, `/admin/`, `/studio/login/`), MFA, SSO or a VPN in front of `/admin/` and
-  `/studio/`. `docker/nginx.conf.example` is untested.
-- Pinning base images by digest (`Dockerfile` `PYTHON_IMAGE`, `compose.yaml` Postgres);
-  a hash-locked transitive dependency set (`requirements.txt` has direct pins only, not
-  verified against PyPI per its header) and a vulnerability review, including Pillow.
-- Backup **and restore** rehearsal; storing `INTEGRATION_MASTER_KEY` outside backups.
-- A real SMTP relay test (if waiting-room email verification or invitations are used).
-- Real webhook receivers: signature, replay and dedupe check against `examples/verify_webhook.py`.
-- Vendor sandbox checks before enabling any native adapter (owner approval required; B3).
-- A host or server to run on. Provisioning is the operator's job; the platform and MCP
-  provide instructions only.
-- A cron or scheduler for `purge_personal_data` retention runs.
-- Existing deployments: migrate and run `sync_roles`.
-- The launch acceptance checks in [implementation-guide.md §11.1](implementation-guide.md#111-launch-acceptance-run-on-staging-record-results-in-validationmd).
+### 2b. Known code defects and gaps still open
 
-## 4. Known residual behaviour (accepted or documented, not blockers)
+| # | Blocker |
+|---|---|
+| R7 | **Closed: review finding disproven.** Delivery metadata is always retained by the outbox, and delivery serialization restores the delivery ID. Regression coverage confirms it survives omission from destination groups; no extra enable-time restriction is needed. |
+| R8 | **Closed:** studio previews now show bounded refusal codes and guidance without exposing exception text, secrets or personal data. PostgreSQL15 and PostgreSQL16 suites pass after this fix (1,253 tests each). |
+| R9 | **Closed in source:** REST, studio and MCP now expose stalled-registrant reconciliation with scoped authorization, private-link redaction, state-bound confirmation and an attempt fence under the service row lock. 1,274 PostgreSQL15 tests pass; no live Riverside account verification. |
+| R10 | **Closed:** enabled attached Riverside sessions can open without a shared link. Admission requires a valid personal link bound to the current provider account and event. Migration0010 leaves legacy links unbound: operators must reconcile them; no blind backfill. 1,320 PG16/Python3.12 tests pass. |
+
+### 2c. Vendor contracts (owner accounts required)
+
+| # | Blocker |
+|---|---|
+| R11 | **Native adapters stay disabled** until each is checked in an owner-approved sandbox: HubSpot (409 on email collision), Attio (`matching_attribute`, list entries), PostHog and Customer.io dedupe, Segment, GA4, Amplitude, Mixpanel, RudderStack (auth ambiguity, regional hosts) and Brevo (contacts may become campaign-eligible under vendor defaults; event retries may duplicate automation triggers). Vendor writes are never recalled; no vendor-side erasure. |
+| R12 | **Stripe test mode** for the full paid flow: Checkout create, `expires_at` minimum, idempotency replay, expire endpoint, all five webhook events, refunds and disputes. Mocked only. |
+| R13 | **Hosting provider sandboxes:** Zoom Webinars, Wistia Webinars, Sequel, Riverside (endpoint paths are our best reading). |
+| R14 | **Real SMTP relay** — required, not optional, if paid tickets are sold (mailbox verification) or invitations / room codes are used. |
+| R15 | **Real webhook receiver(s)** the owner will use. |
+| R16 | **Kit compatibility:** install the WordPress plugin on a real WordPress ≥ 6.3 / PHP ≥ 7.4 site (incl. subdirectory install, caching plugin), and exercise at least the frameworks the owner will ship (Next.js self-hosted and Vercel, Astro, Nuxt, SvelteKit). Webflow/Framer reverse-proxy feasibility, Astro middleware, Nuxt `routeRules`, Payload 2 vs 3, Prismic Slice Machine and Contentful CLI formats are unverified. |
+| R17 | **Web calendar deep links** (Google/Outlook/Microsoft 365) against the live services, or accept unverified. The endpoint is duplicated in `calendar_links.py`, `sdk/proxy/server.js` and the SDK. |
+
+### 2d. Owner policy acceptances
+
+| # | Decision |
+|---|---|
+| R18 | Staff publish without confirmation tokens; admin inline-add fails closed; residual cancel/reschedule race; `team_admin` ≥ `content_write` + `publication`. |
+| R19 | Confirmation tokens are not human approval. |
+| R20 | `config_read` reads drafts over REST, or request a `content_read` scope (none exists). |
+| R21 | Direct-mode ICS rewrite default: Mode B edges must forward `/webinar-api/calendar.ics` (and `my-registration`) or set `WEBINAR_DIRECT_ICS_REWRITE=false`. |
+| R22 | Paid sessions require the waiting room and mail; join links sent to webhook destinations before a refund cannot be recalled. |
+| R23 | Residual behaviour in §5. |
+
+## 3. Operational gates (target environment; operator/owner)
+
+- A production host (the demo droplet runs the old backend without a worker; it is a demo,
+  not a release target unless the owner says so). Provisioning is the operator's job.
+- TLS, HTTP→HTTPS redirect, edge rate limits on `/webinar-api/*` (incl. the proxy's
+  `my-registration`), `/w/`, `/mcp`, `/admin/`, `/studio/login/`, `/api/v1/payments/stripe/webhook`;
+  MFA/SSO/VPN in front of `/admin/` and `/studio/`. Platform limits are per-process only.
+- `RATE_LIMIT_TRUST_X_FORWARDED_FOR` only behind a trusted proxy chain of the configured depth.
+- `INTEGRATION_MASTER_KEY` stored outside backups; scheduled `pg_dump`; a restore drill on
+  the target host (the synthetic PG16 probe is not a production-volume drill).
+- Worker process running (outbox, reminders, Stripe sweep, hosting sweep, stale operations).
+- `WEBHOOK_HOST_ALLOWLIST` entries for every enabled vendor, Stripe and hosting host; https
+  `PUBLIC_BASE_URL`; `PUBLIC_EVENT_URL_TEMPLATE`; `manage.py check` on every deploy.
+- Stripe webhook endpoint registered with the five events in [tickets.md](tickets.md).
+- Cron for `purge_personal_data`.
+- Existing deployments: `migrate` (0008, 0009 are new), then `sync_roles`.
+- Launch acceptance in [implementation-guide.md §11.1](implementation-guide.md#111-launch-acceptance-run-on-staging-record-results-in-validationmd) on staging.
+- Upgrading the live demo backend to the current tree is separate owner-approved work.
+
+## 4. Requested feature backlog (owner asked for these; not yet built)
+
+These are part of the requested scope (CONTINUITY "full scope still OPEN"), not optional.
+
+| Item | State |
+|---|---|
+| Further CRM / marketing-automation / transactional-email native adapters (Salesforce, Pipedrive, other marketing-automation beyond Brevo, transactional email) | Not built. [native-integrations.md](native-integrations.md) lists them as the next wave. Signed webhooks are the interim path. |
+| Riverside registrant reconciliation route (REST, studio, MCP) | Implemented and regression-tested; live-provider verification remains required. |
+| Provider attendance import (Zoom, Wistia, Sequel, Riverside) | Not built. |
+| Hosting update for Wistia/Sequel; Riverside create | Not built (Riverside create is undocumented by the vendor). |
+| Live demo backend upgrade to the current tree | Not done; frontend already advertises the features. |
+
+## 5. Known residual behaviour (accepted or documented, not blockers)
 
 | Item | Notes |
 |---|---|
-| Proxy `POST /webinar-api/registrations` 2xx body | Passed through apart from the `icsUrl` rewrite; only the SDK validates web calendar links on that path. Direct (no proxy) mode relies on the SDK check alone. |
-| Thank-you `redirectUrl` in proxy projection | Any https URL (backend-validated); the proxy does not strip credentials from it. |
-| "Recognized" oracle | `/profile` and `my-registration` reveal whether the browser holds a real capability. A browser that just registered with an email that already existed gets `registered:false` from `my-registration` although registration returned 201. Changing this is an identity design change. |
-| `PUBLIC_EVENT_URL_TEMPLATE` check timing | System check `webinars.E101` does not run at Gunicorn start; a bad template logs one warning and falls back safely. Run `manage.py check` on deploy. |
-| Rate limits | Per-process (LocMemCache), not global. |
+| Proxy `POST /webinar-api/registrations` 2xx body | Passed through apart from the `icsUrl` rewrite. |
+| Thank-you `redirectUrl` | Any https URL; the proxy does not strip credentials. |
+| "Recognized" oracle | `/profile` and `my-registration` reveal whether the browser holds a real capability. |
+| `PUBLIC_EVENT_URL_TEMPLATE` check | `webinars.E101` does not run at Gunicorn start; run `manage.py check`. |
+| Rate limits | Per-process, not global. |
+| Stripe key rotation | Refused while orders are open. |
 
-## 5. Not implemented (wish list, no commitment)
-
-Custom work on your site or receiver can cover most of these; the guide says where.
+## 6. Optional / not planned (no commitment)
 
 | Item | Notes / workaround |
 |---|---|
-| `/lobby/<event-slug>` route | Only `/w/<code>/` exists. Resolve on your server using REST management `waitingRoom.url` (needs `content_write`; `config_read` gets `null` by design) or a mapping built from webhook `managedRoomUrl`. |
-| Dedicated `content_read` scope | Optional alternative to B7; patch described in [continuation-api.md §5.1](continuation-api.md). Not applied. |
-| SDK use of `my-registration` | The SDK renders ICS and web calendar links from the registration response but never calls `my-registration`; sites wire that themselves. |
-| Web calendar links following reschedules | They add a copy; only the ICS `UID`/`SEQUENCE` updates an existing entry. |
-| Mounting the waiting room under another prefix | Templates hard-code `/w/<code>/…`. |
-| Content-change webhooks | For CDN/ISR revalidation. Use time-based revalidation. |
-| Vendor-side erasure propagation; "send test to a chosen record" for native destinations | Native test sends are cancelled with `native_test_send_unsupported`. |
-| Global (cross-process) rate limiting; built-in TLS/MFA | Edge responsibility. |
-| Env-configurable `RATE_LIMIT_TRUSTED_PROXY_COUNT`, platform-wide waiting-room caps, `WEBHOOK_TOTAL_TIMEOUT_SECONDS` | Read via settings with code defaults; not environment variables (`WAITING_ROOM_MAX_CODE_ATTEMPTS` and `WAITING_ROOM_MAX_CODES_PER_EMAIL` already are). A change is in progress; update this row only when [validation.md](validation.md) records it passing. |
-| Built-in retention scheduler | Use cron. |
-| MCP over SSE/sessions/subscriptions, stdio transport | Stateless JSON over HTTP only. |
-| Over MCP: writing environment settings, provisioning hosts, managing Administrators or superusers, returning secrets, join links, invitation links or registrant PII | Excluded by design per [mcp.md](mcp.md). |
+| `/lobby/<event-slug>` route | Use REST `waitingRoom.url` or webhook `managedRoomUrl`. |
+| Dedicated `content_read` scope | Alternative to R20; [continuation-api.md §5.1](continuation-api.md). |
+| SDK calling `my-registration` | Sites wire it themselves. |
+| Web calendar links following reschedules | Only ICS `UID`/`SEQUENCE` updates. |
+| Waiting room under another prefix | Templates hard-code `/w/<code>/`. |
+| Content-change webhooks | Use time-based revalidation. |
+| Vendor-side erasure; native "send test to a chosen record" | Test sends cancel with `native_test_send_unsupported`. |
+| Automated refunds, coupons, taxes, subscriptions, quantity > 1, Connect | [tickets.md](tickets.md) "Not supported". |
+| Teams, Google Meet hosting | Not supported. |
+| Global rate limiting, built-in TLS/MFA, built-in retention scheduler | Edge / cron. |
+| MCP SSE/sessions/stdio | Stateless JSON over HTTP. |
+| Over MCP: environment settings, host provisioning, Administrators/superusers, secrets, join/invitation links, registrant PII | Excluded by design ([mcp.md](mcp.md)). |
 
-## 6. Out of scope by design (do not build)
+## 7. Out of scope by design (do not build)
 
-These are explicit responsibilities of other systems under the approved scope
-(`SPEC.md`), not gaps:
-
-- Streaming, video hosting, recording hosting, gating or view tracking: the media
-  provider's job. Check-in measures admission, not viewing.
-- Attendee confirmation, reminder and follow-up email, and any SMS sending: done by your
-  ESP or automation via webhooks. The platform stores SMS consent and withdrawal
-  evidence only.
-- Cross-device recognition and account recovery: not supported until verification
-  exists ([security.md](security.md)).
+- Streaming, video/recording hosting, gating or view tracking. Check-in measures admission.
+- Attendee confirmation/reminder/follow-up email and SMS sending (ESP via webhooks; SMS
+  consent evidence only).
+- Cross-device recognition and account recovery ([security.md](security.md)).
 - Multi-tenancy.

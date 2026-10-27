@@ -619,6 +619,31 @@ synthetic test send (`send_test_delivery`, `delivery_admin`) exist and are gated
 Process settings stay in `.env` and need a restart. Anything that `mcp.md`
 marks as instructions-only, not implemented or in progress is not available.
 
+Tickets and hosting tools mirror the REST management routes and are gated where they
+mutate: `payments_admin` (Stripe account with set-only secrets, prices, orders,
+`mark_order_refunded` to record a refund already made in Stripe, `release_unpaid_order`),
+`hosting_admin` (hosting accounts with set-only credentials) and `hosting_provision`
+(execute, reconcile, manual links). These scopes are superuser/owner-granted only. No
+tool moves money. Guides: `webinar://guides/tickets`, `webinar://guides/hosting`,
+`webinar://guides/kits`.
+
+### 10.1 Paid sessions and hosting [Supported] [Unverified]
+
+- **Paid seats need mailbox proof.** For a paid session, `POST /registrations` answers
+  `202 verification_required` until the buyer has verified the mailbox with a
+  waiting-room code; a registered cookie alone is not enough. Enable the session's
+  waiting room and configure SMTP (or preview) mail, otherwise `verification.available`
+  is `false` and nobody can buy. Details: [tickets.md](tickets.md).
+- Seats are held atomically and kept until Stripe confirms payment or checkout expiry.
+  Show or hide the remaining count per session (`showRemaining`).
+- Refunds are never automated: refund in Stripe, then record it. A Stripe refund or
+  dispute blocks admission.
+- Hosting ([hosting.md](hosting.md)): Zoom Webinars create/update/attach; Wistia and Sequel
+  create only; Riverside attach with per-registrant links (paths unverified). No adapter is
+  sandbox-verified, and none imports attendance.
+- Website kits ([kits.md](kits.md)) are not production-tested; WordPress and framework
+  compatibility is unverified.
+
 ---
 
 ## 11. Operations

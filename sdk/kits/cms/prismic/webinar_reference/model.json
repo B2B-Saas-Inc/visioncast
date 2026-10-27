@@ -1,0 +1,27 @@
+{
+  "id": "webinar_reference",
+  "type": "SharedSlice",
+  "name": "WebinarReference",
+  "description": "Reference to a platform webinar. Data is loaded live; validate values at render (Prismic Text fields have no pattern validation).",
+  "variations": [
+    {
+      "id": "default",
+      "name": "Default",
+      "docURL": "...",
+      "version": "initial",
+      "description": "Next open session, or a pinned session",
+      "imageUrl": "",
+      "primary": {
+        "event_slug": {
+          "type": "Text",
+          "config": { "label": "Event slug", "placeholder": "q3-product-update" }
+        },
+        "occurrence_id": {
+          "type": "Text",
+          "config": { "label": "Pinned session UUID (optional)", "placeholder": "Blank = next open session" }
+        }
+      },
+      "items": {}
+    }
+  ]
+}

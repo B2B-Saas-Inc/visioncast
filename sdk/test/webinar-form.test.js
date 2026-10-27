@@ -2,7 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const sdk = require('../src/webinar-form.js');
+// The canonical SDK (there is no sdk/src copy).
+const sdk = require('../../webinars/static/webinar-sdk/webinar-form.js');
 
 const i = sdk._internal;
 const NONE = { analytics: false, advertising: false };
@@ -414,4 +415,96 @@ test('resolveFieldName', () => {
   assert.equal(i.resolveFieldName('fname'), null);
   assert.equal(i.fieldKey(i.resolveFieldName('custom.topic')), 'custom.topic');
   assert.equal(i.fieldKey(i.resolveFieldName('consents.sms')), null);
+});
+
+// Paid sessions (docs/tickets.md): 202 payment_required is not a confirmation.
+test('checkoutUrl: https on the Stripe Checkout host only', () => {
+  assert.equal(i.checkoutUrl('https://checkout.stripe.com/c/pay/cs_test_1'), 'https://checkout.stripe.com/c/pay/cs_test_1');
+  for (const bad of ['http://checkout.stripe.com/c', 'https://checkout.stripe.com.evil.example/c', 'https://evil.example/c',
+    'https://user@checkout.stripe.com/c', 'https://checkout.stripe.com:8443/c', 'javascript:alert(1)', '', null, 42]) {
+    assert.equal(i.checkoutUrl(bad), null, String(bad));
+  }
+});
+
+function paymentController() {
+  const ctl = Object.create(i.FormController.prototype);
+  const state = {};
+  Object.assign(ctl, {
+    messages: Object.assign({}, i.DEFAULT_MESSAGES),
+    form: { setAttribute(k, v) { state[k] = v; } },
+    _status(text) { state.status = text; },
+    _onSuccess() { state.success = true; },
+  });
+  return { ctl, state };
+}
+
+test('payment_required redirects to checkout and never shows a confirmation', () => {
+  const { ctl, state } = paymentController();
+  const assigned = [];
+  const prev = globalThis.location;
+  globalThis.location = { href: 'https://www.example.com/w', assign: (u) => assigned.push(u) };
+  try {
+    const out = ctl._onPaymentRequired({ status: 'payment_required', order: { id: 'o', checkoutUrl: 'https://checkout.stripe.com/c/pay/cs_1' } });
+    assert.equal(out, 'payment_required');
+    assert.deepEqual(assigned, ['https://checkout.stripe.com/c/pay/cs_1']);
+    assert.equal(state['data-webinar-state'], 'payment-required');
+    assert.notEqual(state.status, i.DEFAULT_MESSAGES.success);
+    assert.equal(state.success, undefined);
+    // Unsafe or missing checkout link: no navigation, "preparing" message, still no confirmation.
+    assigned.length = 0;
+    ctl._onPaymentRequired({ status: 'payment_required', order: { checkoutUrl: 'https://evil.example/pay' } });
+    assert.deepEqual(assigned, []);
+    assert.equal(state.status, i.DEFAULT_MESSAGES.paymentPreparing);
+  } finally {
+    globalThis.location = prev;
+  }
+});
+
+test('paid error codes map to specific messages; unknown codes keep status mapping', () => {
+  const msgs = Object.assign({}, i.DEFAULT_MESSAGES);
+  assert.equal(i.messageForStatus(409, msgs, { error: { code: 'sold_out' } }), msgs.soldOut);
+  assert.equal(i.messageForStatus(409, msgs, { error: { code: 'checkout_in_progress' } }), msgs.checkoutInProgress);
+  assert.equal(i.messageForStatus(503, msgs, { error: { code: 'payments_unavailable' } }), msgs.paymentsUnavailable);
+  assert.equal(i.messageForStatus(502, msgs, { error: { code: 'checkout_failed' } }), msgs.checkoutFailed);
+  assert.equal(i.messageForStatus(409, msgs, { error: { code: 'something_else' } }), msgs.conflict);
+  assert.equal(i.messageForStatus(409, msgs, { error: { code: 'sold_out', message: 'Server text' } }), msgs.soldOut);
+});
+
+test('checkout_failed and order_closed rotate the idempotency key; other errors keep it', () => {
+  assert.equal(i.closesOrder({ error: { code: 'checkout_failed' } }), true);
+  assert.equal(i.closesOrder({ error: { code: 'order_closed' } }), true);
+  for (const body of [{ error: { code: 'sold_out' } }, { error: { code: 'checkout_in_progress' } }, { error: 'x' }, null, {}]) {
+    assert.equal(i.closesOrder(body), false, JSON.stringify(body));
+  }
+});
+
+test('verifyUrl: https waiting-room path only', () => {
+  assert.equal(i.verifyUrl('https://webinars.example.com/w/abc_12-x/'), 'https://webinars.example.com/w/abc_12-x/');
+  for (const bad of ['http://webinars.example.com/w/abc/', 'https://evil.example/pay', 'https://x.example/w/abc/?next=1',
+    'https://u@x.example/w/abc/', 'https://x.example:8443/w/abc/', 'https://x.example/w/../admin/', 'javascript:alert(1)', '', null]) {
+    assert.equal(i.verifyUrl(bad), null, String(bad));
+  }
+});
+
+test('verification_required redirects to the email check and never confirms or checks out', () => {
+  const { ctl, state } = paymentController();
+  const assigned = [];
+  const prev = globalThis.location;
+  globalThis.location = { href: 'https://www.example.com/w', assign: (u) => assigned.push(u) };
+  try {
+    const url = 'https://webinars.example.com/w/room1/';
+    const out = ctl._onVerificationRequired({ status: 'verification_required', verification: { available: true, verifyUrl: url } });
+    assert.equal(out, 'verification_required');
+    assert.deepEqual(assigned, [url]);
+    assert.equal(state['data-webinar-state'], 'verification-required');
+    assert.equal(state.success, undefined);
+    assigned.length = 0;
+    ctl._onVerificationRequired({ status: 'verification_required', verification: { available: false, verifyUrl: null } });
+    assert.deepEqual(assigned, []);
+    assert.equal(state.status, i.DEFAULT_MESSAGES.verificationUnavailable);
+    ctl._onVerificationRequired({ status: 'verification_required', verification: { available: true, verifyUrl: 'https://evil.example/x' } });
+    assert.deepEqual(assigned, []);
+  } finally {
+    globalThis.location = prev;
+  }
 });

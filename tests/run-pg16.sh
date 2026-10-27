@@ -12,6 +12,11 @@ apt-get install -y -qq ca-certificates python3 python3-venv >/tmp/apt-python.log
 python3 -m venv /tmp/testenv
 export PATH=/tmp/testenv/bin:/usr/lib/postgresql/16/bin:$PATH
 pip install -q uv
+# Test the application's production Python series, not Debian's bootstrap Python.
+uv python install 3.12
+uv venv --python 3.12 /tmp/appenv
+export PATH=/tmp/appenv/bin:$PATH
+python -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
 install -d -o postgres -g postgres /tmp/webinar-pg
 runuser -u postgres -- initdb -D /tmp/webinar-pg --auth=trust >/tmp/initdb.log
 runuser -u postgres -- pg_ctl -D /tmp/webinar-pg -l /tmp/pg.log -o '-h 127.0.0.1' start >/dev/null
@@ -22,7 +27,9 @@ uv pip install -r requirements-dev.txt >/tmp/deps.log 2>&1
 export DJANGO_SECRET_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(64))')
 export INTEGRATION_MASTER_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= POSTGRES_HOST=127.0.0.1 POSTGRES_PASSWORD=disposable-test DJANGO_ALLOWED_HOSTS=localhost PUBLIC_BASE_URL=https://webinars.example.com
 python manage.py migrate --noinput >artifacts/pg16-migrate.log 2>&1
-python manage.py check >artifacts/pg16-checks.log 2>&1
+python --version >artifacts/pg16-checks.log
+postgres --version >>artifacts/pg16-checks.log
+python manage.py check >>artifacts/pg16-checks.log 2>&1
 python manage.py makemigrations --check --dry-run >>artifacts/pg16-checks.log 2>&1
 python manage.py collectstatic --noinput >/tmp/static.log 2>&1
 python -m pytest -q >artifacts/pg16-tests.log 2>&1 || { tail -100 artifacts/pg16-tests.log; exit 1; }

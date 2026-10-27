@@ -24,6 +24,10 @@ LIMITS = {
     "mcp_key": (300, 60),  # per API key (ratelimit.hit_key), across client addresses
     "invite_accept": (20, 600),
     "studio_login": (20, 600),
+    # New paid seat holds per session (webinars.registration._paid_hold): per browser
+    # client address, and per API key for server-side callers (a proxy serves many people).
+    "paid_hold": (5, 600),
+    "paid_hold_key": (300, 600),
 }
 
 

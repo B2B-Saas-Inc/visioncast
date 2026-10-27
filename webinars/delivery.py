@@ -17,6 +17,7 @@ outcome is recorded resends the same delivery id.
 ``last_error`` only ever contains a short machine-readable reason and the HTTP
 status: never response bodies (receivers may echo PII), payload values or secrets.
 """
+import copy
 import json
 import logging
 import random
@@ -375,23 +376,36 @@ def deliver(message) -> None:
     _record_failure(message, error=f"http_status: {status}", status_code=status)
 
 
-def _native_post(message, url, body, headers):
-    """POST without reading the body. Tests that replace ``post_json_pinned`` keep that seam."""
+# ``_deliver_native`` pins every vendor call to ``native_integrations.allowed_hosts(provider,
+# credentials)``: only the configured provider's exact host. Providers with a per-destination
+# host (RudderStack) stay unsendable unless this is True.
+NATIVE_DESTINATION_HOSTS = True
+
+
+def _native_post(message, url, body, headers, allowed_hosts=None):
+    """POST without reading the body. Tests that replace ``post_json_pinned`` keep that seam.
+
+    ``allowed_hosts`` None means the static ``VENDOR_HOSTS`` (older callers); real delivery
+    passes the destination's own host set, and an empty set refuses every host."""
+    hosts = native_integrations.VENDOR_HOSTS if allowed_hosts is None else allowed_hosts
     if post_json_pinned is not _PINNED:
-        # Same in-process test seam as _send, still restricted to vendor hosts.
+        # Same in-process test seam as _send, still restricted to the allowed hosts.
         from webinars.ssrf import _check_native_request, _validated_target
 
         host = _validated_target(url)[0]
-        _check_native_request("POST", host, headers, native_integrations.VENDOR_HOSTS)
+        _check_native_request("POST", host, headers, hosts)
         status, _snippet = post_json_pinned(url, body, headers, _timeout())
         return status, b"", None
-    return _native_request(message, "POST", url, body, headers)
+    return _native_request(message, "POST", url, body, headers, allowed_hosts=hosts)
 
 
-def _native_request(message, method, url, body, headers):
-    """``(status, raw_body or None when oversized, retry_after)`` via ``ssrf.request_json_bounded``."""
+def _native_request(message, method, url, body, headers, allowed_hosts=None):
+    """``(status, raw_body or None when oversized, retry_after)`` via ``ssrf.request_json_bounded``.
+
+    ``allowed_hosts`` as in ``_native_post``."""
     import webinars.ssrf
 
+    hosts = native_integrations.VENDOR_HOSTS if allowed_hosts is None else allowed_hosts
     request = getattr(webinars.ssrf, "request_json_bounded", None)
     if request is None:
         raise native_integrations.TransportUnavailable()
@@ -406,7 +420,7 @@ def _native_request(message, method, url, body, headers):
         _timeout(),
         total,
         native_integrations.MAX_RESPONSE_BYTES,
-        allowed_hosts=native_integrations.VENDOR_HOSTS,
+        allowed_hosts=hosts,
     )
     return status, (None if truncated else raw), retry_after
 
@@ -415,10 +429,32 @@ def _native_request(message, method, url, body, headers):
 NATIVE_TEST_EVENT_TYPE = "webhook.test"
 
 
-def _native_step_check(message, provider):
+# Destination fields the native plan is built from (body filtering, mapping, links, credentials,
+# host). ``execute`` plans every step up front, so a change to any of these mid-sequence would
+# send stale data; consent/enabled changes are handled separately and keep their own outcomes.
+NATIVE_PLAN_FIELDS = (
+    "url",
+    "kind",
+    "event_types",
+    "allowed_groups",
+    "include_private_links",
+    "field_mapping",
+    "credentials_encrypted",
+)
+
+
+def _native_plan_snapshot(destination):
+    return {name: copy.deepcopy(getattr(destination, name)) for name in NATIVE_PLAN_FIELDS}
+
+
+def _native_step_check(message, provider, snapshot=None):
     """Before each vendor call after the first: re-read the destination and re-run the
     send-time consent/erasure check and native policy. Returns an ``Outcome`` to stop, else None.
-    Writes already made by earlier steps are not recalled."""
+    Writes already made by earlier steps are not recalled.
+
+    ``snapshot`` (from ``_native_plan_snapshot``) is the config the plan was built from; any
+    difference stops with ``native_config_changed_mid_sequence`` instead of sending the old plan.
+    ``_deliver_native`` always passes it; None only skips that comparison (older callers)."""
     fresh = Destination.objects.filter(pk=message.destination_id).first()
     if fresh is None:
         return native_integrations.Outcome("lost_lease")  # row cascaded with the destination
@@ -427,6 +463,9 @@ def _native_step_check(message, provider):
     reason = send_time_block_reason(message, fresh)
     if reason:
         return native_integrations.Outcome("cancelled", f"{reason}_mid_sequence")
+    if snapshot is not None and _native_plan_snapshot(fresh) != snapshot:
+        # Compared as stored: re-saving the same credentials re-encrypts them and also stops here.
+        return native_integrations.Outcome("dead", "native_config_changed_mid_sequence")
     try:
         credentials = native_integrations.load_credentials(fresh)
     except native_integrations.CredentialsUnavailable:
@@ -451,12 +490,16 @@ def _deliver_native(message, destination, provider, credentials):
     if blocked:
         _record_failure(message, error=blocked, dead=True)
         return
+    snapshot = _native_plan_snapshot(destination)
     body = json.loads(serialize_body(message, destination))
+    # Only this destination's configured host; never the whole vendor set (a key for one
+    # provider must not be sent to another). Empty if the config no longer resolves: refuses all.
+    hosts = native_integrations.allowed_hosts(provider, credentials)
     ctx = native_integrations.NativeContext(
-        post=lambda url, data, headers: _native_post(message, url, data, headers),
-        request=lambda method, url, data, headers: _native_request(message, method, url, data, headers),
+        post=lambda url, data, headers: _native_post(message, url, data, headers, allowed_hosts=hosts),
+        request=lambda method, url, data, headers: _native_request(message, method, url, data, headers, allowed_hosts=hosts),
         renew=lambda: renew_lease(message),
-        check=lambda: _native_step_check(message, provider),
+        check=lambda: _native_step_check(message, provider, snapshot),
     )
     outcome = native_integrations.execute(provider, credentials, body, message.event_type, ctx)
     del credentials

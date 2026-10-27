@@ -84,6 +84,148 @@ def _form_op(summary, fields, description, responses):
     }
 
 
+TICKETS_TAG = "Management (tickets)"
+HOSTING_TAG = "Management (hosting)"
+_OBJ = {"type": "object"}
+_S = {"type": "string"}
+_UUID_S = {"type": "string", "format": "uuid"}
+
+
+def _tickets_and_hosting_paths():
+    """Ticket (docs/tickets.md) and hosting-provider (docs/hosting.md) endpoints."""
+    from webinars.api import hosting, tickets
+
+    occ = [_path_param("id", "uuid")]
+    std = _errors(400, 401, 403, 404, 409)
+    hosting_note = ("Provisioning is never automatic: preview, then execute with Webinar-Confirm-Token (428 first). "
+                    "Unknown outcomes stop for reconciliation; external sessions are never deleted. Private join/host "
+                    "links are never returned (hasJoinUrl/hasHostUrl flags only).")
+    return {
+        "/api/v1/payments/stripe/webhook": {"post": {
+            "summary": "Stripe webhook (signature-authenticated)", "tags": ["Tickets"], "security": [],
+            "description": "Stripe-Signature over the raw body (5-minute tolerance), durable event-id dedupe. Fulfils only "
+                           "checkout.session.completed / async_payment_succeeded with payment_status=paid and matching "
+                           "order, session, amount, currency and mode. No API key, cookie or CSRF token.",
+            "requestBody": {"required": True, "content": {"application/json": {"schema": _OBJ}}},
+            "responses": {"200": _json({"type": "object", "properties": {"received": {"type": "boolean"}, "duplicate": {"type": "boolean"}}}),
+                          "400": {"description": "Invalid signature, payload, mode or account"}, "413": {"description": "Too large"}}}},
+        "/api/v1/orders/{id}": {"parameters": occ, "get": _op("Ticket order status", "Tickets", security=[],
+            description="Authorised only by the statusToken returned with payment_required, sent in the Webinar-Order-Token "
+                        "header (never the query string). Uniform 404 otherwise. Never contains personal data.",
+            responses={"200": _json(_ref("TicketOrderStatus")), **_errors(404)})},
+        "/tickets/return": {"get": {"summary": "Checkout return page (HTML; confirms nothing)", "tags": ["Tickets"], "security": [],
+            "responses": {"200": {"description": "HTML", "content": {"text/html": {}}}}}},
+        "/api/v1/manage/payments/account": {
+            "get": _op("Stripe account (redacted)", TICKETS_TAG, security=KEY, description="Scope: payments_admin (superuser-granted).",
+                       responses={"200": _json(_ref("PaymentAccount")), **_errors(401, 403)}),
+            "patch": _op("Configure Stripe (set-only secrets)", TICKETS_TAG, security=KEY, body=tickets.PAYMENT_ACCOUNT_INPUT_SCHEMA,
+                         responses={"200": _json(_ref("PaymentAccount")), **_errors(400, 401, 403)})},
+        "/api/v1/manage/events/{id}/tickets": {"parameters": occ,
+            "get": _op("Event ticket price", TICKETS_TAG, security=KEY, responses={"200": _json(_ref("EventTickets")), **_errors(401, 403, 404)}),
+            "patch": _op("Set event ticket price (payments_admin)", TICKETS_TAG, security=KEY, body=tickets.EVENT_TICKETS_INPUT_SCHEMA,
+                         responses={"200": _json(_ref("EventTickets")), **std})},
+        "/api/v1/manage/occurrences/{id}/tickets": {"parameters": occ,
+            "get": _op("Session seats and price", TICKETS_TAG, security=KEY, description="content_write, payments_admin or config_read (GET).",
+                       responses={"200": _json(_ref("OccurrenceTickets")), **_errors(401, 403, 404)}),
+            "patch": _op("Set capacity (content_write) / price (payments_admin)", TICKETS_TAG, security=KEY,
+                         body=tickets.OCCURRENCE_TICKETS_INPUT_SCHEMA, responses={"200": _json(_ref("OccurrenceTickets")), **std})},
+        "/api/v1/manage/occurrences/{id}/orders": {"parameters": occ, "get": _op("Ticket orders (no personal data)", TICKETS_TAG, security=KEY,
+            responses={"200": _json({"type": "object", "properties": {"occurrenceId": _UUID_S, "counts": _OBJ,
+                                     "results": {"type": "array", "items": _ref("TicketOrderAdmin")}}}), **_errors(401, 403, 404)})},
+        "/api/v1/manage/orders/{id}/mark-refunded": {"parameters": occ, "post": _op("Record a refund made in Stripe", TICKETS_TAG, security=KEY,
+            body=tickets.ORDER_ACTION_INPUT_SCHEMA, description="Bookkeeping only (no money moves); cancels the registration.",
+            responses={"200": _json(_ref("TicketOrderAdmin")), **std})},
+        "/api/v1/manage/orders/{id}/release": {"parameters": occ, "post": _op("Release an unpaid order needing reconciliation", TICKETS_TAG,
+            security=KEY, body=tickets.ORDER_ACTION_INPUT_SCHEMA, description="Only after checking in Stripe that it was not paid.",
+            responses={"200": _json(_ref("TicketOrderAdmin")), **std})},
+        "/api/v1/manage/hosting/providers": {"get": _op("Hosting adapters and capabilities", HOSTING_TAG, security=KEY,
+            description="Scope: hosting_provision or config_read. Distinguishes provisioning capabilities from manual links.",
+            responses={"200": _json({"type": "object", "properties": {"results": {"type": "array", "items": _OBJ}}}), **_errors(401, 403)})},
+        "/api/v1/manage/hosting/accounts": {
+            "get": _op("Hosting accounts (redacted)", HOSTING_TAG, security=KEY,
+                       responses={"200": _json({"type": "object", "properties": {"results": {"type": "array", "items": _ref("HostingAccount")}}}), **_errors(401, 403)}),
+            "post": _op("Connect a hosting account (hosting_admin)", HOSTING_TAG, security=KEY, body=hosting.ACCOUNT_INPUT_SCHEMA,
+                        responses={"201": _json(_ref("HostingAccount")), **_errors(400, 401, 403)})},
+        "/api/v1/manage/hosting/accounts/{id}": {"parameters": occ,
+            "get": _op("Hosting account", HOSTING_TAG, security=KEY, responses={"200": _json(_ref("HostingAccount")), **_errors(401, 403, 404)}),
+            "patch": _op("Update hosting account (set-only credentials)", HOSTING_TAG, security=KEY, body=hosting.ACCOUNT_UPDATE_SCHEMA,
+                         responses={"200": _json(_ref("HostingAccount")), **std})},
+        "/api/v1/manage/occurrences/{id}/hosting": {"parameters": occ, "get": _op("Session provider link state", HOSTING_TAG, security=KEY,
+            description=hosting_note, responses={"200": _json(_ref("HostedSession")), **_errors(401, 403, 404)})},
+        "/api/v1/manage/occurrences/{id}/hosting/preview": {"parameters": occ, "post": _op("Preview a provider action (no side effects)",
+            HOSTING_TAG, security=KEY, body=hosting.PREVIEW_INPUT_SCHEMA,
+            responses={"200": _json({"type": "object", "properties": {"action": _S, "provider": _S, "plans": {"type": "array", "items": _OBJ},
+                                     "problems": {"type": "array", "items": _S}}}), **std})},
+        "/api/v1/manage/occurrences/{id}/hosting/execute": {"parameters": occ, "post": _op("Create / update / attach (confirmed)",
+            HOSTING_TAG, security=KEY, body=hosting.PREVIEW_INPUT_SCHEMA, description=hosting_note,
+            responses={"200": _json(_ref("HostedSession")), "428": _json(CONFIRMATION, "Confirmation required"), **std})},
+        "/api/v1/manage/occurrences/{id}/hosting/reconcile": {"parameters": occ, "post": _op("Resolve an unknown outcome", HOSTING_TAG,
+            security=KEY, body=hosting.RECONCILE_INPUT_SCHEMA, responses={"200": _json(_ref("HostedSession")), **std})},
+        "/api/v1/manage/occurrences/{id}/hosting/registrants": {"parameters": occ, "get": _op(
+            "Stalled Riverside registrants (IDs and state only)", HOSTING_TAG, security=KEY,
+            description="Scope: hosting_provision or config_read. No names, emails or links; no provider call, no writes.",
+            responses={"200": _json({"type": "object", "properties": {"occurrenceId": _UUID_S, "note": _S,
+                                     "results": {"type": "array", "items": _ref("ProviderRegistrant")}}}), **_errors(401, 403, 404)})},
+        "/api/v1/manage/occurrences/{id}/hosting/registrants/reconcile": {
+            "parameters": occ, "post": _op(
+                "Record a Riverside registrant outcome (confirmed)", HOSTING_TAG, security=KEY,
+                body=hosting.REGISTRANT_RECONCILE_INPUT_SCHEMA,
+                description="Scope: hosting_provision. First call returns 428 with a link-free preview and a single-use "
+                            "confirmToken bound to this key, the exact body and the registrant's attempt/state; repeat with "
+                            "Webinar-Confirm-Token. Other-occurrence registration IDs are 404; registrants not in "
+                            "needs_reconciliation or non-Riverside are 409. Nothing is sent to Riverside; joinUrl is set-only.",
+                responses={"200": _json(_ref("ProviderRegistrant")), "428": _json(CONFIRMATION, "Confirmation required"),
+                           **std})},
+        "/api/v1/manage/occurrences/{id}/hosting/manual-link": {"parameters": occ, "post": _op("Manual link (StreamYard; no outbound calls)",
+            HOSTING_TAG, security=KEY, body=hosting.MANUAL_LINK_INPUT_SCHEMA, responses={"200": _json(_ref("HostedSession")), **std})},
+    }
+
+
+def _tickets_and_hosting_schemas():
+    from webinars.api import hosting
+
+    n_int = {"type": ["integer", "null"]}
+    n_str = {"type": ["string", "null"]}
+    return {
+        "TicketOrderStatus": {"type": "object", "properties": {"id": _UUID_S, "status": _S, "registered": {"type": "boolean"},
+            "checkoutUrl": {"type": ["string", "null"], "format": "uri"}, "expiresAt": n_str, "amountMinor": {"type": "integer"},
+            "currency": _S, "statusPath": _S, "statusToken": _S}},
+        "PaymentRequired": {"type": "object", "description": "202 from registration endpoints for a paid session: a seat is held, "
+                            "nothing is registered until Stripe's verified webhook.",
+            "properties": {"status": {"const": "payment_required"}, "order": _ref("TicketOrderStatus")}},
+        "VerificationRequired": {"type": "object", "description": "202 from registration endpoints for a paid session when the "
+                                 "browser has no mailbox-verified identity for the submitted email. Identical for every email "
+                                 "(no lookup result); nothing is held and Stripe is not called. Send the buyer to "
+                                 "verification.verifyUrl (the hosted waiting room, usable any time before the session ends).",
+            "properties": {"status": {"const": "verification_required"}, "occurrenceId": _UUID_S,
+                           "verification": {"type": "object", "properties": {
+                               "available": {"type": "boolean", "description": "false when the session has no waiting room or email delivery is disabled"},
+                               "verifyUrl": {"type": ["string", "null"], "format": "uri"},
+                               "message": _S}}}},
+        "PaymentAccount": {"type": "object", "properties": {"configured": {"type": "boolean"}, "id": _UUID_S, "enabled": {"type": "boolean"},
+            "mode": n_str, "secretKeySet": {"type": "boolean"}, "webhookSecretSet": {"type": "boolean"}, "expectedAccountId": _S,
+            "webhookUrl": _S, "problems": {"type": "array", "items": _S}}},
+        "EventTickets": {"type": "object", "properties": {"eventId": _UUID_S, "priceMinor": n_int, "currency": _S, "display": _S}},
+        "OccurrenceTickets": {"type": "object", "properties": {"occurrenceId": _UUID_S, "capacity": n_int, "showRemaining": {"type": "boolean"},
+            "remaining": n_int, "priceMinor": n_int, "currency": _S, "effectivePrice": {"type": ["object", "null"]},
+            "paymentsAvailable": {"type": "boolean"}, "orderCounts": _OBJ}},
+        "TicketOrderAdmin": {"type": "object", "properties": {"id": _UUID_S, "occurrenceId": _UUID_S, "status": _S, "mode": _S,
+            "amountMinor": {"type": "integer"}, "currency": _S, "display": _S, "registrationId": n_str,
+            "hasCheckoutSession": {"type": "boolean"}, "createdAt": n_str, "holdExpiresAt": n_str, "paidAt": n_str, "lastError": _S}},
+        "HostingAccount": {"type": "object", "properties": {"id": _UUID_S, "provider": _S, "name": _S, "enabled": {"type": "boolean"},
+            "config": _OBJ, "secretsSet": _OBJ, "capabilities": _OBJ, "contract": _S, "warnings": {"type": "array", "items": _S}}},
+        "HostedSession": {"type": "object", "properties": {"provider": n_str, "accountId": n_str, "mode": _S, "state": _S,
+            "externalId": n_str, "hasJoinUrl": {"type": "boolean"}, "hasHostUrl": {"type": "boolean"}, "embedUrlSet": {"type": "boolean"},
+            "lastError": n_str, "lastSyncedAt": n_str, "outOfDate": {"type": "boolean"}, "capabilities": {"type": ["object", "null"]},
+            "contract": n_str, "operations": {"type": "array", "items": _OBJ}}},
+        "ProviderRegistrant": hosting.REGISTRANT_SCHEMA,
+        "Availability": {"type": "object", "description": "Present only when the session has a seat limit.",
+            "properties": {"remaining": {**n_int, "description": "null unless the organiser shows remaining seats"}, "soldOut": {"type": "boolean"}}},
+        "PublicTicket": {"type": "object", "description": "Present only for paid sessions.",
+            "properties": {"amountMinor": {"type": "integer"}, "currency": _S, "display": _S, "available": {"type": "boolean"}}},
+    }
+
+
 def build_spec():
     see_other = {"303": {"description": "See Other (back to the room)"}, "429": {"description": "Rate limited"}}
     paths = {
@@ -106,7 +248,11 @@ def build_spec():
             body={"$ref": "#/components/schemas/RegistrationRequest"},
             responses={"201": _json({"$ref": "#/components/schemas/RegistrationResponse"}, "Registered"),
                        "200": _json({"$ref": "#/components/schemas/RegistrationResponse"}, "Updated"),
-                       **_errors(400, 401, 403, 404, 409, 410, 413, 415)})},
+                       "202": _json({"oneOf": [_ref("PaymentRequired"), _ref("VerificationRequired")]},
+                                    "Paid session: payment_required (seat held, pay at order.checkoutUrl; not registered yet) "
+                                    "or verification_required (confirm the email first; nothing held)"),
+                       "503": _json(ERR, "Paid session but ticket sales are not configured (payments_unavailable)"),
+                       **_errors(400, 401, 403, 404, 409, 410, 413, 415, 429)})},
         "/api/v1/profile": {"get": _op("Progressive-profiling missing fields (proxy key)", "Registration", security=KEY,
             params=PROFILE_QUERY,
             responses={"200": _json(_ref("ProfileStatus")), **_errors(400, 401, 403, 404)})},
@@ -118,7 +264,10 @@ def build_spec():
         "/webinar-api/registrations": {"post": _op("Same-origin registration (cookie)", "Same-origin proxy", security=[],
             description="Requires Origin, JSON content type and X-Webinar-Request: 1 or the X-Webinar-CSRF double-submit header.",
             body={"$ref": "#/components/schemas/RegistrationRequest"},
-            responses={"201": _json({"$ref": "#/components/schemas/RegistrationResponse"}), **_errors(400, 403, 409, 410)})},
+            responses={"201": _json({"$ref": "#/components/schemas/RegistrationResponse"}),
+                       "202": _json({"oneOf": [_ref("PaymentRequired"), _ref("VerificationRequired")]}, "Paid session (body passed through)"),
+                       "502": _json({"type": "object"}, "Upstream 5xx (including payments_unavailable) is reported as bad_gateway"),
+                       **_errors(400, 403, 409, 410)})},
         "/webinar-api/reset": {"post": _op("Same-origin reset", "Same-origin proxy", security=[], responses={"200": _json(_ref("ResetResponse")), **_errors(403)})},
         "/api/v1/my-registration": {"get": _op("Registration status for this browser (proxy key)", "Registration", security=KEY,
             params=OCCURRENCE_QUERY, description="Scope: proxy (the proxy forwards the capability cookie). " + MY_REGISTRATION_NOTE,
@@ -192,6 +341,7 @@ def build_spec():
             body=_ref("FormVersionUpdate"), description="Published form versions are immutable except description and isActive.",
             responses={"200": _json(_ref("ManagedFormVersion")), **_errors(400, 401, 403, 404)})},
     })
+    paths.update(_tickets_and_hosting_paths())
     room = [_path_param("code")]
     paths.update({
         "/w/{code}/": {"parameters": room, "get": {"summary": "Waiting room page (HTML)", "tags": ["Waiting room"],
@@ -207,7 +357,12 @@ def build_spec():
             "get": {"summary": "Confirm page for an emailed link (does not consume)", "tags": ["Waiting room"], "responses": {"200": {"description": "HTML"}, "410": {"description": "Expired or used"}}},
             "post": _form_op("Consume emailed link", [], "Single-use; sets the capability cookie.", {**see_other, "410": {"description": "Expired or used"}})},
         "/w/{code}/register": {"parameters": room, "post": _form_op("Complete registration inside the room", ["idempotency_key", "sms_consent"],
-            "Verified/recognized browsers only; fields are the form's canonical keys and custom.<key>. Late walk-ins allowed until the room ends.", {**see_other, "400": {"description": "Field errors"}})},
+            "Verified/recognized browsers only; fields are the form's canonical keys and custom.<key>. Late walk-ins allowed until the room ends. "
+            "Paid sessions: a mailbox-verified browser gets 303 to Stripe Checkout (any time before the room ends, not only "
+            "after doors open); a recognised but unverified browser gets 202 with the email step (nothing held).",
+            {"303": {"description": "Back to the room, or to Stripe Checkout (paid)"}, "429": {"description": "Rate limited"},
+             "202": {"description": "HTML: confirm your email first (paid), or checkout still being prepared"},
+             "400": {"description": "Field errors"}, "409": {"description": "HTML: sold out / checkout in progress / checkout failed"}})},
         "/w/{code}/enter": {"parameters": room, "post": _form_op("Enter the session", [],
             "When admitted: records one check-in (attendance.checked_in webhook) and returns 303 with the join link in Location only.", {"303": {"description": "To the session (admitted) or back to the room"}})},
         "/w/{code}/reset": {"parameters": room, "post": _form_op("Not you? Forget this browser", [], "Revokes this browser's capability.", see_other)},
@@ -226,7 +381,7 @@ def build_spec():
                                                    "fieldErrors": {"type": "object"}}},
         "PublicOccurrence": {"type": "object", "properties": {"id": {"type": "string", "format": "uuid"}, "startsAt": s, "endsAt": s, "timezone": s,
             "status": s, "registrationOpen": {"type": "boolean"}, "recordingUrl": {"type": ["string", "null"]}, "calendarUrl": s,
-            "calendarLinks": _ref("CalendarLinks")}},
+            "calendarLinks": _ref("CalendarLinks"), "availability": _ref("Availability"), "ticket": _ref("PublicTicket")}},
         "CalendarLinks": {"type": "object", "additionalProperties": False, "required": ["ics", "google", "outlook", "office365"],
             "description": "Add-to-calendar links built from public fields only, never private join links. Web links are null "
                            "when the session is cancelled or has ended. The event URL in their details comes from "
@@ -384,9 +539,10 @@ def build_spec():
                  "description": "Public, registration, management, waiting-room and MCP endpoints. Private join links are never returned by any endpoint; they appear only as the redirect target of an admitted waiting-room entry."},
         "servers": [{"url": "/"}],
         "security": KEY,
-        "tags": [{"name": t} for t in ("Public", "Registration", "Same-origin proxy", mg, "Management (publication)", "Management (attendance_write)", "Waiting room", "MCP", "Operations")],
+        "tags": [{"name": t} for t in ("Public", "Registration", "Same-origin proxy", mg, "Management (publication)", "Management (attendance_write)",
+                                       TICKETS_TAG, HOSTING_TAG, "Tickets", "Waiting room", "MCP", "Operations")],
         "paths": paths,
         "components": {"securitySchemes": {"apiKey": {"type": "http", "scheme": "bearer", "description": "wbk_<prefix>_<secret>; also X-Api-Key header. "
                                                       "The same-origin proxy endpoints instead authenticate the first-party proxy with X-Webinar-Proxy-Key."}},
-                       "schemas": schemas},
+                       "schemas": {**schemas, **_tickets_and_hosting_schemas()}},
     }

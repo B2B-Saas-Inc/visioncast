@@ -27,6 +27,9 @@
 !docs/browser-integration.md
 !docs/native-integrations.md
 !docs/security.md
+!docs/tickets.md
+!docs/hosting.md
+!docs/kits.md
 
 # Re-exclude junk inside allowed directories.
 **/__pycache__

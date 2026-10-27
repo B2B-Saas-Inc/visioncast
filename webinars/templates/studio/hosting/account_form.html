@@ -1,0 +1,102 @@
+{% extends "studio/base.html" %}
+{% block title %}{% if account %}{{ account.name }}{% else %}Connect a provider{% endif %}{% endblock %}
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="{% url 'studio:hosting-accounts' %}">Hosting providers</a> <span aria-hidden="true">/</span> <span aria-current="page">{% if account %}{{ account.name }}{% else %}New{% endif %}</span></nav>
+{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{% if account %}{{ account.name }}{% else %}Connect a provider{% endif %}</h1>
+    <p class="lede">{{ adapter.label }}</p>
+  </div>
+</div>
+
+{% if errors.items %}
+<div class="callout callout-warn" role="alert">
+  <p>Please fix the following:</p>
+  <ul>{% for k, msgs in errors.items %}<li>{{ msgs|join:" " }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% if not account %}
+<form method="get" action="{% url 'studio:hosting-account-new' %}" class="panel">
+  <div class="panel-body">
+    <div class="field">
+      <label class="label" for="f-provider-pick">Provider</label>
+      <select class="select" id="f-provider-pick" name="provider">
+        <option value="zoom"{% if provider == "zoom" %} selected{% endif %}>Zoom Webinars</option>
+        <option value="wistia"{% if provider == "wistia" %} selected{% endif %}>Wistia Webinars</option>
+        <option value="sequel"{% if provider == "sequel" %} selected{% endif %}>Sequel (Introvoke)</option>
+        <option value="riverside"{% if provider == "riverside" %} selected{% endif %}>Riverside (attach existing event)</option>
+        <option value="streamyard"{% if provider == "streamyard" %} selected{% endif %}>StreamYard (manual link)</option>
+      </select>
+    </div>
+    <div class="form-actions"><button class="btn btn-sm" type="submit">Show settings</button></div>
+  </div>
+</form>
+{% endif %}
+
+<div class="layout-split">
+<div>
+<form method="post" action="{% if account %}{% url 'studio:hosting-account-edit' pk=account.pk %}{% else %}{% url 'studio:hosting-account-new' %}{% endif %}" novalidate>
+  {% csrf_token %}
+  <input type="hidden" name="provider" value="{{ provider }}">
+  <input type="hidden" name="step" value="save">
+  <section class="panel">
+    <div class="panel-head"><h2>Account</h2></div>
+    <div class="panel-body">
+      <div class="field">
+        <label class="label" for="f-name">Name</label>
+        <input class="input" id="f-name" name="name" value="{{ state.name }}" maxlength="200" required{% if errors.name %} aria-invalid="true"{% endif %}>
+        {% if errors.name %}<p class="field-error">{{ errors.name|join:" " }}</p>{% endif %}
+      </div>
+      {% for f in config_fields %}
+      <div class="field">
+        <label class="label" for="config-{{ f.name }}">{{ f.label }}{% if not f.required %} <span class="small">(optional)</span>{% endif %}</label>
+        <input class="input" id="config-{{ f.name }}" name="config-{{ f.name }}" value="{{ f.value }}" maxlength="200" spellcheck="false" aria-describedby="config-{{ f.name }}-help">
+        <p class="help" id="config-{{ f.name }}-help">{{ f.help }}</p>
+        {% for k, msgs in errors.items %}{% if k == f.name %}<p class="field-error">{{ msgs|join:" " }}</p>{% endif %}{% endfor %}
+      </div>
+      {% endfor %}
+      <div class="field">
+        <label class="switch"><input type="checkbox" name="enabled" value="on"{% if state.enabled %} checked{% endif %}><span class="switch-track" aria-hidden="true"></span> Enabled</label>
+        <p class="help">Enabled accounts can be chosen on sessions. Enabling needs every credential to be set.</p>
+      </div>
+    </div>
+  </section>
+
+  {% if secret_fields %}
+  <section class="panel">
+    <div class="panel-head"><h2>Credentials</h2></div>
+    <div class="panel-body">
+      <p class="help" id="secret-help">Values are encrypted, used only by the server to call the provider's official API host, and never shown again. Leave a box empty to keep the stored value.</p>
+      {% for f in secret_fields %}
+      <div class="field">
+        <label class="label" for="secret-{{ f.name }}">{{ f.label }} {% if f.is_set %}<span class="badge badge-success">Set</span>{% else %}<span class="badge badge-warn">Not set</span>{% endif %}</label>
+        <input class="input" type="password" autocomplete="off" spellcheck="false" id="secret-{{ f.name }}" name="secret-{{ f.name }}" aria-describedby="secret-{{ f.name }}-help secret-help">
+        <p class="help" id="secret-{{ f.name }}-help">{{ f.help }}</p>
+        {% for k, msgs in errors.items %}{% if k == f.name %}<p class="field-error">{{ msgs|join:" " }}</p>{% endif %}{% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit">{% if account %}Save changes{% else %}Connect{% endif %}</button>
+    <a class="btn btn-ghost" href="{% url 'studio:hosting-accounts' %}">Cancel</a>
+  </div>
+</form>
+</div>
+
+<aside>
+  <section class="panel">
+    <div class="panel-head"><h2>Before you use it</h2></div>
+    <div class="panel-body">
+      {% if warnings %}<ul>{% for w in warnings %}<li>{{ w }}</li>{% endfor %}</ul>{% else %}<p class="help">No problems found (checked without contacting the provider).</p>{% endif %}
+      <ul>{% for n in adapter.notes %}<li class="small">{{ n }}</li>{% endfor %}</ul>
+    </div>
+  </section>
+</aside>
+</div>
+{% endblock %}

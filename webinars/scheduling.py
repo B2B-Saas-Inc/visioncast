@@ -150,9 +150,15 @@ def cancel_occurrence(occurrence, user=None):
             reminders_suppressed=suppressed,
             registrations_notified=notified,
         )
+        # Paid registrations of a cancelled session are owed a refund (made in Stripe by
+        # staff, then recorded); same transaction so the flag cannot be lost.
+        from webinars.payments import flag_cancelled_occurrence
+
+        flag_cancelled_occurrence(occ)
     _sync(
         occurrence, occ, ["status", "cancelled_at", "registration_open", "ics_sequence", "admission_generation", "updated_at"]
     )
+    _hosting_hook("note_cancelled", occ)
 
 
 _RESCHEDULE_FIELDS = [
@@ -239,6 +245,20 @@ def reschedule_occurrence(occurrence, *, local_start, tz_name, fold=None, durati
             attendance_messages_cancelled=stale_attendance_messages,
         )
     _sync(occurrence, occ, _RESCHEDULE_FIELDS)
+    _hosting_hook("mark_out_of_date", occ)
+
+
+def _hosting_hook(name, occ):
+    """Flag a linked provider session (webinars.hosting.service). Never calls the provider,
+    never deletes anything remotely, and never fails the schedule change."""
+    import logging
+
+    try:
+        from webinars.hosting import service
+
+        getattr(service, name)(occ)
+    except Exception as exc:  # pragma: no cover - defensive
+        logging.getLogger("webinars.hosting").warning("hosting hook %s failed: %s", name, type(exc).__name__)
 
 
 def publish_recording(occurrence, recording_url, user=None):

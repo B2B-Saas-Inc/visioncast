@@ -129,6 +129,21 @@ def _read_json(request):
 
 
 def serialize_occurrence(occ):
+    data = _serialize_occurrence(occ)
+    # Capacity and price keys appear only when configured, so free unlimited sessions keep
+    # the original shape. ``remaining`` is null unless the organiser opted in.
+    if occ.capacity is not None:
+        from webinars import capacity
+
+        data["availability"] = capacity.public_availability(occ)
+    if occ.ticket_price_minor is not None or occ.event.ticket_price_minor is not None:
+        from webinars import payments
+
+        data["ticket"] = payments.public_ticket(occ)
+    return data
+
+
+def _serialize_occurrence(occ):
     base = _base_url()
     return {
         "id": str(occ.pk),
@@ -354,7 +369,17 @@ def _registration(request, api_key, trusted, *, direct=False):
     if error is not None:
         return error
     capability = identity.resolve_capability(request)
-    result = register(payload=payload, capability=capability, api_key=api_key, trusted=trusted)
+    # Paid holds only (and only for mailbox-verified browsers, registration._paid_hold).
+    # Behind the proxy every browser shares one address and one key, so the bucket is the
+    # verified person the capability cookie proves, never a forwarded header the caller
+    # could forge. Direct browsers are bounded per client address; server callers per key.
+    if direct or api_key is None:
+        rate_key = ("paid_hold", "ip:" + ratelimit.client_ip(request))
+    elif capability is not None:
+        rate_key = ("paid_hold", f"person:{capability.person_id}")
+    else:
+        rate_key = ("paid_hold_key", f"key:{api_key.pk}")
+    result = register(payload=payload, capability=capability, api_key=api_key, trusted=trusted, rate_key=rate_key)
     body = result.body
     if direct and 200 <= result.status_code < 300 and _direct_ics_rewrite_enabled():
         body = _direct_ics_url(body)

@@ -1,0 +1,68 @@
+{% extends "studio/base.html" %}
+{% block title %}Payments{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Payments</h1>
+    <p class="lede">Sell tickets with Stripe hosted Checkout (card only, one ticket per registration).</p>
+  </div>
+</div>
+
+{% if errors.items %}
+<div class="callout callout-warn" role="alert">
+  <p>Please fix the following:</p>
+  <ul>{% for k, msg in errors.items %}<li>{{ msg }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<div class="layout-split">
+<div>
+<form method="post" action="{% url 'studio:payments' %}" novalidate>
+  {% csrf_token %}
+  <section class="panel">
+    <div class="panel-head"><h2>Stripe account</h2>{% if account.enabled %}<span class="badge badge-success">Enabled</span>{% else %}<span class="badge badge-warn">Off</span>{% endif %}</div>
+    <div class="panel-body">
+      <div class="field">
+        <label class="label" for="f-mode">Mode</label>
+        <select class="select" id="f-mode" name="mode">
+          {% for value, label in modes %}<option value="{{ value }}"{% if account.mode == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <p class="help">Test and live keys never mix. Changing mode requires entering a key for the new mode.</p>
+      </div>
+      <div class="field">
+        <label class="label" for="f-secret">Secret key {% if account.secretKeySet %}<span class="badge badge-success">Set</span>{% else %}<span class="badge badge-warn">Not set</span>{% endif %}</label>
+        <input class="input" type="password" autocomplete="off" spellcheck="false" id="f-secret" name="secret_key" aria-describedby="f-secret-help">
+        <p class="help" id="f-secret-help">sk_… or a restricted rk_… key. Encrypted, never shown again. Leave empty to keep the stored key.</p>
+      </div>
+      <div class="field">
+        <label class="label" for="f-whsec">Webhook signing secret {% if account.webhookSecretSet %}<span class="badge badge-success">Set</span>{% else %}<span class="badge badge-warn">Not set</span>{% endif %}</label>
+        <input class="input" type="password" autocomplete="off" spellcheck="false" id="f-whsec" name="webhook_secret" aria-describedby="f-whsec-help">
+        <p class="help" id="f-whsec-help">whsec_… from the Stripe webhook endpoint below. Leave empty to keep the stored secret.</p>
+      </div>
+      <div class="field">
+        <label class="label" for="f-acct">Stripe account ID <span class="small">(optional)</span></label>
+        <input class="input" id="f-acct" name="expected_account_id" value="{{ account.expectedAccountId }}" maxlength="64" spellcheck="false">
+        <p class="help">acct_… When set, events from any other account are rejected.</p>
+      </div>
+      <div class="field">
+        <label class="switch"><input type="checkbox" name="enabled" value="on"{% if account.enabled %} checked{% endif %}><span class="switch-track" aria-hidden="true"></span> Sell tickets</label>
+        <p class="help">Sessions with a price take payment only while this is on; otherwise visitors see “Ticket sales are not configured”.</p>
+      </div>
+    </div>
+  </section>
+  <div class="form-actions"><button class="btn btn-primary" type="submit">Save</button></div>
+</form>
+</div>
+<aside>
+  <section class="panel">
+    <div class="panel-head"><h2>Set up in Stripe</h2></div>
+    <div class="panel-body">
+      <p class="help">Add a webhook endpoint for <code>checkout.session.completed</code>, <code>checkout.session.async_payment_succeeded</code> and <code>checkout.session.expired</code> at:</p>
+      <p><code>{{ account.webhookUrl }}</code></p>
+      {% if account.problems %}<ul>{% for p in account.problems %}<li>{{ p }}</li>{% endfor %}</ul>{% endif %}
+      <p class="small">Not supported: subscriptions, coupons, taxes, quantities above one, delayed payment methods and automatic refunds. Refund in Stripe, then record it on the session.</p>
+    </div>
+  </section>
+</aside>
+</div>
+{% endblock %}

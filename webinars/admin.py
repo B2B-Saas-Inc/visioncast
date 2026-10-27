@@ -525,7 +525,10 @@ class EventForm(forms.ModelForm):
     class Meta:
         model = Event
         # cover_image is set only by the studio upload (services.save_event(cover=...)).
-        exclude = ("revision", "cover_image")
+        # Ticket prices are charge configuration: set only through payments.update_event_price
+        # (payments_admin / Administrator), never by an ordinary content edit, which would
+        # otherwise clear them (unbound form fields clean to None) and make a paid event free.
+        exclude = ("revision", "cover_image", "ticket_price_minor", "ticket_currency")
 
     def clean_hero_image_url(self):
         value = self.cleaned_data.get("hero_image_url", "")
@@ -639,7 +642,13 @@ class EventAdmin(admin.ModelAdmin):
         if formset.model is not Occurrence:
             return super().save_formset(request, form, formset, change)
         formset.save(commit=False)  # sets the event FK on new instances
+        from webinars.models import TicketOrder
+
         for obj in formset.deleted_objects:
+            if TicketOrder.objects.filter(occurrence=obj).exists():
+                # Ticket orders are the financial record (PROTECT); keep the session.
+                messages.error(request, "A session with ticket orders cannot be deleted; cancel it instead.")
+                continue
             obj.delete()
         for inline_form in formset.forms:
             if inline_form in formset.deleted_forms or not inline_form.has_changed():

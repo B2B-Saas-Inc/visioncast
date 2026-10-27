@@ -58,7 +58,7 @@ COPY --chown=root:root README.md ./
 COPY --chown=root:root docs/implementation-guide.md docs/operations.md docs/integration.md docs/mcp.md docs/management-api.md \
      docs/api-reference.md docs/webhooks.md docs/field-dictionary.md docs/field-mapping.md \
      docs/waiting-room.md docs/studio.md docs/email.md docs/browser-integration.md \
-     docs/native-integrations.md docs/security.md ./docs/
+     docs/native-integrations.md docs/security.md docs/tickets.md docs/hosting.md docs/kits.md ./docs/
 
 # BUILD-ONLY collectstatic. The values below exist solely so that settings can
 # be imported during this single RUN step; they are not persisted into the

@@ -1,0 +1,48 @@
+{% extends "studio/base.html" %}
+{% block title %}Riverside registrants · {{ event.public_title }}{% endblock %}
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="{% url 'studio:events' %}">Events</a> <span aria-hidden="true">/</span> <a href="{% url 'studio:session' pk=occ.pk %}">{{ event.public_title }}</a> <span aria-hidden="true">/</span> <a href="{% url 'studio:session-hosting' pk=occ.pk %}">Hosting</a> <span aria-hidden="true">/</span> <span aria-current="page">Riverside registrants</span></nav>
+{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Riverside registrants to check</h1>
+    <p class="lede">Riverside gave no clear answer when these registrants were added, so they are not admitted yet and nothing is re-sent. Look each one up in Riverside, then record what you found. Nothing is sent to Riverside from this page.</p>
+  </div>
+</div>
+
+{% if errors.items %}
+<div class="callout callout-warn" role="alert">
+  <ul>{% for k, msgs in errors.items %}{% for m in msgs %}<li>{{ m }}</li>{% endfor %}{% endfor %}</ul>
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-body">
+  {% if rows %}
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th scope="col">Registrant</th><th scope="col">State</th><th scope="col">Attempts</th><th scope="col">Record what you found</th></tr></thead>
+      <tbody>{% for r in rows %}<tr>
+        <td><code class="small">{{ r.row.registrationId }}</code><br><span class="small">{{ r.email }}</span></td>
+        <td><span class="badge badge-warn">{{ r.row.state }}</span></td>
+        <td>{{ r.row.attempts }}</td>
+        <td>
+          <form method="post" action="{% url 'studio:session-registrants' pk=occ.pk %}" data-confirm="Store this link for this registrant only?">
+            {% csrf_token %}<input type="hidden" name="registration" value="{{ r.row.registrationId }}"><input type="hidden" name="decision" value="created"><input type="hidden" name="state_token" value="{{ r.token }}">
+            <div class="field"><label class="label" for="j-{{ forloop.counter }}">This registrant's own Riverside link</label><input class="input" type="password" autocomplete="off" id="j-{{ forloop.counter }}" name="join_url" maxlength="1000" required></div>
+            <div class="field"><label class="label" for="x-{{ forloop.counter }}">Riverside registrant ID <span class="small">(optional)</span></label><input class="input" id="x-{{ forloop.counter }}" name="external_id" maxlength="128" spellcheck="false"></div>
+            <button class="btn btn-sm" type="submit">It was created</button>
+          </form>
+          <form method="post" action="{% url 'studio:session-registrants' pk=occ.pk %}" data-confirm="Mark as not created? The worker may try again." style="margin-top:var(--s-3)">
+            {% csrf_token %}<input type="hidden" name="registration" value="{{ r.row.registrationId }}"><input type="hidden" name="decision" value="not_created"><input type="hidden" name="state_token" value="{{ r.token }}">
+            <button class="btn btn-ghost btn-sm" type="submit">Nothing was created</button>
+          </form>
+        </td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+  {% else %}
+    <p class="help">No Riverside registrants need checking for this session.</p>
+  {% endif %}
+  </div>
+</section>
+{% endblock %}

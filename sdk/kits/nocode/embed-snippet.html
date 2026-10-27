@@ -1,0 +1,33 @@
+<!--
+  Webflow / Framer / any page builder: paste-ready SDK markup.
+  PREREQUISITE: this site's own origin must serve /webinar-api/* through the first-party
+  proxy (docs/kits.md "Serving /webinar-api"). The browser never gets a key. Without that
+  route, link to a registration page on a domain that does serve the proxy instead.
+
+  Replace the two placeholders with values from Studio → session → "Embed on your site".
+  That page also produces the exact fields for the session's form version.
+  Use a raw <form> in an HTML embed. Do not use the builder's native form block, which
+  submits to the builder's own form service.
+-->
+<form data-webinar-form data-occurrence-id="00000000-0000-0000-0000-000000000000" data-form-version="REPLACE_FORM_VERSION">
+  <div data-webinar-field>
+    <label for="wf-email">Email</label>
+    <input id="wf-email" name="email" type="email" autocomplete="email" required>
+  </div>
+  <div data-webinar-field>
+    <label for="wf-firstName">First name</label>
+    <input id="wf-firstName" name="firstName" type="text" autocomplete="given-name">
+  </div>
+  <div data-webinar-field>
+    <label for="wf-lastName">Last name</label>
+    <input id="wf-lastName" name="lastName" type="text" autocomplete="family-name">
+  </div>
+  <button type="submit">Register</button>
+  <div data-webinar-status></div>
+</form>
+
+<!-- Once per page (site/page custom code, before </body>). Replace the host with your backend's public origin. -->
+<script>
+  window.WebinarFormConfig = { proxyBase: '/webinar-api', consent: { analytics: false, advertising: false } };
+</script>
+<script src="https://webinars.example.com/static/webinar-sdk/webinar-form.js" defer></script>

@@ -96,7 +96,26 @@
     server: 'Something went wrong on our side, so your RSVP was not saved. Please try again.',
     fieldRequired: 'This field is required.',
     fieldInvalid: 'Please check this field.',
-    fieldConflict: 'This value conflicts with another field.'
+    fieldConflict: 'This value conflicts with another field.',
+    // Paid sessions (docs/tickets.md): nothing is confirmed until payment succeeds.
+    paymentRedirecting: 'Taking you to secure checkout…',
+    paymentPreparing: 'Your seat is held while we prepare checkout. Please submit again in a moment to continue to payment.',
+    soldOut: 'This session is sold out.',
+    checkoutInProgress: 'A checkout for this registration is already in progress. Finish it, or try again once it expires.',
+    paymentsUnavailable: 'Ticket sales are not available right now, so you have not been registered.',
+    orderClosed: 'That checkout is no longer available. Please reload the page and try again.',
+    checkoutFailed: 'We could not start checkout and nothing was charged. Please try again.',
+    verificationRedirecting: 'To buy a ticket, confirm your email first. Taking you there…',
+    verificationUnavailable: 'Online ticket sales need email confirmation, which is not available for this session. Please contact the organiser.'
+  };
+
+  var CHECKOUT_HOSTS = ['checkout.stripe.com'];
+  var ERROR_CODE_MESSAGES = {
+    sold_out: 'soldOut',
+    checkout_in_progress: 'checkoutInProgress',
+    payments_unavailable: 'paymentsUnavailable',
+    order_closed: 'orderClosed',
+    checkout_failed: 'checkoutFailed'
   };
 
   // ---------------------------------------------------------------------------
@@ -429,7 +448,43 @@
     return out;
   }
 
-  function messageForStatus(status, messages) {
+  /** Hosted checkout link: https on exactly the Stripe Checkout host, else null. */
+  function checkoutUrl(raw) {
+    if (typeof raw !== 'string' || !raw || raw.length > 2000) return null;
+    try {
+      var u = new URL(raw);
+      if (u.protocol !== 'https:' || u.username || u.password || u.port) return null;
+      return CHECKOUT_HOSTS.indexOf(u.hostname) >= 0 ? u.href : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** Email-verification link from the backend: https, no credentials/port, a /w/ room path. */
+  function verifyUrl(raw) {
+    if (typeof raw !== 'string' || !raw || raw.length > 2000) return null;
+    try {
+      var u = new URL(raw);
+      if (u.protocol !== 'https:' || u.username || u.password || u.port) return null;
+      return /^\/w\/[A-Za-z0-9_-]+\/$/.test(u.pathname) && !u.search && !u.hash ? u.href : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** True for error bodies after which the idempotency key must rotate (order is closed). */
+  function closesOrder(body) {
+    var code = body && body.error && typeof body.error === 'object' ? body.error.code : '';
+    return code === 'checkout_failed' || code === 'order_closed';
+  }
+
+  /** ``body`` (optional) lets known server error codes pick a specific message. */
+  function messageForStatus(status, messages, body) {
+    var code = body && body.error && typeof body.error.code === 'string' ? body.error.code : '';
+    if (code && hasOwn(ERROR_CODE_MESSAGES, code)) {
+      var name = ERROR_CODE_MESSAGES[code];
+      return messages[name] || DEFAULT_MESSAGES[name];
+    }
     if (status === 0) return messages.network;
     if (status === 400 || status === 422) return messages.invalid;
     if (status === 409) return messages.conflict;
@@ -827,14 +882,58 @@
     return this._post('/registrations', payload).then(function (r) {
       self._setBusy(false);
       if (!r.ok) {
+        // The order behind this key is closed for good: a retry needs a fresh key, or it
+        // would only replay the closed order (409 order_closed).
+        if (closesOrder(r.body)) self.idempotency.reset();
         self._status('');
         self._showServerErrors(r);
         return false;
       }
+      var body = r.body || {};
+      if (body.status === 'verification_required') {
+        // Paid session, browser not yet email-verified: nothing was held or charged. The
+        // response is the same for every address (no account oracle); a new key is used
+        // after verifying, from the verified browser.
+        self.idempotency.reset();
+        return self._onVerificationRequired(body);
+      }
+      if (r.status === 202 || body.status === 'payment_required') {
+        // Paid session: a seat is held, nothing is registered yet. The idempotency key is
+        // kept, so submitting again replays the same order (never a second hold).
+        return self._onPaymentRequired(body);
+      }
       self.idempotency.reset();
-      self._onSuccess(r.body || {});
+      self._onSuccess(body);
       return true;
     });
+  };
+
+  /** 202 payment_required: go to hosted checkout; never show a confirmation here. */
+  FormController.prototype._onPaymentRequired = function (body) {
+    var order = body.order || {};
+    var url = checkoutUrl(order.checkoutUrl);
+    this.form.setAttribute('data-webinar-state', 'payment-required');
+    if (url && root.location && typeof root.location.assign === 'function') {
+      this._status(this.messages.paymentRedirecting || DEFAULT_MESSAGES.paymentRedirecting);
+      root.location.assign(url);
+      return 'payment_required';
+    }
+    this._status(this.messages.paymentPreparing || DEFAULT_MESSAGES.paymentPreparing);
+    return 'payment_required';
+  };
+
+  /** 202 verification_required: send the buyer to the hosted email check (waiting room). */
+  FormController.prototype._onVerificationRequired = function (body) {
+    var v = body.verification || {};
+    var url = v.available ? verifyUrl(v.verifyUrl) : null;
+    this.form.setAttribute('data-webinar-state', 'verification-required');
+    if (url && root.location && typeof root.location.assign === 'function') {
+      this._status(this.messages.verificationRedirecting || DEFAULT_MESSAGES.verificationRedirecting);
+      root.location.assign(url);
+      return 'verification_required';
+    }
+    this._status(this.messages.verificationUnavailable || DEFAULT_MESSAGES.verificationUnavailable);
+    return 'verification_required';
   };
 
   FormController.prototype._showServerErrors = function (r) {
@@ -849,7 +948,7 @@
         }
       });
     });
-    this._error(messageForStatus(r.status, this.messages));
+    this._error(messageForStatus(r.status, this.messages, r.body));
   };
 
   FormController.prototype._onSuccess = function (body) {
@@ -995,6 +1094,8 @@
       planFields: planFields,
       fieldKey: fieldKey,
       IdempotencyManager: IdempotencyManager,
+      verifyUrl: verifyUrl,
+      closesOrder: closesOrder,
       intentOf: intentOf,
       randomKey: randomKey,
       safeUrl: safeUrl,
@@ -1003,6 +1104,7 @@
       calendarWebLinks: calendarWebLinks,
       DEFAULT_MESSAGES: DEFAULT_MESSAGES,
       messageForStatus: messageForStatus,
+      checkoutUrl: checkoutUrl,
       errorFieldKeys: errorFieldKeys,
       safeProxyBase: safeProxyBase,
       readOptions: readOptions,

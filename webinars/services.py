@@ -30,6 +30,9 @@ VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 PRIVILEGED_SCOPES = (
     ApiKey.Scope.TRUSTED,
     ApiKey.Scope.PUBLICATION, ApiKey.Scope.DELIVERY_ADMIN, ApiKey.Scope.KEYS_ADMIN, ApiKey.Scope.TEAM_ADMIN,
+    # Charge configuration and provider credentials are owner-controlled; provisioning
+    # creates real external sessions.
+    ApiKey.Scope.PAYMENTS_ADMIN, ApiKey.Scope.HOSTING_ADMIN, ApiKey.Scope.HOSTING_PROVISION,
 )
 
 
@@ -170,6 +173,11 @@ def delete_draft_event(event, *, user=None):
             raise ValidationError("Only draft events can be deleted. Unpublish it first.")
         if Registration.objects.filter(occurrence__event=event).exists():
             raise ValidationError("Events with registrations cannot be deleted.")
+        from webinars.models import TicketOrder
+
+        if TicketOrder.objects.filter(occurrence__event=event).exists():
+            # Orders are the financial record (PROTECT): never cascade them away.
+            raise ValidationError("Events with ticket orders cannot be deleted.")
         audit("event.deleted", user=user, obj=event, revision=event.revision)
         event.delete()
 

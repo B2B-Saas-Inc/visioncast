@@ -1,0 +1,148 @@
+{% extends "studio/base.html" %}
+{% block title %}Hosting · {{ event.public_title }}{% endblock %}
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="{% url 'studio:events' %}">Events</a> <span aria-hidden="true">/</span> <a href="{% url 'studio:session' pk=occ.pk %}">{{ event.public_title }}</a> <span aria-hidden="true">/</span> <span aria-current="page">Hosting</span></nav>
+{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Hosting provider</h1>
+    <p class="lede">Link this session to Zoom, Wistia, Sequel, Riverside or StreamYard. Attendees always use the waiting-room link; provider links stay private.</p>
+  </div>
+</div>
+
+{% if errors.items %}
+<div class="callout callout-warn" role="alert">
+  <ul>{% for k, msgs in errors.items %}{% for m in msgs %}<li>{{ m }}</li>{% endfor %}{% endfor %}</ul>
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><h2>Current link</h2></div>
+  <div class="panel-body">
+    {% if session %}
+      <p>Provider: <strong>{{ session.provider }}</strong> · Mode: {{ session.mode }} · State: <span class="badge{% if session.state == 'linked' %} badge-success{% elif session.state == 'needs_reconciliation' or session.state == 'failed' or session.state == 'out_of_date' %} badge-warn{% endif %}">{{ session.state }}</span></p>
+      {% if session.externalId %}<p>Provider ID: <code>{{ session.externalId }}</code></p>{% endif %}
+      <p>Attendee link: {% if session.hasJoinUrl %}<span class="badge badge-success">Set</span>{% else %}<span class="badge badge-warn">Not set</span>{% endif %}
+         · Host link: {% if session.hasHostUrl %}<span class="badge badge-success">Stored privately</span>{% else %}<span class="badge">None</span>{% endif %}</p>
+      {% if session.outOfDate %}<div class="callout callout-warn">The session was rescheduled after it was last sent to the provider. {% if session.capabilities.update %}Preview an update below.{% else %}Change the time in the provider yourself.{% endif %}</div>{% endif %}
+      {% if session.lastError %}<p class="help">{{ session.lastError }}</p>{% endif %}
+
+      {% if session.state == "needs_reconciliation" %}
+      <div class="callout callout-warn">
+        <p><strong>The last request has an unknown outcome.</strong> The provider may or may not have created a session. Check your provider account, then record what you found. Nothing is re-sent until you do.</p>
+        {% if can_execute %}
+        <form method="post" action="{% url 'studio:session-hosting' pk=occ.pk %}">
+          {% csrf_token %}<input type="hidden" name="op" value="reconcile"><input type="hidden" name="decision" value="created">
+          <div class="field"><label class="label" for="r-ext">Provider session ID you found</label><input class="input" id="r-ext" name="external_id" maxlength="128"></div>
+          <button class="btn btn-sm" type="submit">It was created</button>
+        </form>
+        <form method="post" action="{% url 'studio:session-hosting' pk=occ.pk %}" style="margin-top:var(--s-3)">
+          {% csrf_token %}<input type="hidden" name="op" value="reconcile"><input type="hidden" name="decision" value="not_created">
+          <button class="btn btn-sm" type="submit">Nothing was created</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% if can_execute and session.provider == "riverside" %}
+      <p><a href="{% url 'studio:session-registrants' pk=occ.pk %}">Riverside registrants to check</a></p>
+      {% endif %}
+
+      {% if session.operations %}
+      <h3>Recent requests</h3>
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th scope="col">When</th><th scope="col">Action</th><th scope="col">Result</th><th scope="col">Detail</th></tr></thead>
+        <tbody>{% for op in session.operations %}<tr><td>{{ op.createdAt }}</td><td>{{ op.action }}</td><td>{{ op.status }}</td><td class="small">{{ op.error|default:"" }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+      {% endif %}
+
+      {% if can_execute and session.state != "detached" and session.state != "in_flight" %}
+      <form method="post" action="{% url 'studio:session-hosting' pk=occ.pk %}" data-confirm="Unlink here? The provider session is left untouched." style="margin-top:var(--s-4)">
+        {% csrf_token %}<input type="hidden" name="op" value="detach">
+        <button class="btn btn-ghost btn-sm" type="submit">Unlink (never deletes the provider session)</button>
+      </form>
+      {% endif %}
+    {% else %}
+      <p class="help">Not linked to a hosting provider.</p>
+    {% endif %}
+  </div>
+</section>
+
+{% if not accounts %}
+  <p class="callout">No enabled hosting accounts. {% if can_execute %}<a href="{% url 'studio:hosting-accounts' %}">Connect a provider</a>.{% else %}Ask an Administrator to connect one.{% endif %}</p>
+{% else %}
+<section class="panel">
+  <div class="panel-head"><h2>Create, update or attach</h2></div>
+  <div class="panel-body">
+    <form method="post" action="{% url 'studio:session-hosting' pk=occ.pk %}">
+      {% csrf_token %}<input type="hidden" name="op" value="preview">
+      <div class="field">
+        <label class="label" for="h-account">Account</label>
+        <select class="select" id="h-account" name="account">
+          {% for card in account_cards %}<option value="{{ card.account.pk }}"{% if selected_account and selected_account.pk == card.account.pk %} selected{% endif %}>{{ card.account.name }} — {{ card.describe.label }}</option>{% endfor %}
+        </select>
+      </div>
+      <fieldset class="fieldset"><legend>Action</legend>
+        <label class="choice"><input type="radio" name="action" value="create"{% if action == "create" or not action %} checked{% endif %}><span>Create a new provider session</span></label>
+        <label class="choice"><input type="radio" name="action" value="update"{% if action == "update" %} checked{% endif %}><span>Send the current time to the linked session</span></label>
+        <label class="choice"><input type="radio" name="action" value="attach"{% if action == "attach" %} checked{% endif %}><span>Attach an existing provider session</span></label>
+      </fieldset>
+      <div class="field">
+        <label class="label" for="h-ext">Existing provider session/event ID <span class="small">(attach only)</span></label>
+        <input class="input" id="h-ext" name="external_id" value="{{ external_id }}" maxlength="128" spellcheck="false">
+      </div>
+      <div class="form-actions"><button class="btn" type="submit">Preview</button></div>
+    </form>
+
+    {% if preview %}
+    <h3>Preview</h3>
+    {% if preview.problems %}
+      <div class="callout callout-warn"><ul>{% for p in preview.problems %}<li>{{ p }}</li>{% endfor %}</ul></div>
+    {% endif %}
+    {% for plan in preview.plans %}
+      <p><code>{{ plan.method }} {{ plan.url }}</code> <span class="small">({{ plan.step }}; credentials redacted)</span></p>
+      {% if plan.body %}<table class="table"><tbody>{% for k, v in plan.body.items %}<tr><th scope="row">{{ k }}</th><td>{{ v }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+    {% endfor %}
+    {% if not preview.problems %}
+      {% if can_execute %}
+      <form method="post" action="{% url 'studio:session-hosting' pk=occ.pk %}" data-confirm="Send this request to the provider now?">
+        {% csrf_token %}<input type="hidden" name="op" value="confirm">
+        <input type="hidden" name="account" value="{{ selected_account.pk }}">
+        <input type="hidden" name="action" value="{{ preview.action }}">
+        <input type="hidden" name="external_id" value="{{ external_id }}">
+        <input type="hidden" name="confirm_token" value="{{ confirm_token }}">
+        <button class="btn btn-primary" type="submit">Confirm and send</button>
+      </form>
+      {% else %}
+      <p class="callout">Only Administrators can send this request.</p>
+      {% endif %}
+    {% endif %}
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Manual link (StreamYard)</h2></div>
+  <div class="panel-body">
+    <p class="help">StreamYard has no public API. Paste the attendee link (and optionally an embed URL); it stays private until the waiting room admits someone. No request is sent anywhere.</p>
+    {% if can_execute %}
+    <form method="post" action="{% url 'studio:session-hosting' pk=occ.pk %}">
+      {% csrf_token %}<input type="hidden" name="op" value="manual">
+      <div class="field">
+        <label class="label" for="m-account">Account</label>
+        <select class="select" id="m-account" name="account">
+          {% for card in account_cards %}{% if card.describe.capabilities.manualLink %}<option value="{{ card.account.pk }}">{{ card.account.name }}</option>{% endif %}{% endfor %}
+        </select>
+      </div>
+      <div class="field"><label class="label" for="m-join">Attendee link</label><input class="input" type="password" autocomplete="off" id="m-join" name="join_url" maxlength="1000"></div>
+      <div class="field"><label class="label" for="m-embed">Embed URL <span class="small">(optional)</span></label><input class="input" type="password" autocomplete="off" id="m-embed" name="embed_url" maxlength="1000"></div>
+      <div class="form-actions"><button class="btn btn-sm" type="submit">Save link</button></div>
+    </form>
+    {% else %}
+    <p class="callout">Only Administrators can save provider links.</p>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

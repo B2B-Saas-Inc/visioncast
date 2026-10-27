@@ -10,6 +10,12 @@ See docs/architecture.md "Identity rules". Summary of what this module guarantee
   the submission is kept in ``Registration.submitted_profile`` and no capability is issued.
 * Client consent claims are stored as ``client_claim`` with ``server_verified=False``.
 * Responses never contain profile data, join links or waiting-room links.
+* Capacity (``webinars.capacity``): the occurrence row is locked before any seat is
+  taken; a new or reactivated registration on a full session gets 409 ``sold_out``.
+* Paid sessions (``webinars.payments``, docs/tickets.md): ``register`` never creates a
+  Registration. It holds a seat in a ``TicketOrder`` and answers 202
+  ``payment_required``; only verified-webhook fulfillment (``fulfill_order``) re-runs
+  ``_process`` with the stored envelope and creates the registration.
 """
 import hashlib
 import json
@@ -22,10 +28,11 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from webinars import attribution as attribution_mod
-from webinars import calendar_links, identity, normalization, outbox, scheduling
+from webinars import calendar_links, capacity, identity, normalization, outbox, scheduling
 from webinars.audit import audit
 from webinars.models import (
     AttributionTouch,
+    BrowserCapability,
     ConsentRecord,
     Event,
     IdempotencyRecord,
@@ -33,6 +40,7 @@ from webinars.models import (
     OrganizationExternalId,
     Person,
     Registration,
+    TicketOrder,
 )
 
 SCHEMA_VERSION = "1"
@@ -60,6 +68,9 @@ class RegistrationResult:
     body: dict
     set_token: str | None = None
     clear_cookie: bool = False
+    # Paid flow only (internal; never serialized): the held order and its raw status token.
+    ticket_order_id: object = None
+    status_token: str | None = None
 
 
 class _Abort(Exception):
@@ -179,10 +190,13 @@ PAYLOAD_SCOPE = "payload-v2"
 # ---------------------------------------------------------------------------
 
 
-def register(*, payload, capability, api_key, trusted=False, allow_started=False):
+def register(*, payload, capability, api_key, trusted=False, allow_started=False, rate_key=None):
     """``allow_started`` is used only by the hosted waiting room (``webinars.waiting_room``):
     it accepts a session that has started but not ended, for late walk-ins whose
-    mailbox was verified. Public APIs never set it."""
+    mailbox was verified. Public APIs never set it.
+
+    ``rate_key`` = ``(ratelimit action, identifier)`` bounds paid seat holds per client
+    and session (free registrations are not affected)."""
     errors = validate_envelope(payload)
     if errors:
         return _error(400, "validation_error", "The request is invalid.", errors)
@@ -195,6 +209,7 @@ def register(*, payload, capability, api_key, trusted=False, allow_started=False
     legacy_hash = request_hash(payload, legacy_scope)
     key = payload["idempotencyKey"]
 
+    pending = None  # (order id, raw status token or None): paid hold committed, checkout not started
     for attempt in range(2):
         try:
             with transaction.atomic():
@@ -206,16 +221,36 @@ def register(*, payload, capability, api_key, trusted=False, allow_started=False
                 )
                 if record is not None:
                     return _replay(record, req_hash, legacy_hash, capability)
-                result, registration = _process(payload, capability, api_key, trusted, allow_started)
-                IdempotencyRecord.objects.create(
-                    key=key,
-                    request_hash=req_hash,
-                    status_code=result.status_code,
-                    response_body=result.body,
-                    registration=registration,
-                    caller_capability_id=capability.id if capability is not None else None,
-                )
-                return result
+                order = TicketOrder.objects.select_for_update().filter(idempotency_key=key).first()
+                if order is not None:
+                    # Paid intent replay: the current order status (never a new hold or charge).
+                    from webinars import payments
+
+                    caller = capability.pk if capability is not None else None
+                    if order.request_hash != req_hash or order.caller_capability_id != caller:
+                        # Same rule as ``_replay``: never hand an order (or its checkout
+                        # link) to a different browser context than the one that made it.
+                        return _conflict()
+                    if not payments.needs_checkout_start(order):
+                        return _with_decoy(payments.order_result(order, None), capability)
+                    pending = (order.pk, None)
+                else:
+                    result, registration = _process(payload, capability, api_key, trusted, allow_started,
+                                                    req_hash=req_hash, rate_key=rate_key)
+                    if result.ticket_order_id is not None:
+                        # No IdempotencyRecord: the order row (unique idempotency_key) is the record.
+                        pending = (result.ticket_order_id, result.status_token)
+                    else:
+                        IdempotencyRecord.objects.create(
+                            key=key,
+                            request_hash=req_hash,
+                            status_code=result.status_code,
+                            response_body=result.body,
+                            registration=registration,
+                            caller_capability_id=capability.id if capability is not None else None,
+                        )
+                        return result
+            break
         except _Abort as abort:
             return abort.result
         except IntegrityError:
@@ -224,7 +259,19 @@ def register(*, payload, capability, api_key, trusted=False, allow_started=False
             if attempt == 0:
                 continue
             raise
-    raise RuntimeError("unreachable")  # pragma: no cover
+    if pending is None:
+        raise RuntimeError("unreachable")  # pragma: no cover
+    # The hold is committed; Stripe is called outside any transaction or row lock.
+    from webinars import payments
+
+    return _with_decoy(payments.start_checkout(pending[0], pending[1]), capability)
+
+
+def _with_decoy(result, capability):
+    """Cookie-less callers always get a Set-Cookie (same rule as the free path)."""
+    if capability is None and result.set_token is None:
+        result.set_token = identity.unbound_token()
+    return result
 
 
 def _conflict():
@@ -268,8 +315,11 @@ def _abort(status, code, message, fields=None):
 
 
 def _load_occurrence(payload, allow_started=False):
+    # Row lock (event/form not locked): capacity counting and paid holds serialize on it
+    # (webinars.capacity). Taken before any person lock, the same order as fulfillment.
     occ = (
-        Occurrence.objects.select_related("event", "event__form_version")
+        Occurrence.objects.select_for_update(of=("self",))
+        .select_related("event", "event__form_version")
         .filter(pk=payload["occurrenceId"])
         .first()
     )
@@ -469,8 +519,140 @@ def _unverified_result(occ, capability):
     )
 
 
-def _process(payload, capability, api_key, trusted, allow_started=False):
-    occ = _load_occurrence(payload, allow_started)
+VERIFY_MESSAGE = "Confirm your email address to buy a ticket. We'll email you a code."
+VERIFY_UNAVAILABLE_MESSAGE = "Online ticket sales need email confirmation, which isn't set up for this session. Contact the organiser."
+
+
+def verification_required_result(occ, capability):
+    """The single paid answer for any browser without a mailbox-verified identity.
+
+    Depends only on the session's configuration (never on the submitted email), so it
+    is not an account or checkout oracle. ``verifyUrl`` is the hosted waiting room,
+    which emails a code/link and then runs the paid checkout for the verified browser.
+    """
+    from webinars import mail, waiting_room
+
+    url = waiting_room.room_url(occ) if occ.waiting_room_enabled else None
+    available = bool(url) and mail.delivery_mode() != "disabled"
+    body = {
+        "status": "verification_required",
+        "occurrenceId": str(occ.pk),
+        "verification": {
+            "available": available,
+            "verifyUrl": url if available else None,
+            "message": VERIFY_MESSAGE if available else VERIFY_UNAVAILABLE_MESSAGE,
+        },
+    }
+    return RegistrationResult(status_code=202, body=body,
+                              set_token=identity.unbound_token() if capability is None else None)
+
+
+def _own_order(order, person):
+    """True when an open order was created by a mailbox-verified browser of ``person``."""
+    if order.caller_capability_id is None:
+        return False
+    row = (
+        BrowserCapability.objects.filter(pk=order.caller_capability_id)
+        .values_list("person_id", "mailbox_verified_at")
+        .first()
+    )
+    return row is not None and row[0] == person.pk and row[1] is not None
+
+
+def _ensure_seat(occ, fulfilling):
+    try:
+        capacity.ensure_seat(occ, exclude_order_id=fulfilling.pk if fulfilling is not None else None)
+    except capacity.SoldOut:
+        _abort(409, "sold_out", capacity.SOLD_OUT_MESSAGE)
+
+
+def _paid_hold(payload, occ, price, person, verified, capability, trusted, allow_started, req_hash, normalized, api_key,
+               rate_key=None):
+    """Paid session: hold a seat in a TicketOrder. No person, registration, consent,
+    attribution, reminder or outbox row is written here (that happens at fulfillment).
+
+    Never charge someone who cannot be admitted afterwards:
+
+    * a verified registrant gets the free-path dedupe answer;
+    * one open hold per person and session: the same browser (or the verified person)
+      gets its existing checkout back; anyone else gets 409 ``checkout_in_progress``.
+
+    Before any of that, a hold needs a browser whose mailbox for this email was proven
+    (``BrowserCapability.mailbox_verified_at``, set only by the emailed code/link in the
+    waiting room). Every other caller (no cookie, a cookie from an unverified free
+    registration, or someone registering another address) gets the same 202
+    ``verification_required`` answer whatever the email is: no lookup result, existing
+    registration or open checkout is disclosed, and no hold or Stripe call is made.
+    Seat holds are therefore bound to one verified person each (one open hold per
+    email), not to a forwarded address header.
+
+    Holds are rate limited per client (``rate_key``) and session, so a stranger cannot
+    tie up every seat with throwaway emails."""
+    from webinars import payments, ratelimit
+
+    # Session configuration only (never email-dependent): safe to report before verification.
+    if not payments.payments_available(payments.active_account()):
+        _abort(503, "payments_unavailable", "Ticket sales are not configured")
+
+    submitted_key = normalization.email_key(normalized.fields["email"]) if normalized.fields.get("email") else None
+    mailbox_ok = (
+        capability is not None
+        and capability.mailbox_verified_at is not None
+        and verified
+        and person is not None
+        and person.pk == capability.person_id
+        and bool(person.email_key)
+        and submitted_key in (None, person.email_key)
+    )
+    if not mailbox_ok:
+        return verification_required_result(occ, capability), None
+
+    # Past the gate: person is the capability's verified person.
+    existing = Registration.objects.filter(occurrence=occ, person=person).first()
+    if existing is not None and existing.status == Registration.Status.REGISTERED:
+        # A recognised registrant is never charged twice: same answer as the free dedupe.
+        audit("registration.deduplicated", api_key=api_key, obj=existing, occurrence_id=str(occ.pk),
+              person_id=str(person.pk), identity_verified=True, new_person=False, reactivated=False)
+        return RegistrationResult(status_code=200, body=build_response_body(occ)), existing
+
+    email_key = person.email_key  # mailbox-proven above
+    open_order = payments.open_hold_for(occ, email_key)
+    if open_order is not None:
+        if _own_order(open_order, person):
+            return RegistrationResult(status_code=202, body={}, ticket_order_id=open_order.pk), None
+        # Only a hold made by a mailbox-verified browser of this same person is ever
+        # handed back: a hold created by anyone else (e.g. before verification was
+        # required) is never adopted, so its envelope is never fulfilled for this person.
+        _abort(409, "checkout_in_progress",
+               "A checkout for this registration is already in progress. Finish it, or try again once it expires.")
+
+    if rate_key is not None:
+        action, ident = rate_key
+        if not ratelimit.hit_key(action, f"{ident}|{occ.pk}"):
+            _abort(429, "rate_limited", "Too many checkout attempts. Please wait a few minutes.")
+    _ensure_seat(occ, None)
+    try:
+        order, token = payments.create_hold(
+            occ, payload, price, person=person, capability=capability, trusted=trusted,
+            allow_started=allow_started, req_hash=req_hash, email_key=email_key,
+        )
+    except payments.PaymentsUnavailable:
+        _abort(503, "payments_unavailable", "Ticket sales are not configured")
+    return RegistrationResult(status_code=202, body={}, ticket_order_id=order.pk, status_token=token), None
+
+
+def _process(payload, capability, api_key, trusted, allow_started=False, *, req_hash=None, fulfilling=None, locked_occ=None,
+             rate_key=None):
+    """``fulfilling`` (a locked TicketOrder) and ``locked_occ`` are set only by
+    ``fulfill_order``: the paid order's stored envelope is processed like a free
+    registration, except that an existing active registration is refused (the caller
+    marks the order refund_required) and no browser capability is issued."""
+    if fulfilling is None:
+        occ = _load_occurrence(payload, allow_started)
+    else:
+        occ = locked_occ
+        if payload.get("formVersion") != occ.event.form_version.version:
+            _abort(409, "form_changed", "The registration form changed after the hold.")
     form = occ.event.form_version
 
     normalized = normalization.normalize_submission(payload.get("profile") or {}, payload.get("customFields") or {}, form)
@@ -482,6 +664,14 @@ def _process(payload, capability, api_key, trusted, allow_started=False):
 
     consents = payload.get("consents") or {}
     sms_phone = _validate_consents(consents, form, person, verified, normalized)
+
+    if fulfilling is None:
+        from webinars import payments
+
+        price = payments.effective_price(occ)
+        if price is not None:
+            return _paid_hold(payload, occ, price, person, verified, capability, trusted, allow_started,
+                              req_hash, normalized, api_key, rate_key=rate_key)
 
     org_ids = (payload.get("organization") or {}).get("externalIds") or []
     profile_changed = False
@@ -511,7 +701,13 @@ def _process(payload, capability, api_key, trusted, allow_started=False):
     registration = Registration.objects.select_for_update().filter(occurrence=occ, person=person).first()
     created = registration is None
     reactivated = False
+    if fulfilling is not None and not created:
+        if registration.status == Registration.Status.REGISTERED:
+            _abort(409, "already_registered", "Already registered.")
+        if not verified:
+            _abort(409, "duplicate_unverified", "Already registered.")
     if created:
+        _ensure_seat(occ, fulfilling)
         registration = Registration.objects.create(
             occurrence=occ,
             person=person,
@@ -523,6 +719,7 @@ def _process(payload, capability, api_key, trusted, allow_started=False):
     elif verified:
         update_fields = ["updated_at", "form_version", "identity_verified", "submitted_profile", "custom_fields"]
         if registration.status == Registration.Status.CANCELLED:
+            _ensure_seat(occ, fulfilling)
             registration.status = Registration.Status.REGISTERED
             reactivated = True
             update_fields.append("status")
@@ -579,8 +776,12 @@ def _process(payload, capability, api_key, trusted, allow_started=False):
         if reactivated or profile_changed or (verified and consents):
             outbox.enqueue_event("registration.updated", registration=registration, occurrence=occ)
 
-    set_token = identity.issue_capability(person) if (new_person and issue_cookie) else None
-    if set_token is None and capability is None:
+    if fulfilling is not None:
+        # Webhook context: there is no browser to give a cookie to.
+        set_token = None
+    else:
+        set_token = identity.issue_capability(person) if (new_person and issue_cookie) else None
+    if fulfilling is None and set_token is None and capability is None:
         # Cookie-less callers always get a Set-Cookie so its presence does not reveal
         # whether the email already exists. The decoy is random and never stored.
         set_token = identity.unbound_token()

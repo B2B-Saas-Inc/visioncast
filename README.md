@@ -40,7 +40,8 @@ systems you already run. It is **not**:
   webinar/video service. The optional hosted waiting room (`/w/<code>/`,
   [docs/waiting-room.md](docs/waiting-room.md)) only controls when the join link is
   disclosed and records check-ins;
-* multi-tenant, or a CRM. It does not verify email addresses or phone numbers.
+* multi-tenant, or a CRM. It does not verify phone numbers, and verifies email
+  addresses only by waiting-room code (required before a paid seat; see below).
 
 ## Features
 
@@ -78,12 +79,36 @@ systems you already run. It is **not**:
 * **Browser integration**: dependency-free GTM script and a stdlib-only Node.js
   first-party proxy in [`sdk/`](sdk/), documented in
   [docs/browser-integration.md](docs/browser-integration.md) and
-  [docs/integration.md](docs/integration.md).
+  [docs/integration.md](docs/integration.md). Website kits (WordPress plugin,
+  framework and proxy references, [docs/kits.md](docs/kits.md)) are **not
+  production-tested**; WordPress and framework compatibility is unverified.
+* **Capacity and paid tickets** (preview, Stripe mocked in tests only;
+  [docs/tickets.md](docs/tickets.md)): hard seat limits with atomic holds kept until
+  Stripe confirms payment or checkout expiry; remaining-seat count shown or hidden
+  per session. A paid seat needs mailbox proof first: the API answers
+  `202 verification_required` and the buyer verifies via the waiting-room code; a
+  registered cookie alone is not enough. Needs SMTP (or preview mail) and an
+  enabled waiting room. Refunds are never automated; a Stripe refund or dispute
+  blocks admission.
+* **Hosting providers** (preview, no sandbox verification;
+  [docs/hosting.md](docs/hosting.md)): Zoom Webinars create/update/attach; Wistia
+  and Sequel create only; Riverside attach with per-registrant links (unverified
+  paths). No provider attendance import.
+* **Native integrations** (disabled until vendor-verified;
+  [docs/native-integrations.md](docs/native-integrations.md)): PostHog,
+  Customer.io, HubSpot, Attio, Segment, GA4, Amplitude, Mixpanel, RudderStack and
+  Brevo, implemented and tested against mocked transports only; none is live-verified
+  or production-ready (Mixpanel, RudderStack and Brevo request shapes were compared
+  with fetched vendor-doc facts, not with real accounts). Each destination may only
+  send to its own configured host. Salesforce, Pipedrive, other marketing-automation
+  and transactional tools are not built.
 
 ## Identity model (read before integrating)
 
-There is **no email verification**. A browser is recognised only by the HttpOnly
-capability cookie that was issued to the browser that created the person.
+There is **no email verification for free registrations**. A browser is recognised
+only by the HttpOnly capability cookie that was issued to the browser that created the
+person. Paid seats are the exception: the buyer must prove the mailbox with a
+waiting-room code before any hold or Checkout ([docs/tickets.md](docs/tickets.md)).
 
 * **No account recovery and no cross-device recognition.** A second browser or
   device is never recognised for an existing person.
@@ -130,6 +155,8 @@ management rights).
 | `config_read` | Read-only `GET` on management events, sessions and waiting rooms (drafts included; `waitingRoom.url` null; never a write). MCP redacted configuration. |
 | `public_read`, `reporting` | MCP only (`/mcp`: public read tools and resources; report summary). No REST endpoint checks them, and public REST reads need no key. |
 | `delivery_admin`, `keys_admin`, `team_admin` | **Privileged.** MCP only; see [docs/mcp.md](docs/mcp.md). |
+| `payments_admin` | **Privileged.** Stripe account (set-only secrets), prices, orders, recording refunds made in Stripe (REST and MCP; [docs/tickets.md](docs/tickets.md)). No money moves through the API. |
+| `hosting_admin`, `hosting_provision` | **Privileged.** Hosting accounts with set-only credentials; provider session create/update/attach, reconcile and manual links (REST and MCP; [docs/hosting.md](docs/hosting.md)). |
 
 No scope implies another. Keys are created with `create_api_key` and stored hashed.
 Privileged scopes are granted only by a superuser (studio) or `manage.py create_api_key`.
@@ -235,6 +262,7 @@ settings are not inherited.
 ```sh
 (cd sdk && npm test)             # node --test; no dependencies
 node tests/browser-sdk.cjs       # needs the `playwright` package and Chromium
+node tests/browser-gtm.cjs       # site-wide GTM tag fixture + SDK in Chromium, all routes intercepted
 ```
 
 ## Documentation
@@ -246,6 +274,7 @@ node tests/browser-sdk.cjs       # needs the `playwright` package and Chromium
 | [docs/validation.md](docs/validation.md) | Release evidence |
 | [docs/studio.md](docs/studio.md), [docs/waiting-room.md](docs/waiting-room.md), [docs/email.md](docs/email.md) | Marketer studio, hosted waiting room, operational SMTP |
 | [docs/mcp.md](docs/mcp.md), [docs/native-integrations.md](docs/native-integrations.md) | Agent (MCP) access; native vendor integrations status |
+| [docs/tickets.md](docs/tickets.md), [docs/hosting.md](docs/hosting.md), [docs/kits.md](docs/kits.md) | Capacity and paid tickets; hosting providers; website kits (all preview) |
 | [docs/architecture.md](docs/architecture.md) | Components, module contracts, identity rules, outbox design, roles |
 | [docs/api-reference.md](docs/api-reference.md) | Public, registration and proxy API, auth, errors, idempotency, CSRF |
 | [docs/management-api.md](docs/management-api.md) | Event/occurrence/attendance write API |

@@ -212,6 +212,33 @@ with the same key.
 Browsers should keep one key per submission intent, reuse it on retries, and generate
 a new one after a completed registration (the GTM script does this).
 
+#### Capacity and paid sessions (`202`)
+
+Full contract: [tickets.md](tickets.md). Summary (preview; Stripe mocked in tests only):
+
+| Status | Body | Meaning |
+|---|---|---|
+| `202` | `{"status":"verification_required","occurrenceId","verification":{"available","verifyUrl","message"}}` | Paid session and the caller has not proven the mailbox. **Mandatory before a paid seat:** a registered or recognised cookie alone is not enough. Same answer for every unverified caller, no hold, no Stripe call. `verifyUrl` is the session's waiting room; `available:false` (and `verifyUrl:null`) when the waiting room is disabled or email delivery is `disabled`, so paid sessions need an enabled waiting room and SMTP (or preview) mail. |
+| `202` | `{"status":"payment_required","order":{id,status,checkoutUrl,expiresAt,statusToken,…}}` | Verified buyer; a seat is held atomically until Stripe confirms payment or the checkout expires. Not registered yet. |
+| `409` | `sold_out` | No seat left (holds count). |
+
+`GET /api/v1/orders/<id>` with header `Webinar-Order-Token` returns order status (public,
+token-authorised). Refunds are never automated: refund in Stripe, then record it
+(`POST /api/v1/manage/orders/<id>/mark-refunded`, `payments_admin`). A Stripe refund or
+dispute blocks waiting-room admission. Public occurrences show `availability.soldOut`,
+plus `availability.remaining` only when the session sets `showRemaining`.
+
+Management routes for tickets (`payments_admin`, `content_write` for capacity) and
+hosting (`hosting_admin`, `hosting_provision`) are in [tickets.md](tickets.md),
+[hosting.md](hosting.md) and `GET /api/v1/openapi.json`; the same handlers are exposed
+as MCP tools ([mcp.md](mcp.md)).
+
+Stalled Riverside registrants:
+- **List:** `GET /api/v1/manage/occurrences/<id>/hosting/registrants` (`hosting_provision` or `config_read`). Returns registration IDs and state only, never names, emails or links.
+- **Reconcile:** `POST /api/v1/manage/occurrences/<id>/hosting/registrants/reconcile` (`hosting_provision`). Send `{registrationId, decision, joinUrl?, externalId?}`. The first call returns 428 with a single-use `confirmToken`; repeat the identical request with `Webinar-Confirm-Token`. `joinUrl` is set-only.
+- **Refusals:** other-session IDs get 404; non-Riverside or non-stalled registrants get 409.
+- No provider call is made. See [hosting.md](hosting.md#reconciling-stalled-registrants).
+
 ## Proxy-target endpoints (`proxy` scope)
 
 The first-party proxy (`sdk/proxy/`) maps `/webinar-api/*` on the marketing site to

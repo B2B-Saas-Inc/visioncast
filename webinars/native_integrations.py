@@ -1,4 +1,5 @@
-"""Native outbound adapters (PostHog, HubSpot, Customer.io, Attio) on the existing outbox.
+"""Native outbound adapters (PostHog, HubSpot, Customer.io, Attio, Segment, Amplitude, GA4, Mixpanel,
+RudderStack, Brevo) on the existing outbox.
 
 Configuration lives in the destination's encrypted credentials (``Destination.credentials_encrypted``),
 as flat ``native_*`` string keys; no model field is added. ``native_provider`` absent or empty
@@ -55,8 +56,18 @@ HOSTS = {
     "hubspot": {"global": "api.hubapi.com"},
     "customerio": {"us": "track.customer.io", "eu": "track-eu.customer.io"},
     "attio": {"global": "api.attio.com"},
+    "segment": {"us": "api.segment.io", "eu": "events.eu1.segmentapis.com"},
+    "amplitude": {"us": "api2.amplitude.com", "eu": "api.eu.amplitude.com"},
+    # Only the documented global collection host; no regional GA host is assumed.
+    "ga4": {"global": "www.google-analytics.com"},
+    # Ingestion API residency hosts (unverified in this pass, see docs/native-integrations.md).
+    "mixpanel": {"us": "api.mixpanel.com", "eu": "api-eu.mixpanel.com", "in": "api-in.mixpanel.com"},
+    # The only host in the create-contact / create-event references (fetched 2026-10-25).
+    "brevo": {"global": "api.brevo.com"},
 }
 
+# Static vendor hosts. RudderStack is not here: its data plane is a per-customer host (see
+# ``dataplane_host_problem``), so it is pinned per destination by ``allowed_hosts``.
 VENDOR_HOSTS = frozenset(h for regions in HOSTS.values() for h in regions.values())
 
 PROVIDER_CHOICES = [
@@ -65,7 +76,15 @@ PROVIDER_CHOICES = [
     ("hubspot", "HubSpot"),
     ("customerio", "Customer.io"),
     ("attio", "Attio"),
+    ("segment", "Segment"),
+    ("amplitude", "Amplitude"),
+    ("ga4", "Google Analytics 4"),
+    ("mixpanel", "Mixpanel"),
+    ("rudderstack", "RudderStack"),
+    ("brevo", "Brevo"),
 ]
+# RudderStack validates, but stays unsendable (``native_transport_unavailable``) until delivery
+# pins each destination's own host via ``allowed_hosts`` and sets ``NATIVE_DESTINATION_HOSTS``.
 PROVIDER_LABELS = dict(PROVIDER_CHOICES)
 
 _SLUG = re.compile(r"^[a-z][a-z0-9_]{0,99}$")
@@ -74,6 +93,23 @@ _HS_OBJECT = re.compile(r"^2-[0-9]{1,15}$")
 _CIO_OBJECT = re.compile(r"^[0-9]{1,6}$")
 _ATTIO_LIST = re.compile(r"^([a-z][a-z0-9_]{0,99}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$")
 _SECRET = re.compile(r"^[\x21-\x7e]{6,512}$")
+_GA4_MEASUREMENT = re.compile(r"^G-[A-Z0-9]{4,20}$")
+# Query-string-safe secret (GA4 api_secret travels in the URL).
+_URL_SECRET = re.compile(r"^[A-Za-z0-9_-]{6,128}$")
+# Basic-auth username: printable, no colon (it would split user and password).
+_BASIC_USER = re.compile(r"^[\x21-\x39\x3b-\x7e]{6,512}$")
+_MIXPANEL_PROJECT = re.compile(r"^[0-9]{1,20}$")
+# Bare lowercase DNS name: no scheme, port, path, userinfo, wildcard, IP or trailing dot.
+_HOSTNAME = re.compile(r"^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+# Brevo contact attributes: canonical profile field -> fact key. Nothing else (no custom fields,
+# phone or free-form PII) can be mapped.
+BREVO_ATTRIBUTE_SOURCES = {"firstName": "first_name", "lastName": "last_name", "company": "company_name", "jobTitle": "job_title"}
+_BREVO_PAIR = r"(?:firstName|lastName|company|jobTitle)=[A-Z][A-Z0-9_]{0,49}"
+_BREVO_MAPPING = re.compile(rf"^{_BREVO_PAIR}(?:,{_BREVO_PAIR}){{0,3}}$")
+# Identifier/channel/blocklist names that must never be written as plain attributes.
+BREVO_RESERVED_ATTRIBUTES = frozenset(
+    {"EMAIL", "SMS", "WHATSAPP", "LANDLINE_NUMBER", "EXT_ID", "CONTACT_ID", "EMAIL_ID", "EMAILBLACKLISTED", "SMSBLACKLISTED"}
+)
 
 
 @dataclass(frozen=True)
@@ -169,7 +205,87 @@ FIELDS = {
         ORG_NAMESPACE,
         PROCESSING_ACK,
     ),
+    "segment": (
+        Field("region", "Region", "Segment workspace region.", choices=(("us", "US (api.segment.io)"), ("eu", "EU (events.eu1.segmentapis.com)"))),
+        Field("write_key", "Source write key", "Write key of an HTTP API source. Profile traits are sent only when the Profile data group is allowed.", secret=True, pattern=_SECRET),
+        PROCESSING_ACK,
+    ),
+    "amplitude": (
+        Field("region", "Region", "Amplitude data center of your project.", choices=(("us", "US (api2.amplitude.com)"), ("eu", "EU (api.eu.amplitude.com)"))),
+        Field("api_key", "Project API key", "HTTP V2 API key of the project. Only IDs and webinar properties are sent, no profile.", secret=True, pattern=_SECRET),
+        PROCESSING_ACK,
+    ),
+    "ga4": (
+        Field("region", "Collection host", "Measurement Protocol host.", choices=(("global", "www.google-analytics.com"),)),
+        Field("measurement_id", "Measurement ID", "Web data stream measurement ID, e.g. G-ABC123XYZ.", pattern=_GA4_MEASUREMENT),
+        Field(
+            "api_secret",
+            "Measurement Protocol API secret",
+            "Created under the data stream. Sent in the request URL, so it is never shown in previews or errors.",
+            secret=True,
+            pattern=_URL_SECRET,
+        ),
+        PROCESSING_ACK,
+    ),
+    "mixpanel": (
+        Field("region", "Data residency", "Mixpanel data residency of your project.", choices=(("us", "US (api.mixpanel.com)"), ("eu", "EU (api-eu.mixpanel.com)"), ("in", "India (api-in.mixpanel.com)"))),
+        Field("project_id", "Project ID", "Numeric project ID (sent as project_id on /import).", pattern=_MIXPANEL_PROJECT),
+        Field("service_account_username", "Service account username", "Service account with access to this project.", secret=True, pattern=_BASIC_USER),
+        Field("service_account_secret", "Service account secret", "Only IDs and webinar properties are sent, no profile.", secret=True, pattern=_SECRET),
+        PROCESSING_ACK,
+    ),
+    "rudderstack": (
+        Field("region", "Data plane", "Your own data plane host below.", choices=(("dataplane", "Operator-allowlisted data plane"),)),
+        Field(
+            "dataplane_host",
+            "Data plane host",
+            "Bare host name only, e.g. example.dataplane.rudderstack.com. Your operator must list this exact host in WEBHOOK_HOST_ALLOWLIST.",
+            pattern=_HOSTNAME,
+        ),
+        Field("write_key", "Source write key", "Write key of an HTTP source. Profile traits are sent only when the Profile data group is allowed.", secret=True, pattern=_SECRET),
+        PROCESSING_ACK,
+    ),
+    "brevo": (
+        Field("region", "API host", "Brevo API host.", choices=(("global", "api.brevo.com"),)),
+        Field("api_key", "API key", "Brevo API v3 key, sent in the api-key header only to api.brevo.com.", secret=True, pattern=_SECRET),
+        Field(
+            "contact_sync",
+            "Contacts",
+            "Events are always keyed by the registrant's email. Updating contacts also writes the mapped attributes "
+            "below (only when the Profile data group is allowed). Lists, subscriptions and blocklist flags are never changed.",
+            choices=(("events", "Send events only"), ("upsert", "Create or update the contact by email, then send events")),
+        ),
+        Field(
+            "email_merge_ack",
+            "Email match confirmation",
+            "Required: every Brevo call identifies the contact by email, so events attach to (and, when updating "
+            "contacts, attributes overwrite) any existing contact with that email. Only registrations whose identity the "
+            "platform verified (browser capability or new person) are sent; this is not proof of mailbox ownership.",
+            choices=EMAIL_MERGE_ACK.choices,
+        ),
+        Field(
+            "contact_attributes",
+            "Contact attribute mapping",
+            "Comma-separated pairs, e.g. firstName=FIRSTNAME,lastName=LASTNAME. Sources: firstName, lastName, company, "
+            "jobTitle only. Targets must be existing uppercase Brevo contact attributes. Leave empty to send email only.",
+            required=False,
+            pattern=_BREVO_MAPPING,
+        ),
+        PROCESSING_ACK,
+    ),
 }
+
+# Analytics tools: the platform's own analytics consent purpose must gate delivery.
+ANALYTICS_PROVIDERS = {"posthog", "amplitude", "ga4", "mixpanel", "rudderstack"}
+# Adapters that also refuse a message whose snapshot carries consents without an analytics grant
+# (defence in depth on top of delivery's required-consent check).
+ANALYTICS_GUARDED = {"mixpanel", "rudderstack"}
+# Providers whose host is per-destination: delivery must pin ``allowed_hosts(...)``.
+NEEDS_DESTINATION_HOSTS = {"rudderstack"}
+# GA4 forbids PII: the snapshot must not carry the profile, and needs consents + attribution
+# (the analytics-consent-gated GA client ID).
+GA4_FORBIDDEN_GROUPS = ("profile",)
+GA4_REQUIRED_GROUPS = ("consents", "attribution")
 
 # Per provider: the custom-ID field that custom_id matching needs.
 CUSTOM_ID_FIELD = {"hubspot": "contact_id_property", "attio": "person_match_attribute"}
@@ -229,9 +345,65 @@ def secrets_set(credentials, provider):
     return {f.name: bool(credentials.get(NATIVE_PREFIX + f.name)) for f in FIELDS.get(provider, ()) if f.secret}
 
 
+def _exact_allowlist_entries():
+    """Operator WEBHOOK_HOST_ALLOWLIST entries written as plain hosts (wildcard/suffix entries excluded)."""
+    from webinars.ssrf import _setting_list
+
+    out = set()
+    for raw in _setting_list("WEBHOOK_HOST_ALLOWLIST", []):
+        entry = str(raw).strip().lower().rstrip(".")
+        if entry and not entry.startswith(("*", ".")):
+            out.add(entry)
+    return out
+
+
+def dataplane_host_problem(host):
+    """Why ``host`` may not be a RudderStack data plane, else None. No DNS.
+
+    The host is user-entered, so it must be a bare DNS name *and* an exact, non-wildcard entry of
+    the operator allowlist: an operator entry like ``rudderstack.com`` or ``*.example.com`` does
+    not admit arbitrary sub-domains here. Static vendor hosts are refused (a write key must not go
+    to another vendor). ``validate_destination_url`` then applies the usual https/internal-name policy.
+    """
+    if not isinstance(host, str) or not _HOSTNAME.match(host):
+        return "format"
+    if host in VENDOR_HOSTS:
+        return "vendor_host"
+    if host not in _exact_allowlist_entries():
+        return "not_allowlisted"
+    try:
+        validate_destination_url(f"https://{host}")
+    except UnsafeDestination:
+        return "unsafe"
+    return None
+
+
+def _host(provider, credentials):
+    credentials = credentials or {}
+    if provider == "rudderstack":
+        if credentials.get(NATIVE_PREFIX + "region") != "dataplane":
+            return None
+        host = credentials.get(NATIVE_PREFIX + "dataplane_host", "")
+        return host if dataplane_host_problem(host) is None else None
+    return HOSTS.get(provider, {}).get(credentials.get(NATIVE_PREFIX + "region", ""))
+
+
 def base_url(provider, credentials):
-    host = HOSTS.get(provider, {}).get((credentials or {}).get(NATIVE_PREFIX + "region", ""))
+    host = _host(provider, credentials)
     return f"https://{host}" if host else None
+
+
+def allowed_hosts(provider, credentials):
+    """The only host(s) this destination may send to: pass as ``allowed_hosts`` to the transport."""
+    host = _host(provider, credentials)
+    return frozenset({host}) if host else frozenset()
+
+
+def destination_hosts_supported():
+    """True once delivery pins ``allowed_hosts(provider, credentials)`` per destination."""
+    import webinars.delivery
+
+    return getattr(webinars.delivery, "NATIVE_DESTINATION_HOSTS", False) is True
 
 
 def merge_credentials(existing, provider, posted):
@@ -300,9 +472,23 @@ def validate(provider, credentials, *, event_types=(), allowed_groups=(), requir
         except UnsafeDestination:
             host = url.split("//", 1)[1]
             add("provider", f"Ask your operator to add {host} to WEBHOOK_HOST_ALLOWLIST before enabling.")
+    if provider == "rudderstack":
+        host = (credentials or {}).get(NATIVE_PREFIX + "dataplane_host", "")
+        problem = dataplane_host_problem(host) if host else None
+        if problem == "format":
+            if "native-dataplane_host" not in errors:
+                add("native-dataplane_host", "Enter a bare lowercase host name: no https://, port, path or wildcard.")
+        elif problem == "vendor_host":
+            add("native-dataplane_host", "That host belongs to another provider; enter your RudderStack data plane host.")
+        elif problem == "not_allowlisted":
+            add("provider", f"Ask your operator to add exactly {host} (not a wildcard or parent domain) to WEBHOOK_HOST_ALLOWLIST before enabling.")
+        elif problem == "unsafe":
+            add("native-dataplane_host", "That host is not allowed as a destination.")
+        if not destination_hosts_supported():
+            add("provider", "RudderStack needs per-destination host pinning in delivery, which this installation lacks; it can't be enabled.")
     cfg = config_of(credentials or {}, provider)
     org_targets = {"posthog": "group_type", "hubspot": "company_id_property", "customerio": "object_type_id", "attio": "company_match_attribute"}
-    if bool(cfg.get("org_namespace")) != bool(cfg.get(org_targets[provider])):
+    if provider in org_targets and bool(cfg.get("org_namespace")) != bool(cfg.get(org_targets[provider])):
         add("native-org_namespace", "Set both the organization ID namespace and the organization target, or neither.")
     bad_events = [e for e in (event_types or []) if e not in NATIVE_EVENT_TYPES]
     if bad_events:
@@ -311,15 +497,26 @@ def validate(provider, credentials, *, event_types=(), allowed_groups=(), requir
     missing = [g for g in REQUIRED_GROUPS if g not in groups]
     if missing:
         add("allowed_groups", "Native integrations need these data groups: " + ", ".join(missing) + ".")
-    if provider == "posthog" and "analytics" not in (required_consents or []):
+    if provider in ANALYTICS_PROVIDERS and "analytics" not in (required_consents or []):
         # Product guardrail from the platform's own consent model (analytics purpose), not a CRM rule.
-        add("required_consents", "PostHog is analytics: require Analytics consent.")
+        add("required_consents", f"{PROVIDER_LABELS[provider]} is analytics: require Analytics consent.")
+    if provider == "ga4":
+        forbidden = [g for g in GA4_FORBIDDEN_GROUPS if g in groups]
+        if forbidden:
+            add("allowed_groups", "Google Analytics must not receive personal data: remove the " + ", ".join(forbidden) + " group.")
+        needed = [g for g in GA4_REQUIRED_GROUPS if g not in groups]
+        if needed:
+            add("allowed_groups", "Google Analytics needs these data groups for the consent-gated GA client ID: " + ", ".join(needed) + ".")
     if provider in CUSTOM_ID_FIELD:
         match = cfg.get("person_match")
         if match == "email" and cfg.get("email_merge_ack") != CONFIRMED:
             add("native-email_merge_ack", "Matching by email updates existing contacts: confirm this to enable.")
         if match == "custom_id" and not cfg.get(CUSTOM_ID_FIELD[provider]):
             add(f"native-{CUSTOM_ID_FIELD[provider]}", "Required when matching by custom ID.")
+    if provider == "brevo":
+        mapping = cfg.get("contact_attributes")
+        if mapping and _BREVO_MAPPING.match(mapping) and brevo_attribute_map(mapping) is None:
+            add("native-contact_attributes", "Map each source and each Brevo attribute once; identifier and blocklist attributes (EMAIL, SMS, EXT_ID…) can't be mapped.")
     if provider in NEEDS_REQUEST_TRANSPORT and not transport_supports_requests():
         add(
             "provider",
@@ -524,6 +721,337 @@ def plan_customerio(cfg, secrets, facts, event_type):
     return steps
 
 
+def plan_segment(cfg, secrets, facts, event_type):
+    """HTTP API ``POST /v1/identify`` (only with a profile) then ``POST /v1/track``.
+
+    Basic auth ``writeKey:`` (empty password). ``userId`` = platform person id; ``messageId`` is
+    deterministic per delivery and step, so a retry resends the same id (Segment dedupe on it
+    is not verified here). Segment answers 200 for most malformed bodies, so 2xx is not proof
+    the event was accepted.
+    """
+    steps = []
+    traits = _clean({"email": facts["email"], "firstName": facts["first_name"], "lastName": facts["last_name"], "title": facts["job_title"]})
+    if facts["has_profile"] and traits:
+        steps.append(
+            {
+                "step": "identify",
+                "method": "POST",
+                "path": "/v1/identify",
+                "json": _clean(
+                    {"userId": facts["person_id"], "messageId": _stable_uuid(facts["delivery_id"], "segment-identify"), "timestamp": facts["occurred_at"], "traits": traits}
+                ),
+            }
+        )
+    steps.append(
+        {
+            "step": "track",
+            "method": "POST",
+            "path": "/v1/track",
+            "json": _clean(
+                {
+                    "userId": facts["person_id"],
+                    "event": _event_name(event_type, facts),
+                    "properties": _clean(dict(facts["properties"])),
+                    "messageId": _stable_uuid(facts["delivery_id"], "segment-track"),
+                    "timestamp": facts["occurred_at"],
+                }
+            ),
+        }
+    )
+    token = base64.b64encode(f"{secrets['write_key']}:".encode()).decode()
+    for s in steps:
+        s["auth"] = f"Basic {token}"
+    return steps
+
+
+def plan_amplitude(cfg, secrets, facts, event_type):
+    """HTTP V2 ``POST /2/httpapi`` with ``api_key`` in the body and one event.
+
+    No profile data. ``insert_id`` is deterministic per delivery; Amplitude documents dedupe on
+    ``device_id`` + ``insert_id`` and we send no device id (none is captured; we do not invent
+    one), so dedupe of a retried event is NOT assumed.
+    """
+    event = {
+        "user_id": facts["person_id"],
+        "event_type": _event_name(event_type, facts),
+        "insert_id": _stable_uuid(facts["delivery_id"], "amplitude-event"),
+        "event_properties": _clean(dict(facts["properties"])),
+    }
+    ts = unix_seconds(facts["occurred_at"])
+    if ts is not None:
+        event["time"] = ts * 1000  # milliseconds since epoch
+    return [{"step": "event", "method": "POST", "path": "/2/httpapi", "json": {"api_key": secrets["api_key"], "events": [event]}, "auth": None}]
+
+
+def _analytics_guard(body):
+    """Skip when the snapshot carries consents but no explicit analytics grant.
+
+    Without the consents group, delivery's required-consent check (``validate`` forces
+    Analytics) is the gate; this never treats a missing record as a grant.
+    """
+    if "consents" in body and not _consent_granted_in(body, "analytics"):
+        raise Skip("native_analytics_consent_missing")
+
+
+def _require_delivery_id(facts):
+    # Deterministic ids derive from the delivery id; without it every message would share one id.
+    if not facts["delivery_id"]:
+        raise _Stop(Outcome("dead", "native_delivery_id_missing"))
+
+
+def _encode(payload):
+    """The exact request body ``NativeContext.call`` sends (compact, UTF-8)."""
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+# Vendor payload limits from the primary docs fetched 2026-10-25 (docs/native-integrations.md).
+# "KB"/"MB" are read as decimal, the stricter reading. Checked on the serialized body before any call.
+MIXPANEL_MAX_EVENT_BYTES = 1_000_000  # each event < 1 MB
+MIXPANEL_MAX_PROPERTIES = 254  # < 255 property keys
+RUDDERSTACK_MAX_CALL_BYTES = 32_000  # max 32 KB per call
+_SCALARS = (str, int, float, bool)
+
+
+def _require_flat(step, mapping):
+    # Only scalar values are sent: Mixpanel caps nesting/arrays and RudderStack's nesting limit
+    # was not found in its docs, so nested or array values are refused rather than guessed at.
+    if any(not isinstance(v, _SCALARS) for v in mapping.values()):
+        raise _Stop(Outcome("dead", f"{step}: payload_unsupported"))
+
+
+def _require_size(step, payload, max_bytes):
+    if len(_encode(payload)) > max_bytes:
+        raise _Stop(Outcome("dead", f"{step}: payload_too_large"))
+
+
+def plan_mixpanel(cfg, secrets, facts, event_type):
+    """Ingestion ``POST /import?strict=1&project_id=…`` with a one-event JSON array.
+
+    Service-account Basic auth. ``distinct_id`` = platform person id; ``time`` in milliseconds
+    from ``occurredAt``; ``$insert_id`` deterministic per delivery (uuid5: 36 chars, hex and
+    hyphens), so a retry resends the same (event, time, distinct_id, $insert_id), Mixpanel's
+    documented dedupe tuple; best effort, not exactly-once. ``ip`` = "0" so Mixpanel does not
+    geolocate from our server's request IP. No profile data (no /engage call).
+    """
+    _require_delivery_id(facts)
+    ts = unix_seconds(facts["occurred_at"])
+    if ts is None:
+        raise Skip("native_no_timestamp")  # /import needs a time; we do not invent one
+    if not cfg.get("project_id"):
+        raise _Stop(Outcome("dead", "native_config_incomplete"))
+    props = _clean(dict(facts["properties"]))
+    props.update(
+        {"time": ts * 1000, "distinct_id": facts["person_id"], "$insert_id": _stable_uuid(facts["delivery_id"], "mixpanel-event"), "ip": 0}
+    )
+    _require_flat("import", props)
+    if len(props) > MIXPANEL_MAX_PROPERTIES:
+        raise _Stop(Outcome("dead", "import: payload_unsupported"))
+    events = [{"event": _event_name(event_type, facts), "properties": props}]
+    # The body is the one-event array: at most 2 bytes more than the event, so this is stricter.
+    if len(_encode(events)) >= MIXPANEL_MAX_EVENT_BYTES:
+        raise _Stop(Outcome("dead", "import: payload_too_large"))
+    token = base64.b64encode(f"{secrets['service_account_username']}:{secrets['service_account_secret']}".encode()).decode()
+    query = urlencode({"strict": "1", "project_id": cfg["project_id"]})
+    return [{"step": "import", "method": "POST", "path": "/import?" + query, "json": events, "auth": f"Basic {token}"}]
+
+
+def plan_rudderstack(cfg, secrets, facts, event_type):
+    """HTTP API ``POST /v1/identify`` (only with a profile) then ``POST /v1/track``.
+
+    Same Segment-compatible spec as ``plan_segment``: Basic ``writeKey:`` (the documented curl
+    ``-u <write_key>:``), ``userId`` = person id, deterministic ``messageId``. RudderStack dedupe
+    on ``messageId`` is not assumed. The timestamp is sent only if it parses as ISO-8601. Every
+    step is checked against the per-call size limit before the first call, so an oversize track
+    never follows a sent identify.
+    """
+    _require_delivery_id(facts)
+    steps = plan_segment(cfg, {"write_key": secrets["write_key"]}, facts, event_type)
+    for s in steps:
+        s["json"]["messageId"] = _stable_uuid(facts["delivery_id"], f"rudderstack-{s['step']}")
+        if unix_seconds(s["json"].get("timestamp")) is None:
+            s["json"].pop("timestamp", None)
+        for key in ("traits", "properties"):
+            _require_flat(s["step"], s["json"].get(key) or {})
+        _require_size(s["step"], s["json"], RUDDERSTACK_MAX_CALL_BYTES)
+    return steps
+
+
+# Brevo limits from the create-event reference fetched 2026-10-25 (decimal KB, the stricter reading).
+BREVO_MAX_PROPERTIES_BYTES = 50_000  # event_properties: 50 KB
+_BREVO_NAME = re.compile(r"^[A-Za-z0-9_-]{1,255}$")  # event_name and event_properties keys
+# The approved, self-contained snapshot sent as event_properties: explicit (group, path) -> key.
+# Only scalar lifecycle ids, statuses and timestamps. Never profile/consent/attribution data or
+# any URL (joinUrl, waitingRoomUrl, managedRoomUrl, recordingUrl, heroImageUrl, redirectUrl), so
+# no private link reaches Brevo whatever the destination's link setting. A group the destination
+# may not receive is already absent from the re-filtered body, so its keys are simply not sent.
+BREVO_EVENT_PATHS = (
+    ("identity", ("personId",), "person_id"),
+    ("registration", ("id",), "registration_id"),
+    ("registration", ("status",), "registration_status"),
+    ("registration", ("attendance",), "registration_attendance"),
+    ("registration", ("formVersion",), "registration_form_version"),
+    ("registration", ("createdAt",), "registration_created_at"),
+    ("registration", ("updatedAt",), "registration_updated_at"),
+    ("event", ("id",), "event_id"),
+    ("event", ("slug",), "event_slug"),
+    ("event", ("title",), "event_title"),
+    ("event", ("revision",), "event_revision"),
+    ("event", ("occurrence", "id"), "occurrence_id"),
+    ("event", ("occurrence", "startsAt"), "occurrence_starts_at"),
+    ("event", ("occurrence", "endsAt"), "occurrence_ends_at"),
+    ("event", ("occurrence", "timezone"), "occurrence_timezone"),
+    ("event", ("occurrence", "status"), "occurrence_status"),
+    ("event", ("occurrence", "cancelledAt"), "occurrence_cancelled_at"),
+    ("event", ("occurrence", "recordingPublishedAt"), "occurrence_recording_published_at"),
+    ("delivery_metadata", ("deliveryId",), "delivery_id"),
+    ("delivery_metadata", ("createdAt",), "delivery_created_at"),
+)
+
+
+def brevo_attribute_map(value):
+    """``{fact key: BREVO_ATTRIBUTE}`` from ``firstName=FIRSTNAME,…``; ``{}`` when empty, None when invalid."""
+    if not value:
+        return {}
+    if not _BREVO_MAPPING.match(value):
+        return None
+    pairs = [p.split("=", 1) for p in value.split(",")]
+    sources, targets = [s for s, _ in pairs], [t for _, t in pairs]
+    if len(set(sources)) != len(sources) or len(set(targets)) != len(targets) or set(targets) & BREVO_RESERVED_ATTRIBUTES:
+        return None
+    return {BREVO_ATTRIBUTE_SOURCES[s]: t for s, t in pairs}
+
+
+def _brevo_event_properties(body, event_type):
+    props = {"webinar_event_type": event_type, "occurred_at": body.get("occurredAt"), "schema_version": body.get("schemaVersion") or SCHEMA_VERSION}
+    for group, path, key in BREVO_EVENT_PATHS:
+        cur = body.get(group)
+        for p in path:
+            cur = cur.get(p) if isinstance(cur, dict) else None
+        props[key] = cur
+    return {k: v for k, v in props.items() if isinstance(v, _SCALARS) and v != ""}
+
+
+def plan_brevo(cfg, secrets, facts, event_type, body):
+    """``POST /v3/contacts`` (optional, email-keyed upsert) then ``POST /v3/events``. ``api-key`` header.
+
+    Contact: only in ``upsert`` mode, with the email-match confirmation, when the profile group is
+    present and has an email. Body is only ``email``, the explicitly mapped ``attributes`` and
+    ``updateEnabled: true``; never ``ext_id`` (no cross-merge on our person id), ``listIds``,
+    blocklist flags, SMS/WhatsApp or ``forceMerge``. Event: ``identifiers.email_id`` only,
+    ``event_date`` from ``occurredAt`` when it parses, flat ``event_properties`` from
+    ``BREVO_EVENT_PATHS`` including the delivery id (Brevo documents no idempotency key, so a
+    retry can duplicate the event; consumers dedupe on ``delivery_id``). Every step is validated
+    before the first call.
+    """
+    if cfg.get("email_merge_ack") != CONFIRMED or cfg.get("contact_sync") not in ("events", "upsert"):
+        raise _Stop(Outcome("dead", "native_match_strategy_unconfirmed"))
+    _require_delivery_id(facts)
+    attribute_map = brevo_attribute_map(cfg.get("contact_attributes"))
+    if attribute_map is None:
+        raise _Stop(Outcome("dead", "native_config_invalid"))
+    identity = body.get("identity") if isinstance(body.get("identity"), dict) else {}
+    email = facts["email"] or identity.get("email")
+    if not isinstance(email, str) or not email:
+        raise Skip("native_no_email")
+    _event_name(event_type, facts)  # unsupported events / unknown attendance are skipped like elsewhere
+    name = "webinar_" + event_type.replace(".", "_")
+    props = _brevo_event_properties(body, event_type)
+    if not _BREVO_NAME.match(name) or not all(_BREVO_NAME.match(k) for k in props):
+        raise _Stop(Outcome("dead", "event: payload_unsupported"))
+    _require_size("event", props, BREVO_MAX_PROPERTIES_BYTES)
+    headers = {"api-key": secrets["api_key"]}
+    steps = []
+    if cfg["contact_sync"] == "upsert" and facts["has_profile"] and facts["email"]:
+        attributes = _clean({target: facts[source] for source, target in attribute_map.items()})
+        _require_flat("contact", attributes)
+        contact = {"email": facts["email"], "updateEnabled": True}
+        if attributes:
+            contact["attributes"] = attributes
+        steps.append({"step": "contact", "method": "POST", "path": "/v3/contacts", "json": contact, "auth": None, "headers": headers})
+    event = {"event_name": name, "identifiers": {"email_id": email}, "event_properties": props}
+    if unix_seconds(facts["occurred_at"]) is not None:
+        event["event_date"] = facts["occurred_at"]
+    steps.append({"step": "event", "method": "POST", "path": "/v3/events", "json": event, "auth": None, "headers": headers})
+    return steps
+
+
+GA4_EVENT_NAMES = {
+    "webinar registered": "webinar_registered",
+    "webinar registration updated": "webinar_registration_updated",
+    "webinar checked in": "webinar_checked_in",
+    "webinar attended": "webinar_attended",
+    "webinar no-show": "webinar_no_show",
+}
+# Only pseudonymous webinar ids and statuses; never person id, email, names or custom fields.
+GA4_PARAMS = ("webinar_event_type", "webinar_event_id", "webinar_occurrence_id", "webinar_registration_status", "webinar_attendance")
+GA4_PARAM_MAX = 100
+# ``_ga`` cookie value ``GA1.<n>.<random>.<timestamp>`` -> client id ``<random>.<timestamp>``.
+_GA_COOKIE = re.compile(r"^GA\d+\.\d+\.(\d{1,20}\.\d{1,20})$")
+_GA_CLIENT_ID = re.compile(r"^\d{1,20}\.\d{1,20}$")
+
+
+def ga_client_id(body):
+    """The captured GA client id from the snapshot's attribution, else None (never invented).
+
+    ``attribution.clean_attribution`` keeps ``gaClientId`` only with analytics consent.
+    """
+    attribution = body.get("attribution") if isinstance(body.get("attribution"), dict) else {}
+    for touch in ("registrationTouch", "firstTouch"):
+        t = attribution.get(touch) if isinstance(attribution.get(touch), dict) else {}
+        ids = t.get("identifiers") if isinstance(t.get("identifiers"), dict) else {}
+        value = ids.get("gaClientId")
+        if not isinstance(value, str):
+            continue
+        m = _GA_COOKIE.match(value)
+        if m:
+            return m.group(1)
+        if _GA_CLIENT_ID.match(value):
+            return value
+    return None
+
+
+def _consent_granted_in(body, purpose):
+    consents = body.get("consents") if isinstance(body.get("consents"), dict) else {}
+    entry = consents.get(purpose)
+    return isinstance(entry, dict) and entry.get("granted") is True
+
+
+def ga4_inputs(body):
+    """``(client_id, ads_granted)`` from the snapshot. Raises ``Skip`` without analytics consent or a client id."""
+    if not _consent_granted_in(body, "analytics"):
+        raise Skip("native_analytics_consent_missing")
+    client_id = ga_client_id(body)
+    if not client_id:
+        raise Skip("native_ga_client_id_missing")
+    return client_id, _consent_granted_in(body, "advertising")
+
+
+def plan_ga4(cfg, secrets, facts, event_type, client_id, ads_granted):
+    """Measurement Protocol ``POST /mp/collect?measurement_id=…&api_secret=…``.
+
+    The URL carries the API secret: it must never be logged or previewed (``redact_url``).
+    GA answers 2xx even for invalid payloads, so 2xx is not proof the event was accepted.
+    """
+    params = {}
+    for key in GA4_PARAMS:
+        value = facts["properties"].get(key)
+        if isinstance(value, str) and value:
+            params[key] = value[:GA4_PARAM_MAX]
+    ad = "GRANTED" if ads_granted else "DENIED"  # explicit advertising grant only
+    payload = {
+        "client_id": client_id,
+        "consent": {"ad_user_data": ad, "ad_personalization": ad},
+        "events": [{"name": GA4_EVENT_NAMES[_event_name(event_type, facts)], "params": params}],
+    }
+    ts = unix_seconds(facts["occurred_at"])
+    if ts is not None:
+        payload["timestamp_micros"] = ts * 1_000_000
+    if not cfg.get("measurement_id"):
+        raise _Stop(Outcome("dead", "native_config_incomplete"))
+    query = urlencode({"measurement_id": cfg["measurement_id"], "api_secret": secrets["api_secret"]})
+    return [{"step": "collect", "method": "POST", "path": "/mp/collect?" + query, "json": payload, "auth": None}]
+
+
 def _participation_props(facts):
     p = facts["properties"]
     return _clean(
@@ -581,7 +1109,7 @@ class NativeContext:
             if stop is not None:
                 raise _Stop(stop)
         self.calls += 1
-        body = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        body = _encode(payload)
         try:
             if read or method != "POST":
                 result = self._request(method, url, body, headers)
@@ -735,9 +1263,14 @@ def _run_attio(ctx, base, cfg, secrets, facts, event_type):
     ctx.call("participation", "PUT", base + f"/v2/lists/{quote(cfg['participation_list'])}/entries", {"data": entry}, auth, True)
 
 
+def _step_headers(step):
+    # Optional vendor credential header (Brevo ``api-key``) on top of the constant headers.
+    return {**_headers(step.get("auth")), **(step.get("headers") or {})}
+
+
 def _run_simple(ctx, base, steps):
     for s in steps:
-        ctx.call(s["step"], s["method"], base + s["path"], s["json"], _headers(s.get("auth")), False)
+        ctx.call(s["step"], s["method"], base + s["path"], s["json"], _step_headers(s), False)
 
 
 def execute(provider, credentials, body, event_type, ctx):
@@ -758,6 +1291,23 @@ def execute(provider, credentials, body, event_type, ctx):
             _run_hubspot(ctx, base, cfg, secrets, facts, event_type)
         elif provider == "attio":
             _run_attio(ctx, base, cfg, secrets, facts, event_type)
+        elif provider == "segment":
+            _run_simple(ctx, base, plan_segment(cfg, secrets, facts, event_type))
+        elif provider == "amplitude":
+            _run_simple(ctx, base, plan_amplitude(cfg, secrets, facts, event_type))
+        elif provider == "ga4":
+            client_id, ads = ga4_inputs(body)
+            _run_simple(ctx, base, plan_ga4(cfg, secrets, facts, event_type, client_id, ads))
+        elif provider == "mixpanel":
+            _analytics_guard(body)
+            _run_simple(ctx, base, plan_mixpanel(cfg, secrets, facts, event_type))
+        elif provider == "rudderstack":
+            if not destination_hosts_supported():
+                return Outcome("dead", "native_transport_unavailable")
+            _analytics_guard(body)
+            _run_simple(ctx, base, plan_rudderstack(cfg, secrets, facts, event_type))
+        elif provider == "brevo":
+            _run_simple(ctx, base, plan_brevo(cfg, secrets, facts, event_type, body))
         else:
             return Outcome("dead", "native_provider_unknown")
     except Skip as exc:
@@ -783,6 +1333,8 @@ def check_send_policy(provider, credentials, destination):
     if "required_consents" in errors:
         return "native_consent_policy_invalid"
     if provider in NEEDS_REQUEST_TRANSPORT and not transport_supports_requests():
+        return "native_transport_unavailable"
+    if provider in NEEDS_DESTINATION_HOSTS and not destination_hosts_supported():
         return "native_transport_unavailable"
     return "native_config_invalid"
 
@@ -815,8 +1367,8 @@ class _PreviewContext:
             {
                 "step": step,
                 "method": method,
-                "url": url,
-                "headers": {k: (REDACTED if k.lower() == "authorization" else v) for k, v in headers.items()},
+                "url": redact_url(url),
+                "headers": {k: (REDACTED if k.lower() in SECRET_HEADERS else v) for k, v in headers.items()},
                 "body": _redact(payload),
             }
         )
@@ -825,18 +1377,75 @@ class _PreviewContext:
         return {"results": [{"id": "<returned id>"}], "data": {"id": {"record_id": "<returned id>"}}}
 
 
+# Query parameters / body keys that carry credentials in some vendor contracts.
+SECRET_KEYS = frozenset({"api_key", "api_secret", "writeKey", "write_key"})
+# Request headers that carry credentials (lower-case).
+SECRET_HEADERS = frozenset({"authorization", "api-key"})
+
+
+def redact_url(url):
+    """``url`` with secret query values replaced (GA4 ``api_secret``). Safe to render or log."""
+    if not isinstance(url, str) or "?" not in url:
+        return url
+    from urllib.parse import parse_qsl
+
+    base, _, query = url.partition("?")
+    pairs = [(k, REDACTED if k in SECRET_KEYS else v) for k, v in parse_qsl(query, keep_blank_values=True)]
+    return base + "?" + urlencode(pairs)
+
+
 def _redact(obj):
     if isinstance(obj, dict):
-        return {k: (REDACTED if k == "api_key" else _redact(v)) for k, v in obj.items()}
+        return {k: (REDACTED if k in SECRET_KEYS else _redact(v)) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_redact(v) for v in obj]
     return obj
 
 
+# Bounded, operator-facing reasons a preview plan was refused. Keys are fixed codes (never
+# payload values, provider text or exception messages); anything else maps to ``preview_refused``.
+PREVIEW_REFUSALS = {
+    "native_match_strategy_unconfirmed": "Choose a contact sync mode and confirm the email merge acknowledgement.",
+    "native_config_invalid": "Fix the field mapping: use only the listed sources, unique uppercase targets and no reserved names.",
+    "native_config_incomplete": "Fill in every required field for this provider.",
+    "native_delivery_id_missing": "The sample has no delivery id; this is a platform defect, report it.",
+    "preview_event_skipped": "The sample registration would not be sent with these settings (event type, identity or consent rules).",
+    "preview_payload_unsupported": "The planned request is not a flat, size-bounded payload; check names and mapped fields.",
+    "preview_refused": "The request plan was refused; check the settings listed above.",
+}
+
+
 def preview(provider, credentials, event_type="registration.created"):
-    """Planned requests for a synthetic sample registration, secrets redacted. ``[]`` when not configured."""
+    """Planned requests for a synthetic sample registration, secrets redacted. ``[]`` when not configured
+    or when the plan is refused (see ``preview_refusal`` for the reason)."""
+    return _preview(provider, credentials, event_type)[0]
+
+
+def preview_refusal(provider, credentials, event_type="registration.created"):
+    """``(code, guidance)`` from ``PREVIEW_REFUSALS`` when the sample plan is refused, else ``None``.
+
+    ``None`` also when the provider is not configured enough to plan (``validate`` reports that).
+    """
+    code = _preview(provider, credentials, event_type)[1]
+    return (code, PREVIEW_REFUSALS[code]) if code else None
+
+
+def _refusal_code(exc):
+    if isinstance(exc, Skip):
+        return "preview_event_skipped"
+    if isinstance(exc, KeyError):
+        return "native_config_incomplete"
+    error = exc.outcome.error or ""
+    if error in PREVIEW_REFUSALS:
+        return error
+    if error.endswith((": payload_unsupported", ": payload_too_large")):
+        return "preview_payload_unsupported"
+    return "preview_refused"
+
+
+def _preview(provider, credentials, event_type):
     if provider not in FIELDS or not base_url(provider, credentials):
-        return []
+        return [], None
     cfg = config_of(credentials, provider)
     sample = json.loads(json.dumps(SAMPLE_BODY))
     if cfg.get("org_namespace"):
@@ -850,17 +1459,30 @@ def preview(provider, credentials, event_type="registration.created"):
             steps = plan_posthog(cfg, secrets, facts, event_type)
         elif provider == "customerio":
             steps = plan_customerio(cfg, secrets, facts, event_type)
+        elif provider == "segment":
+            steps = plan_segment(cfg, secrets, facts, event_type)
+        elif provider == "amplitude":
+            steps = plan_amplitude(cfg, secrets, facts, event_type)
+        elif provider == "ga4":
+            # Synthetic, clearly fake client id; real sends use only the captured one.
+            steps = plan_ga4(cfg, secrets, facts, event_type, "1000000000.1000000000", False)
+        elif provider == "mixpanel":
+            steps = plan_mixpanel(cfg, secrets, facts, event_type)
+        elif provider == "rudderstack":
+            steps = plan_rudderstack(cfg, secrets, facts, event_type)
+        elif provider == "brevo":
+            steps = plan_brevo(cfg, secrets, facts, event_type, sample)
         else:
             steps = None
         if steps is not None:
             for s in steps:
-                ctx.call(s["step"], s["method"], base + s["path"], s["json"], _headers(s.get("auth")), False)
+                ctx.call(s["step"], s["method"], base + s["path"], s["json"], _step_headers(s), False)
         elif provider == "hubspot" and cfg.get("participation_object_type") and cfg.get("participation_id_property"):
             _run_hubspot(ctx, base, cfg, {"access_token": REDACTED}, facts, event_type)
         elif provider == "attio" and cfg.get("participation_list"):
             _run_attio(ctx, base, cfg, {"access_token": REDACTED}, facts, event_type)
-    except (Skip, _Stop, KeyError):
-        return []
+    except (Skip, _Stop, KeyError) as exc:
+        return [], _refusal_code(exc)
     for c in ctx.calls:
         c["body_json"] = json.dumps(c["body"], indent=2, sort_keys=True)
-    return ctx.calls
+    return ctx.calls, None

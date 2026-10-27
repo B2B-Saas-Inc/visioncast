@@ -12,6 +12,8 @@
   <div class="row" style="gap:var(--s-2);flex-wrap:wrap">
     <a class="btn btn-ghost" href="{% url 'studio:session-embed' occ.pk %}">{% include "studio/_icon.html" with name="copy" %} Embed on your site</a>
     {% if can_view_registrations %}<a class="btn btn-ghost" href="{% url 'studio:session-registrations' occ.pk %}">{% include "studio/_icon.html" with name="users" %} Registrations</a>{% endif %}
+    {% if perms.webinars.change_occurrence %}<a class="btn btn-ghost" href="{% url 'studio:session-tickets' occ.pk %}">Seats &amp; tickets</a>
+    <a class="btn btn-ghost" href="{% url 'studio:session-hosting' occ.pk %}">Hosting provider</a>{% endif %}
   </div>
 </div>
 

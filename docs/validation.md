@@ -1,6 +1,86 @@
-# Preview validation — 2026-10-23
+# Preview validation
 
-Implemented with parallel Claude CLI `claude-opus-5-5` orchestrators and bounded subagents, independent security review and corrective work. No production deployment, external messages or registry publication.
+Implemented with parallel Claude CLI `claude-opus-5-5` orchestrators and bounded subagents, independent security review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
+
+## Actual built-image smoke — 2026-10-26T22:30:20Z
+
+- **Passed** managed runtime smoke of `artifacts/pi-build-fec1905b-e8cb-4147-b39d-7ed3f21564bd/image.tar` with disposable PostgreSQL16. Ran migrations, web, probe and worker once; no application-source mount.
+- Verified UID10001, production settings, TLS redirect, health, public event list, registration API, packaged OpenAPI/MCP guides, applied migrations and blocked external egress. Synthetic data only; no outgoing email/webhooks.
+- Evidence: `.runs/image-smoke/pi-wimg-d8d1d699-5c11-46e2-b600-e2308b9b0e78/result.json`. All owned containers, network, volume, newly imported application image and newly pulled PostgreSQL image removed; absence verified.
+- Prior manifest/config identity mismatch was fixed and its leftover image removed with explicit owner approval. This closes the basic actual-image-runtime blocker, **not** Compose deployment, image-based restore, live vendor validation or production readiness.
+
+## Riverside real-browser verification — 2026-10-26T19:23:06Z
+
+- Managed Chromium: existing studio **12/12**, new Riverside **8/8** scenarios pass. Covers masked registrant listing, forged-token rejection, confirmed personal-link reconciliation, Editor denial, recognised attendee automatic admission without a shared URL, missing-link denial, and unknown-browser refusal.
+- Missing-link denial uses JavaScript disabled to exercise the server response deterministically; automatic retry behaviour for that case remains unverified. Synthetic fixtures and credentials exist only in the disposable test container.
+- Harness correction: initial routing did not intercept HTTP redirect hops and contacted public Riverside pages using a synthetic link. No vendor API or real credentials were used. Final harness fetches admission responses with redirects disabled and aborts external Locations before navigation.
+- Re-ran **1,320 tests on Python3.12.15/PostgreSQL16.15**; Ruff/system/migration and logical/application restore checks pass. Existing Django warning remains. No production code/image change or deployment; actual-image runtime remains unverified.
+
+## Riverside admission and event binding — 2026-10-26T19:04:38Z
+
+- Enabled attached Riverside rooms can open without a shared join URL. Admission still requires an eligible registration and valid personal link; disabled accounts, missing/malformed links and payment/status gates deny access.
+- Migration0010 binds each provider registrant to account plus external event ID. Reattached events cannot reuse stale links; late provider outcomes are fenced. Legacy blank bindings fail closed and require operator reconciliation, not automatic backfill.
+- **1,320 tests pass on Python3.12.15/PostgreSQL16.15**, Ruff/system/migration and logical/application restore checks pass. Existing Django warning remains. No live-provider or new browser verification.
+- Managed amd64 OCI: `artifacts/pi-build-fec1905b-e8cb-4147-b39d-7ed3f21564bd/image.tar`. Cleanup verified. No deploy, push, image runtime launch or vendor sends.
+
+## Production version-series source verification — 2026-10-26T18:41:07Z
+
+- `tests/run-pg16.sh` now installs Python3.12 through uv within the disposable container and asserts the interpreter series before testing.
+- **1,274 tests pass on Python3.12.15/PostgreSQL16.15**; Ruff/system/migration checks pass. Logical/application restore, credential decryption, wrong-key rejection and authenticated admin request pass. Existing Django deprecation remains.
+- Existing real-app Chromium journey rerun: **12/12 passed**. This does not exercise the new Riverside reconciliation UI specifically.
+- Managed test cleanup succeeded. No application source change, deployment or vendor sends. Source verification is not built-image/Compose runtime verification; that still needs a managed archive-load/run lifecycle.
+
+## Riverside reconciliation controls — 2026-10-26T18:15:56Z
+
+- Added REST, studio and MCP stalled-registrant reconciliation: scoped authorization, state-bound confirmations, no private links in responses/previews, and attempt fencing under the existing service lock. OpenAPI and hosting guide updated.
+- **1,274 PostgreSQL15/Python3.12 tests passed**, Ruff/system/migration clean. New controls have not yet had a real browser or live Riverside sandbox run. Previous PostgreSQL16 evidence predates these controls.
+- Managed amd64 OCI: `artifacts/pi-build-9241e8f3-5ad3-4e42-8f40-125563e55247/image.tar`; SHA256 `63f96ba909df09efb0d7ec2f08f03b3863ef885d1b267ea83fc387b97e3a12da`. Owned build resources removed and verified. No image load/push or backend deployment.
+
+## Preview refusal and current PostgreSQL16 verification — 2026-10-26T17:53:44Z
+
+- Studio now reports bounded native-preview refusal codes/guidance without exposing secrets or vendor exception text. The alleged missing delivery-metadata validation defect was disproven: metadata is always retained and delivery serialization restores its ID. Regression added.
+- **1,253 tests pass on PostgreSQL15/Python3.12 and PostgreSQL16/Python3.11**, Ruff/system/migration checks clean; existing Django transitional-setting warning remains.
+- PostgreSQL16 logical/application restore passes: schema, synthetic records, credential decryption, wrong-key rejection and authenticated admin request. Not a production-volume or built-image restore drill.
+- Managed amd64 OCI: `artifacts/pi-build-140dadcb-350e-4f69-b2f4-7fb766a507c7/image.tar`; build resources removed and verified. No registry push, deployment or vendor sends. Exact production runtime pair and image smoke test remain open.
+
+## Native policy changes and catalogue — 2026-10-26T14:36:34Z
+
+- Independent review found that a native multi-step send could continue with stale configuration. Delivery now stops subsequent steps if credentials, field mapping, groups, private-link policy or other plan inputs change. Consent cancellation and disabled-destination parking are preserved.
+- **1,244 PostgreSQL15/Python3.12 tests passed**, Ruff/system/migration clean. Frontend **50 tests**, typecheck and production build passed.
+- Updated public integration catalogue deployed at https://visioncast-ten.vercel.app/integrations. HTTP200 and presence of Brevo/Mixpanel/RudderStack confirmed. No backend deployment or live vendor sends.
+- OCI archive: `artifacts/pi-build-d49e1bea-a7ab-4752-88c4-7b59259f0a08/image.tar`; owned build resources removed and verified. Native sandbox checks remain outstanding; Brevo contact marketability warning documented.
+
+## Brevo adapter — 2026-10-26T04:42:45Z
+
+- Added Brevo contact upsert and lifecycle events using official API references. Requires explicit processing/email-match acknowledgements; does not subscribe to lists, clear blocklists, force-merge contacts or send SMS.
+- Credentialed native transport now requires explicit host restrictions for case-insensitive `api-key` headers as well as `Authorization`.
+- **1,235 PostgreSQL15/Python3.12 tests passed**, Ruff/system/migration checks clean; existing Django deprecation remains. No live Brevo calls; event retries may duplicate vendor automation triggers.
+- Managed amd64 OCI built: `artifacts/pi-build-598a3628-0af3-425d-84c7-0b4576f2fd22/image.tar`; cleanup verified. Not deployed, loaded or pushed.
+
+## Analytics contract hardening — 2026-10-25T17:28:50Z
+
+- Checked official Mixpanel Import Events and RudderStack HTTP API documentation; evidence and remaining ambiguities are in [native-integrations.md](native-integrations.md).
+- Added exact serialized UTF-8 request-size limits, conservative scalar/property validation, timestamp validation and numeric Mixpanel `ip=0` to prevent server-IP geolocation. No live accounts used.
+- **1,158 tests passed** on PostgreSQL15/Python3.12; Ruff/system/migration checks clean. Existing Django deprecation remains.
+- Managed amd64 OCI build succeeded: `artifacts/pi-build-855b97e5-b233-47ea-9b83-b60fb2b949b9/image.tar`. Cleanup verified; no publication or deployment. Vendor sandbox tests remain outstanding.
+
+## Payment webhook fix and analytics adapters — 2026-10-25T17:10:23Z
+
+- Independent static review found that disabling Stripe blocked signed completion, refund and dispute events for existing orders. Webhooks now authenticate against the configured account regardless of enabled state; new sales remain disabled. Eight new regression cases cover this distinction and signature rejection.
+- Mixpanel and RudderStack adapters implemented, with per-destination credentialed-host restrictions and mocked tests. Their vendor contracts and live accounts remain unverified; do not enable them on the strength of mock tests alone.
+- Final PostgreSQL15/Python3.12 suite: **1,142 passed**; Ruff, system checks and migration drift clean. One existing Django deprecation warning remains. Supersedes earlier unfinished review/adapter status below.
+- Managed amd64 OCI build: `artifacts/pi-build-5139c50f-1700-4f45-b3c9-35a069fa93ca/image.tar`; owned build resources removed and verified. Not loaded, published or deployed. The live demo backend and catalogue have not been updated for these two adapters.
+
+## Tickets, hosting and MCP expansion — 2026-10-25T04:49:16Z
+
+- Final PostgreSQL15/Python3.12 suite: **1,049 passed**, Ruff/system/migration checks clean. One existing Django transitional-setting deprecation remains.
+- SDK/reference-kit tests: **60 passed**. Next.js site: **48 passed**, typecheck and production build passed.
+- Real-app Chromium studio journey: **12/12 passed**. Live `/features` and `/integrations` passed HTTP, heading and horizontal-overflow checks at 390px and 1440px. These are not paid checkout browser or vendor sandbox checks.
+- Demo frontend deployed at https://visioncast-ten.vercel.app; immutable deployment https://visioncast-nkorzlkfr-b2b-saas.vercel.app. Backend on the live demo has NOT been upgraded by this expansion; explanatory feature pages do not imply enabled payments or integrations.
+- Managed amd64 OCI build succeeded: `artifacts/pi-build-38e81328-db73-4550-bde0-e8487281ad2d/image.tar`. Builder/container/cache cleanup verified; archive not loaded, published or runtime-smoke-tested.
+- Evidence: `artifacts/rebuild-pg.log`, `expansion-sdk-kits.log`, `expansion-site-tests.log`, `expansion-site-types.log`, `expansion-site-build.log`, `rebuild-browser.log`, `live-features-*.png`, `live-integrations-*.png`.
+- Segment, Amplitude and GA4 adapters are mock-tested only. Mixpanel/RudderStack follow-up and a fresh independent security review timed out with no result or observed implementation. Neither is credited as complete. Remaining provider/account testing and adapter backlog are still open.
+
 
 ## Application restore probe — 2026-10-24T20:50:02Z
 

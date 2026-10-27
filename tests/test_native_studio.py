@@ -169,3 +169,50 @@ def test_analyst_cannot_set_secrets(admin, django_user_model):
     )
     assert resp.status_code in (403, 404)
     assert "native_api_key" not in _creds(dest)
+
+
+BREVO_KEY = "xkeysib-studioSecretValue456"
+
+
+def _brevo_dest(**over):
+    from webinars.crypto import encrypt_secret
+
+    creds = {
+        "native_provider": "brevo",
+        "native_region": "global",
+        "native_api_key": BREVO_KEY,
+        "native_contact_sync": "upsert",
+        "native_email_merge_ack": "confirmed",
+        "native_contact_attributes": "firstName=FIRSTNAME",
+        "native_processing_ack": "confirmed",
+        **over,
+    }
+    return Destination.objects.create(
+        name="Brevo",
+        url="https://api.brevo.com",
+        event_types=["registration.created"],
+        allowed_groups=list(Destination.GROUPS),
+        required_consents=[],
+        credentials_encrypted=encrypt_secret(json.dumps(creds)),
+    )
+
+
+def test_brevo_preview_refusal_shows_bounded_reason(admin, settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = ["api.brevo.com"]
+    dest = _brevo_dest(native_contact_attributes="firstName=FIRSTNAME,lastName=FIRSTNAME")
+    page = admin.get(f"/studio/integrations/{dest.pk}/")
+    assert page.status_code == 200
+    assert b"Preview unavailable (native_config_invalid)" in page.content
+    assert BREVO_KEY.encode() not in page.content and b"person@example.com" not in page.content
+
+
+def test_brevo_valid_preview_has_no_refusal_and_redacts_key(admin, settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = ["api.brevo.com"]
+    dest = _brevo_dest()
+    page = admin.get(f"/studio/integrations/{dest.pk}/")
+    assert page.status_code == 200
+    assert b"Preview unavailable" not in page.content
+    assert b"/v3/events" in page.content
+    # The template omits request headers entirely; the context must still redact them.
+    assert page.context["native_preview"][0]["headers"]["api-key"] == "[redacted]"
+    assert BREVO_KEY.encode() not in page.content

@@ -58,6 +58,7 @@
           <li><strong>Create a proxy key.</strong> An administrator creates a key with the <code>proxy</code> scope in Studio › API keys. Put it only in the proxy's server-side environment as <code>PROXY_API_KEY</code>, never in the page, GTM or this snippet.</li>
           <li><strong>Configure origins.</strong> Set <code>PROXY_BACKEND_URL</code> to this platform's origin and <code>PROXY_ALLOWED_ORIGINS</code> to the exact https origin(s) of the pages hosting the form. The proxy issues the <code>__Host-webinar_csrf</code> cookie and checks the <code>X-Webinar-CSRF</code> header, so the page must be served over https on that origin.</li>
           <li><strong>Paste the snippet</strong> into the page (or a GTM Custom HTML tag) and test a registration.</li>
+          <li><strong>Using Google Tag Manager site-wide?</strong> {% if perms.webinars.view_apikey %}Install the one-time loader from <a href="{% url 'studio:tracking' %}">Tracking &amp; GTM</a>{% else %}Ask an administrator for the site-wide tag from Studio › Tracking &amp; GTM{% endif %}, then leave the <code>&lt;script src&gt;</code> line out of this snippet.</li>
         </ol>
         <p class="help" style="margin-top:var(--s-4)">Full guide: <a href="{% url 'developers' %}">Developers</a> and <code>docs/browser-integration.md</code>.</p>
       </div>

@@ -96,14 +96,15 @@ def test_only_post_and_put(allow, no_spawn, method):
     assert no_spawn == []
 
 
-def test_credentials_need_explicit_vendor_hosts(allow, no_spawn):
+@pytest.mark.parametrize("credential_header", ["authorization", "api-key", "Api-Key"])
+def test_credentials_need_explicit_vendor_hosts(allow, no_spawn, credential_header):
     with pytest.raises(ssrf.UnsafeDestination):
         ssrf.request_json_bounded("POST", "https://hooks.example.net/x", b"{}", AUTH, 10, 5, _target=_ok_child)
     with pytest.raises(ssrf.UnsafeDestination):
         ssrf.request_json_bounded("POST", "https://hooks.example.net/x", b"{}", AUTH, 10, 5, allowed_hosts=VENDORS, _target=_ok_child)
     # Lower-case header name is still a credential.
     with pytest.raises(ssrf.UnsafeDestination):
-        ssrf.request_json_bounded("PUT", "https://hooks.example.net/x", b"{}", {"authorization": "x"}, 10, 5, _target=_ok_child)
+        ssrf.request_json_bounded("PUT", "https://hooks.example.net/x", b"{}", {credential_header: "x"}, 10, 5, _target=_ok_child)
     assert no_spawn == []
 
 
@@ -434,7 +435,7 @@ def test_delivery_passes_vendor_hosts_and_honours_retry_after(monkeypatch, setti
     assert msg.next_attempt_at >= before + datetime.timedelta(seconds=1790)
     [call] = seen
     assert call["method"] == "POST" and call["url"].startswith("https://api.hubapi.com/")
-    assert call["allowed"] == ni.VENDOR_HOSTS and call["max"] == ni.MAX_RESPONSE_BYTES
+    assert call["allowed"] == frozenset({"api.hubapi.com"}) and call["max"] == ni.MAX_RESPONSE_BYTES
     assert 0 < call["total"] <= settings.OUTBOX_LEASE_SECONDS
 
 

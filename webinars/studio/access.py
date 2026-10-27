@@ -127,6 +127,12 @@ def nav_items(request):
                     (("Integrations", "studio:integrations", "plug", "/studio/integrations"), user.has_perm("webinars.view_destination")),
                     (("Deliveries", "studio:deliveries", "send", "/studio/deliveries"), user.has_perm("webinars.view_outboxmessage")),
                     (("API keys", "studio:api-keys", "key", "/studio/api-keys"), user.has_perm("webinars.view_apikey")),
+                    # Site-wide GTM install tag: same audience as the proxy key it depends on.
+                    (("Tracking & GTM", "studio:tracking", "code", "/studio/tracking"), user.has_perm("webinars.view_apikey")),
+                    # Provider credentials: Administrators; charge configuration: owner (superuser) only.
+                    (("Hosting providers", "studio:hosting-accounts", "plug", "/studio/hosting"),
+                     user.is_superuser or user.groups.filter(name=ADMINISTRATOR).exists()),
+                    (("Payments", "studio:payments", "key", "/studio/payments"), user.is_superuser),
                 )
                 if ok
             ],
