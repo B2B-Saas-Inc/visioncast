@@ -1,6 +1,6 @@
 # Release checklist
 
-Status as of 2026-10-27 (published release candidate `0.2.0-pre`, tag `v0.2.0-pre` at `1462cb7`; `main` has since gained beehiiv, Resend, Amazon SES and the Zapier/Make/n8n presets and reads `0.3.0-pre`, not yet tagged or published). **Nothing on
+Status as of 2026-10-27 (published release candidate `0.3.0-pre`, tag `v0.3.0-pre` at `12c96f4`, superseding `0.2.0-pre`). **Nothing on
 this page is evidence.** Results are recorded only in [validation.md](validation.md); the
 gaps they close are in [remaining-gaps.md](remaining-gaps.md) (R1–R28). "Last recorded"
 quotes validation.md.
@@ -27,7 +27,7 @@ accepted, and every D item is in place. Any code change (including B) re-opens A
 | A6 | Python suite on PostgreSQL 16 + logical and application restore probe | `tests/run-pg16.sh` (includes `tests/restore_probe.py`) | **2,372 passed**, restore/decrypt/wrong-key/admin probe passed (2026-10-27, Python 3.12.16 / PostgreSQL 16.15). Release tree |
 | A7 | Base-image digests | `PYTHON_IMAGE` (`Dockerfile`) and Postgres (`compose.yaml`) pinned by `@sha256` | **Pinned** (2026-10-27); refresh procedure in README |
 | A8 | Dependency audit | `pip-audit` on the hash lock; dev pins separately | **No known vulnerabilities** (2026-10-27); dev `pytest` 9.0.3 |
-| A9 | OCI image and digest | `deploy/build-image.sh --save`; `release.yml` | `0.3.0-pre` arm64 from `24e3493`: image ID `sha256:8934f6ef…`, tar SHA-256 `e08db362…` (2026-10-27). Published `0.2.0-pre`: digest `sha256:c81ad8b1…`; `0.3.0-pre` publication pending the tag push (C13) |
+| A9 | OCI image and digest | `deploy/build-image.sh --save`; `release.yml` | `0.3.0-pre` arm64 from `24e3493`: image ID `sha256:8934f6ef…`, tar SHA-256 `e08db362…` (2026-10-27). Published `0.2.0-pre`: digest `sha256:c81ad8b1…`; published `0.3.0-pre` digest `sha256:fa723b88…` (amd64 + arm64) |
 | A10 | Built-image runtime and Compose first run | README quick start against `WEBINAR_IMAGE` | **Passed on the `0.3.0-pre` arm64 image** (2026-10-27) and earlier on the `0.2.0-pre` arm64 and emulated amd64 images: migrate, `sync_roles`, `bootstrap_admin`, `create_api_key`, seed, web + worker healthy, `/healthz` version, OpenAPI, `/mcp`, studio login page, uid 10001. Published manifests not pulled from here (no `read:packages` token) |
 | A11 | Backup/restore from the A10 database | `deploy/backup.sh`, `deploy/restore.sh` | **Passed** (2026-10-27, image from `3ec60ad`): restore into a fresh project, migrate no-op, secrets decrypt only with the original key, `--force` guard. Backup repeated on the release image |
 | A12 | Retention dry run | `purge_personal_data --older-than-days N --dry-run` on A10 data | **Passed** (2026-10-27), counts only |
@@ -67,7 +67,7 @@ None is approved by this document. External calls need explicit approval and own
 | C10 | Scope decisions recorded 2026-10-27: beehiiv, Resend, Amazon SES, Zapier, Make and n8n built; Intercom, Loops and Marketo skipped; Postmark and HubSpot Marketing not committed (remaining-gaps §4) | §4 | No |
 | C11 | Approve a staging host and run launch acceptance ([implementation-guide.md §11.1](implementation-guide.md#111-launch-acceptance-run-on-staging-record-results-in-validationmd)) | §3 | Yes (host) |
 | C12 | Approve live demo backend upgrade and frontend catalogue redeploy, production deployment, any preview renewal | — | Yes |
-| C13 | **Done for 0.2.0-pre** (tag pushed, `ghcr.io/b2b-saas-inc/visioncast:0.2.0-pre` published, private). **Next:** approve tagging `v0.3.0-pre` once A1/A6 are rerun on the integrations tree; decide package visibility or grant deploy hosts a `read:packages` token; run the published manifest on a real amd64 host (C11) | R24 | Yes (GitHub) |
+| C13 | **Done:** `v0.2.0-pre` and `v0.3.0-pre` tags pushed; `ghcr.io/b2b-saas-inc/visioncast:0.3.0-pre` published (digest `sha256:fa723b88…`, amd64 + arm64, private). **Remaining:** decide package visibility or grant deploy hosts a `read:packages` token; run the published manifest on a real amd64 host (C11) | R24 | Yes (GitHub) |
 
 ## D. Operator tasks (target environment)
 

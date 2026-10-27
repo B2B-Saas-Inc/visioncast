@@ -1,8 +1,8 @@
 # Remaining gaps
 
-Status as of 2026-10-27 (second pass, after the six integrations added on top of the published
-`0.2.0-pre`; `VERSION` on `main` is now `0.3.0-pre`, unpublished), reconciled against
-[validation.md](validation.md) (latest entries dated 2026-10-27). **Release candidate `0.2.0-pre` is tagged and published to GHCR (private package,
+Status as of 2026-10-27 (second pass: `0.3.0-pre`, tag `v0.3.0-pre`, published to GHCR as
+digest `sha256:fa723b88…`), reconciled against [validation.md](validation.md) (latest entries
+dated 2026-10-27). **Release candidate `0.2.0-pre` is tagged and published to GHCR (private package,
 digest `sha256:c81ad8b1…`, amd64 + arm64); every local gate has a recorded pass on the
 release tree; what remains needs owner-held accounts, an owner decision, or the target
 environment.** This page separates what the code implements, what blocks a release, what the
@@ -25,7 +25,7 @@ owned by [mcp.md](mcp.md), [native-integrations.md](native-integrations.md),
 | Actual-app Chromium: studio journey, Riverside controls, GTM screen | 13/13, 8/8, 10/10 at the tag; studio and GTM rerun on the integrations tree (see validation.md) | Yes |
 | Website kits installed from fresh vendor scaffolds (WordPress 7.1 / PHP 8.2, Next 16, SvelteKit 3, Astro 7, Nuxt 4, static snippet behind nginx) with a 30-check Chromium flow; CMS schemas validated with vendor packages | All flows pass; five kit bugs fixed (2026-10-27) | Yes (`bash sdk/kits/test/fresh-install.sh` to repeat) |
 | Versioned OCI image built from the release tree (`deploy/build-image.sh`) | `0.3.0-pre` arm64 from `24e3493` (image ID `sha256:8934f6ef…`, tar SHA-256 `e08db362…`), first run passed; earlier `0.2.0-pre` arm64 and emulated amd64 builds | Yes (arm64) |
-| Published image `ghcr.io/b2b-saas-inc/visioncast:0.2.0-pre` (tag `v0.2.0-pre`, workflow run 40555955145) | digest `sha256:c81ad8b1…`, linux/amd64 + linux/arm64, SBOM + provenance (2026-10-27). Private package | Yes, but the pushed manifest has not been pulled and run from here |
+| Published images: `ghcr.io/b2b-saas-inc/visioncast:0.3.0-pre` (tag `v0.3.0-pre`, run 40594223872, digest `sha256:fa723b88…`) and `:0.2.0-pre` (digest `sha256:c81ad8b1…`), each linux/amd64 + linux/arm64 with SBOM + provenance (2026-10-27). Private package | Yes, but the pushed manifests have not been pulled and run from here |
 | Clean-server Compose first run, backup/restore, retention dry run, offline receiver contract, `nginx -t` + routing, in-place upgrade from `da04cc7` and rollback | All passed (2026-10-27, distribution entry; first run repeated on the final arm64 image and on the emulated amd64 image) | Upgrade/restore evidence is from commit `3ec60ad`; the first run was repeated on the release image |
 | Base-image digest pins (`python:3.12-slim-bookworm`, `postgres:16-alpine`) | Pinned by `@sha256` (2026-10-27) | Yes |
 | `pip-audit` on the hash lock | No known vulnerabilities; dev-only `pytest` bumped to 9.0.3 (2026-10-27) | Yes |

@@ -164,7 +164,7 @@ Privileged scopes are granted only by a superuser (studio) or `manage.py create_
 ## Quick start (local build, Docker Compose)
 
 Either pull the published image (see "Published image" below) or build it locally from
-this repository (`VERSION` is `0.2.0-pre`). Requirements: Docker with Compose v2, git, and
+this repository (`VERSION` is `0.3.0-pre`). Requirements: Docker with Compose v2, git, and
 Python 3 only for generating secrets. These commands were run end to end on
 2026-10-27 against the built image ([docs/validation.md](docs/validation.md)).
 
@@ -214,10 +214,11 @@ Other management commands: `show_version [--verbose]`, `run_worker`,
 
 `.github/workflows/release.yml` builds linux/amd64 and linux/arm64 from the pinned
 bases on a `v<VERSION>` tag and pushes `ghcr.io/<owner>/<repo>:<version>` and
-`:<version>-<sha>` with OCI labels, an SBOM and provenance. The first published image is
-**`ghcr.io/b2b-saas-inc/visioncast:0.2.0-pre`** (tag `v0.2.0-pre`, digest
-`sha256:c81ad8b1c604e3151129ab7056697068bb7472064e589d589ce4c631489c56b6`, 2026-10-27;
-the package is private, so pulling needs a token with `read:packages`). Deploy it instead
+`:<version>-<sha>` with OCI labels, an SBOM and provenance. The current published image is
+**`ghcr.io/b2b-saas-inc/visioncast:0.3.0-pre`** (tag `v0.3.0-pre`, digest
+`sha256:fa723b88ee7be73b8a1c8184471b9c0c0ed8218aedeeb272547feeaaf148e96d`, 2026-10-27;
+`0.2.0-pre` remains available; the package is private, so pulling needs a token with
+`read:packages`). Deploy it instead
 of building:
 
 ```sh

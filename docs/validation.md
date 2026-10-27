@@ -2,6 +2,11 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Published image v0.3.0-pre — 2026-10-27T22:25Z
+
+- The owner pushed `main` (`24e3493..12c96f4`) and tag `v0.3.0-pre` (at `12c96f4`). `.github/workflows/release.yml` run [40594223872](https://github.com/B2B-Saas-Inc/visioncast/actions/runs/40594223872) succeeded: built linux/amd64 + linux/arm64 from the pinned base and pushed **`ghcr.io/b2b-saas-inc/visioncast:0.3.0-pre`** and `:0.3.0-pre-12c96f4…`, manifest digest **`sha256:fa723b88ee7be73b8a1c8184471b9c0c0ed8218aedeeb272547feeaaf148e96d`**, with SBOM and provenance. Package still private. The digest was read from the workflow log; the manifest was not pulled or run from this machine (no `read:packages` token). The locally tested arm64 image (`sha256:8934f6ef…`) was built from `24e3493`, one docs-only commit before the tag.
+- The demo backend and frontend still run `v0.2.0-pre`.
+
 ## Release candidate 0.3.0-pre: harness, image and first run on the integrations tree — 2026-10-27T22:10Z
 
 - **PostgreSQL 16 harness** (`tests/run-pg16.sh` in a disposable `postgres:16-bookworm` container, uv-managed Python 3.12.16, PostgreSQL 16.15) on `main` at `24e3493`: **2,372 passed**; `manage.py check`, `makemigrations --check` ("No changes detected") and `ruff check .` clean; 29 migration records; logical backup/restore, synthetic application records, credential decryption, wrong-key rejection and authenticated admin request passed.
