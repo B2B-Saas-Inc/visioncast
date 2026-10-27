@@ -348,9 +348,34 @@ export const INTEGRATIONS: Integration[] = [
   ),
   roadmap('loops', 'Loops', 'marketing', 'Contacts and events in Loops.'),
   roadmap('intercom', 'Intercom', 'marketing', 'Users and events in Intercom.'),
-  roadmap('resend', 'Resend', 'email', 'Send confirmations and reminders through your Resend account.'),
+  {
+    id: 'resend',
+    name: 'Resend',
+    category: 'email',
+    status: 'built',
+    summary: 'Send confirmation, reminder, change and follow-up emails to registrants through your Resend account.',
+    details: [
+      'Plain-text messages rendered by the platform from built-in templates or your own subject and body text; no operator HTML.',
+      'Only verified registrations with an email are sent; the join link is the managed waiting-room URL, or the provider link only when private links are allowed, else the public event page.',
+      'Each message carries the delivery ID as the Resend Idempotency-Key, so a retry within 24 hours does not send twice.',
+      'Operator confirmation required that registrants expect these transactional emails; no marketing content is sent.',
+    ],
+  },
   roadmap('postmark', 'Postmark', 'email', 'Send confirmations and reminders through your Postmark account.'),
-  roadmap('ses', 'Amazon SES', 'email', 'Send confirmations and reminders through your own SES.'),
+  {
+    id: 'ses',
+    name: 'Amazon SES',
+    category: 'email',
+    status: 'built',
+    summary: 'Send confirmation, reminder, change and follow-up emails to registrants through your own Amazon SES account.',
+    details: [
+      'Plain-text messages rendered by the platform from built-in templates or your own subject and body text; no operator HTML.',
+      'Only verified registrations with an email are sent; the join link is the managed waiting-room URL, or the provider link only when private links are allowed, else the public event page.',
+      'Requests are signed with AWS Signature Version 4 in the platform; the access key pair needs ses:SendEmail only.',
+      'SES has no idempotency key: a retry after a timeout may send the same message twice. Every message carries the delivery ID header for dedupe.',
+      'Operator confirmation required that registrants expect these transactional emails; no marketing content is sent.',
+    ],
+  },
 
   // Workflow automation ---------------------------------------------------------
   // Destination presets (webinars/webhook_presets.py) over the generic signed webhook, plus an

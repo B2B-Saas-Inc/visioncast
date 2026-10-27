@@ -49,8 +49,24 @@ USER_AGENT = "webinar-platform-native/1"
 SCHEMA_VERSION = "1"
 
 # Person-linked events only; recording access has no real view evidence, so it is not offered.
+# Defaults for every provider; a provider module may declare its own ``EVENT_TYPES`` and
+# ``REQUIRED_GROUPS`` (see ``supported_event_types`` / ``required_groups``).
 NATIVE_EVENT_TYPES = ("registration.created", "registration.updated", "attendance.checked_in", "attendance.recorded")
 REQUIRED_GROUPS = ("identity", "registration", "event")
+
+
+def supported_event_types(provider):
+    """Event types ``provider`` may be configured for: the module's ``EVENT_TYPES`` or the defaults."""
+    module = REGISTRY.get(provider)
+    declared = getattr(module, "EVENT_TYPES", None) if module is not None else None
+    return tuple(declared) if declared else NATIVE_EVENT_TYPES
+
+
+def required_groups(provider):
+    """Data groups ``provider`` needs: the module's ``REQUIRED_GROUPS`` or the defaults."""
+    module = REGISTRY.get(provider)
+    declared = getattr(module, "REQUIRED_GROUPS", None) if module is not None else None
+    return tuple(declared) if declared else REQUIRED_GROUPS
 
 # Strict per-vendor host allowlists. Credentials are only ever sent to these hosts, and the
 # host must *also* be on the operator's WEBHOOK_HOST_ALLOWLIST (validated by ssrf).
@@ -124,6 +140,7 @@ class Field:
     required: bool = True
     choices: tuple = ()
     pattern: object = None
+    multiline: bool = False  # studio renders a textarea (operator message templates)
 
 
 ORG_NAMESPACE = Field(
@@ -502,13 +519,14 @@ def validate(provider, credentials, *, event_types=(), allowed_groups=(), requir
     cfg = config_of(credentials or {}, provider)
     if provider in ORG_TARGETS and bool(cfg.get("org_namespace")) != bool(cfg.get(ORG_TARGETS[provider])):
         add("native-org_namespace", "Set both the organization ID namespace and the organization target, or neither.")
-    bad_events = [e for e in (event_types or []) if e not in NATIVE_EVENT_TYPES]
+    supported = supported_event_types(provider)
+    bad_events = [e for e in (event_types or []) if e not in supported]
     if bad_events:
-        add("event_types", "Native integrations only support: " + ", ".join(NATIVE_EVENT_TYPES) + ".")
+        add("event_types", f"{PROVIDER_LABELS[provider]} only supports: " + ", ".join(supported) + ".")
     groups = set(allowed_groups or [])
-    missing = [g for g in REQUIRED_GROUPS if g not in groups]
+    missing = [g for g in required_groups(provider) if g not in groups]
     if missing:
-        add("allowed_groups", "Native integrations need these data groups: " + ", ".join(missing) + ".")
+        add("allowed_groups", f"{PROVIDER_LABELS[provider]} needs these data groups: " + ", ".join(missing) + ".")
     if provider in ANALYTICS_PROVIDERS and "analytics" not in (required_consents or []):
         # Product guardrail from the platform's own consent model (analytics purpose), not a CRM rule.
         add("required_consents", f"{PROVIDER_LABELS[provider]} is analytics: require Analytics consent.")
@@ -1530,8 +1548,12 @@ def _preview(provider, credentials, event_type):
 # ``run(ctx, base, cfg, secrets, facts, event_type, body)`` which performs the vendor calls
 # through ``ctx.call`` and raises ``Skip`` / ``_Stop`` like the built-in adapters. Optional:
 # ``ANALYTICS`` (requires Analytics consent), ``NEEDS_REQUEST_TRANSPORT``, ``PER_DESTINATION_HOST``,
-# ``SECRET_HEADERS``, ``CUSTOM_ID_FIELD``, ``ORG_TARGET``, ``validate_extra(...)`` and
-# ``preview_response(step, method, url, payload)`` (fake read responses for the redacted preview).
+# ``SECRET_HEADERS``, ``CUSTOM_ID_FIELD``, ``ORG_TARGET``, ``validate_extra(...)``,
+# ``preview_response(step, method, url, payload)`` (fake read responses for the redacted preview),
+# ``EVENT_TYPES`` (the event types the module accepts instead of ``NATIVE_EVENT_TYPES``) and
+# ``REQUIRED_GROUPS`` (instead of the default identity/registration/event). ``validate``,
+# ``check_send_policy`` and the studio event-type list read them through ``supported_event_types``
+# and ``required_groups``.
 
 
 def _register(module):

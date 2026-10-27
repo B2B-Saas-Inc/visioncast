@@ -58,7 +58,7 @@ const byId = Object.fromEntries(INTEGRATIONS.map((i) => [i.id, i]));
 test('only mock-tested outbound, hosting and automation-preset integrations are marked built', () => {
   assert.deepEqual(idsWith('built'), [
     'activecampaign', 'amplitude', 'attio', 'beehiiv', 'brevo', 'customerio', 'ga4', 'hubspot', 'mailchimp', 'make', 'mixpanel',
-    'n8n', 'pipedrive', 'posthog', 'rudderstack', 'salesforce', 'segment', 'sequel', 'wistia', 'zapier', 'zoom',
+    'n8n', 'pipedrive', 'posthog', 'resend', 'rudderstack', 'salesforce', 'segment', 'sequel', 'ses', 'wistia', 'zapier', 'zoom',
   ]);
 });
 
@@ -66,11 +66,11 @@ test('only mock-tested outbound, hosting and automation-preset integrations are 
 // webinars/native_providers/ (generic webhook excluded), in registration order.
 const NATIVE_PROVIDERS = [
   'posthog', 'hubspot', 'customerio', 'attio', 'segment', 'amplitude', 'ga4', 'mixpanel', 'rudderstack', 'brevo',
-  'activecampaign', 'mailchimp', 'salesforce', 'pipedrive', 'beehiiv',
+  'activecampaign', 'mailchimp', 'salesforce', 'pipedrive', 'beehiiv', 'resend', 'ses',
 ];
 
 test('every native adapter in the back-end registry is listed as built, never live', () => {
-  assert.equal(NATIVE_PROVIDERS.length, 15);
+  assert.equal(NATIVE_PROVIDERS.length, 17);
   for (const id of NATIVE_PROVIDERS) {
     const item = byId[id];
     assert.ok(item, id);
@@ -126,6 +126,14 @@ test('built adapters state their privacy limits', () => {
   assert.ok(byId.beehiiv.details.some((d) => /this one subscribes people.*subscription acknowledgement/i.test(d)));
   assert.ok(byId.beehiiv.details.some((d) => /never reactivates someone who unsubscribed/i.test(d)));
   assert.ok(byId.beehiiv.details.some((d) => /existing-email handling is unverified/i.test(d)));
+  for (const id of ['resend', 'ses']) {
+    assert.ok(byId[id].details.some((d) => /only verified registrations with an email/i.test(d)), id);
+    assert.ok(byId[id].details.some((d) => /provider link only when private links are allowed/i.test(d)), id);
+    assert.ok(byId[id].details.some((d) => /no operator html/i.test(d)), id);
+    assert.ok(byId[id].details.some((d) => /operator confirmation required/i.test(d)), id);
+  }
+  assert.ok(byId.resend.details.some((d) => /idempotency-key/i.test(d)));
+  assert.ok(byId.ses.details.some((d) => /no idempotency key.*twice/i.test(d)));
 });
 
 test('hosting statuses match what exists', () => {
@@ -150,10 +158,10 @@ test('framework and CMS kits are reference code, never built', () => {
 });
 
 test('roadmap providers are listed and not built', () => {
-  for (const id of ['marketo', 'hubspot-marketing', 'loops', 'intercom', 'resend', 'postmark', 'ses']) {
+  for (const id of ['marketo', 'hubspot-marketing', 'loops', 'intercom', 'postmark']) {
     assert.equal(INTEGRATIONS.find((i) => i.id === id)?.status, 'roadmap', id);
   }
-  assert.deepEqual(idsWith('roadmap'), ['hubspot-marketing', 'intercom', 'loops', 'marketo', 'postmark', 'resend', 'ses']);
+  assert.deepEqual(idsWith('roadmap'), ['hubspot-marketing', 'intercom', 'loops', 'marketo', 'postmark']);
 });
 
 test('ids are unique and every category is valid and non-empty', () => {

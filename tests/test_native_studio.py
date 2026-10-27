@@ -55,7 +55,7 @@ def _creds(dest):
 
 def _create(c, **over):
     resp = c.post("/studio/integrations/new/", _form(**over))
-    assert resp.status_code == 302, resp.content[:2000]
+    assert resp.status_code == 302, (resp.context.get("errors") if resp.context else resp.content[:2000])
     return Destination.objects.get(name=over.get("name", "PostHog"))
 
 
@@ -360,3 +360,98 @@ def test_beehiiv_edit_page_previews_without_secret_and_refuses_optout_without_ac
     assert page.status_code == 200
     assert b"Preview unavailable (native_match_strategy_unconfirmed)" in page.content
     assert BH_KEY.encode() not in page.content
+
+
+# --- transactional email providers (Resend, Amazon SES): per-provider event types, templates ---------
+
+RESEND_KEY = "re_StudioTestKeyValue_0000000000"
+SES_SECRET = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+EMAIL_FORM = {
+    "required_consents": [],
+    "native-region": "global",
+    "native-from_address": "events@example.com",
+    "native-from_name": "Example Events",
+    "native-send_ack": "confirmed",
+    "native-group_type": None,
+    "native-org_namespace": None,
+}
+
+
+def test_create_resend_derives_url_and_offers_its_own_event_types(admin, settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = ["api.resend.com"]
+    dest = _create(admin, name="Resend", provider="resend", event_types=["registration.created", "reminder.due"], **EMAIL_FORM)
+    creds = _creds(dest)
+    assert creds["native_provider"] == "resend" and creds["native_from_address"] == "events@example.com"
+    assert "native_api_key" not in creds and dest.url == "https://api.resend.com" and dest.enabled is False
+    assert dest.event_types == ["registration.created", "reminder.due"]
+    page = admin.get(f"/studio/integrations/{dest.pk}/")
+    assert page.status_code == 200
+    offered = [o["value"] for o in page.context["event_type_options"]]
+    assert set(offered) == set(page.context["native_event_types"]) and len(offered) == 7
+    assert "reminder.due" in offered and "occurrence.cancelled" in offered and "attendance.checked_in" not in offered
+    assert b'<textarea class="input" id="native-body_registration_created"' in page.content
+    assert b"Events this provider supports" in page.content
+
+
+def test_create_ses_derives_url_from_region(admin, settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = ["email.eu-west-2.amazonaws.com"]
+    dest = _create(admin, name="SES", provider="ses", **{**EMAIL_FORM, "native-region": "eu-west-2", "native-configuration_set": "webinars"})
+    creds = _creds(dest)
+    assert creds["native_provider"] == "ses" and creds["native_region"] == "eu-west-2" and creds["native_configuration_set"] == "webinars"
+    assert "native_access_key_id" not in creds and "native_secret_access_key" not in creds
+    assert dest.url == "https://email.eu-west-2.amazonaws.com"
+
+
+def test_other_providers_keep_the_default_event_types(admin):
+    dest = _create(admin)
+    page = admin.get(f"/studio/integrations/{dest.pk}/")
+    offered = [o["value"] for o in page.context["event_type_options"]]
+    assert offered == ["registration.created", "registration.updated", "attendance.recorded", "attendance.checked_in"]
+    assert tuple(page.context["native_event_types"]) == ("registration.created", "registration.updated", "attendance.checked_in", "attendance.recorded")
+    generic = admin.get("/studio/integrations/new/")
+    assert len(generic.context["event_type_options"]) == 9  # generic webhooks offer every outbox event
+
+
+def test_enable_email_destination_refuses_unsupported_event_and_bad_template(admin, settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = ["api.resend.com"]
+    dest = _module_dest("Resend", "api.resend.com", {
+        "native_provider": "resend", "native_region": "global", "native_api_key": RESEND_KEY, "native_from_address": "events@example.com",
+        "native_send_ack": "confirmed", "native_processing_ack": "confirmed",
+    })
+    page = admin.get(f"/studio/integrations/{dest.pk}/")
+    assert page.status_code == 200 and b"Preview unavailable" not in page.content
+    assert b"You&#x27;re registered: Sample webinar" in page.content and RESEND_KEY.encode() not in page.content
+    assert page.context["native_preview"][0]["headers"]["Authorization"] == "[redacted]"
+    resp = admin.post(
+        f"/studio/integrations/{dest.pk}/",
+        _form(name="Resend", provider="resend", enabled="on", event_types=["attendance.checked_in"], **{**EMAIL_FORM, "native-body_reminder_due": "Hello {nope}"}),
+    )
+    assert resp.status_code == 400
+    assert "event_types" in resp.context["errors"] and "native-body_reminder_due" in resp.context["errors"]
+    assert "Unknown placeholder" in resp.context["errors"]["native-body_reminder_due"][0]
+    dest.refresh_from_db()
+    assert dest.enabled is False
+
+
+def test_email_template_overrides_round_trip_through_the_form(admin, settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = ["api.resend.com"]
+    body_text = "Hi {first_name},\r\n\r\nSee you at {event_title}.\r\n\r\n{join_link}"
+    dest = _create(admin, name="Resend", provider="resend", **{**EMAIL_FORM, "native-body_registration_created": body_text, "native-subject_registration_created": "See you, {first_name}"})
+    creds = _creds(dest)
+    assert creds["native_subject_registration_created"] == "See you, {first_name}"
+    assert creds["native_body_registration_created"] == body_text
+    page = admin.get(f"/studio/integrations/{dest.pk}/")
+    assert b"See you at {event_title}." in page.content
+
+
+def test_ses_edit_page_previews_without_secrets(admin, settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = ["email.eu-west-2.amazonaws.com"]
+    dest = _module_dest("SES", "email.eu-west-2.amazonaws.com", {
+        "native_provider": "ses", "native_region": "eu-west-2", "native_access_key_id": "AKIAIOSFODNN7EXAMPLE", "native_secret_access_key": SES_SECRET,
+        "native_from_address": "events@example.com", "native_send_ack": "confirmed", "native_processing_ack": "confirmed",
+    })
+    page = admin.get(f"/studio/integrations/{dest.pk}/")
+    assert page.status_code == 200 and b"Preview unavailable" not in page.content
+    assert b"/v2/email/outbound-emails" in page.content
+    assert page.context["native_preview"][0]["headers"]["Authorization"] == "[redacted]"
+    assert SES_SECRET.encode() not in page.content and b"AKIAIOSFODNN7EXAMPLE" not in page.content and b"Signature=" not in page.content

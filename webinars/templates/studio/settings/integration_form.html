@@ -78,7 +78,7 @@
   <section class="panel">
     <div class="panel-head"><h2 id="f-native">{{ provider_label }} settings</h2></div>
     <div class="panel-body">
-      <p class="help">Supported events: {% for e in native_event_types %}<code>{{ e }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}. Only registrations with a verified identity are sent; organizations are matched only by verified IDs, never by company name.</p>
+      <p class="help">Events this provider supports: {% for e in native_event_types %}<code>{{ e }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}. Only registrations with a verified identity are sent; organizations are matched only by verified IDs, never by company name.</p>
       {% for f in native_fields %}{% if not f.secret %}
         {% with err_key="native-"|add:f.name %}
         <div class="field">
@@ -87,6 +87,8 @@
             <select class="select" id="native-{{ f.name }}" name="native-{{ f.name }}" aria-describedby="native-{{ f.name }}-help">
               {% for value, label in f.choices %}<option value="{{ value }}"{% if value == f.value %} selected{% endif %}>{{ label }}</option>{% endfor %}
             </select>
+          {% elif f.multiline %}
+            <textarea class="input" id="native-{{ f.name }}" name="native-{{ f.name }}" rows="6" maxlength="4000" spellcheck="true" aria-describedby="native-{{ f.name }}-help">{{ f.value }}</textarea>
           {% else %}
             <input class="input" id="native-{{ f.name }}" name="native-{{ f.name }}" value="{{ f.value }}" maxlength="200" spellcheck="false" aria-describedby="native-{{ f.name }}-help">
           {% endif %}
