@@ -257,6 +257,12 @@ in-place upgrade from the previous release with image rollback. All of it ran on
 developer machine (linux/arm64 image, PostgreSQL 16.15); no internet-facing host, no
 amd64 build and no registry publication have been exercised.
 
+The release-candidate entry of 2026-10-27 (`0.2.0-pre`, revision `09e104a`) records the
+merged tree's 1,945-test run under the PostgreSQL 16 harness, the end-to-end acceptance
+workflow, the browser suites, the fresh-install kit verification, and a repeat of the Compose
+first run on the image built from that exact tree. Remaining gates are listed in
+[docs/release-checklist.md](docs/release-checklist.md).
+
 ## Development and testing
 
 ### In containers (PostgreSQL, authoritative)

@@ -1,12 +1,12 @@
 # Release checklist
 
-Status as of 2026-10-26 (after the 14:36Z native-policy entry in
-[validation.md](validation.md)). **Nothing on this page is evidence.** Results are
-recorded only in validation.md; the gaps they close are in
-[remaining-gaps.md](remaining-gaps.md) (R1–R23). "Last recorded" quotes validation.md.
+Status as of 2026-10-27 (release candidate `0.2.0-pre`, revision `09e104a`). **Nothing on
+this page is evidence.** Results are recorded only in [validation.md](validation.md); the
+gaps they close are in [remaining-gaps.md](remaining-gaps.md) (R1–R28). "Last recorded"
+quotes validation.md.
 
-- **A. Local checks** Pi or a release validator can run in disposable containers (no
-  messages, no third-party services; some fetch packages or images).
+- **A. Local checks** a release validator can run in disposable containers (no messages, no
+  third-party services; some fetch packages or images).
 - **B. Code fixes** still required before release.
 - **C. Owner accounts, approvals and decisions.**
 - **D. Operator tasks** on the target environment.
@@ -19,30 +19,35 @@ accepted, and every D item is in place. Any code change (including B) re-opens A
 
 | # | Check | How | Last recorded |
 |---|---|---|---|
-| A1 | Python suite PG15/Py3.12, system check, migration drift, Ruff | `tests/run-pg.sh` (managed `python:3.12-slim-bookworm`) | **1,244 passed**, clean (2026-10-26T14:36Z). Current tree |
-| A2 | Site tests, typecheck, production build | `site/` | **50 passed**, typecheck/build passed (2026-10-26T14:36Z). Current tree |
-| A3 | SDK, proxy and kit tests | `npm test` in `sdk/`; `node --test sdk/kits/test/kits.test.js` | 60 passed (2026-10-25T04:49Z). Rerun on release tree |
-| A4 | Actual-app Chromium studio journey | `tests/browser-studio.cjs` | 12/12 (2026-10-25T04:49Z). Rerun on release tree |
-| A5 | Mocked-backend SDK Chromium | `tests/browser-sdk.cjs`; add scenarios for web calendar links, `payment_required`, `verification_required` | 8/8 in an early wave only |
-| A6 | Python suite on PostgreSQL 16 + logical and application restore probe | `tests/run-pg16.sh` (includes `tests/restore_probe.py`) | 1,274 passed with restore/decrypt/wrong-key/admin probe (2026-10-26, Python3.12.15/PostgreSQL16.15). Production version series tested from source; built-image runtime still outstanding |
-| A7 | Base-image digests | Pin `PYTHON_IMAGE` (`Dockerfile`) and Postgres (`compose.yaml`) by `@sha256` | Not done; both are tags |
-| A8 | Dependency audit | Hash lock is adopted (`requirements.in` → hashed `requirements.txt`, hash-enforced install, 2026-10-24). Rerun `pip-audit` on the release lock | No known vulnerabilities on the 2026-10-24 lock. Rerun |
-| A9 | OCI image and digest | Managed amd64 build of the default target after A7 | `artifacts/pi-build-d49e1bea-a7ab-4752-88c4-7b59259f0a08/image.tar` built from the current tree. **No SHA-256 recorded**; rebuild needed after A7 or B fixes |
-| A10 | Built-image runtime and Compose smoke | Load the A9 image; `docker compose` with Postgres 16; `migrate`, `sync_roles`, `create_api_key`, web + worker healthchecks, `/healthz`, studio login, `/api/v1/openapi.json`, `/mcp`. Local sample data, no SMTP, no destinations | Never done for any image |
-| A11 | Backup/restore from the A10 database | `pg_dump` → scratch DB → start the image against it; secrets decrypt only with separately supplied `INTEGRATION_MASTER_KEY` | Synthetic source-tree probe only (A6). Not done with the built image |
-| A12 | Retention dry run | `purge_personal_data --older-than-days N --dry-run` on A10 data | None |
-| A13 | Local webhook receiver contract | Receiver from `examples/verify_webhook.py` as a destination in A10: valid, tampered, stale, duplicate `deliveryId` | None |
-| A14 | Edge config syntax | `nginx -t` on `docker/nginx.conf.example` and `sdk/kits/node/nginx-webinar-api.conf`; confirm `calendar.ics`/`my-registration` forwarding and B6-path rate limits | None |
-| A15 | WordPress plugin lint and local install | `php -l` on `sdk/kits/wordpress`; optionally a disposable local WordPress container with sample data | None |
+| A1 | Python suite, system check, migration drift, Ruff | `tests/run-pg.sh` (PG15) or `tests/run-pg16.sh` | **1,945 passed**, clean (2026-10-27, PG16 harness and local). Release tree |
+| A2 | Site tests, typecheck, production build | `site/`: `npm test`, `npm run typecheck`, `npm run build` | **50 passed**, typecheck/build passed (2026-10-27). Release tree |
+| A3 | SDK, proxy and kit tests | `npm test` in `sdk/`; `node --test sdk/kits/test/kits.test.js` | **63 + 9 passed** (2026-10-27). Release tree |
+| A4 | Actual-app Chromium: studio journey, Riverside, GTM | `tests/browser-studio.cjs`, `browser-riverside.cjs` (+ `riverside_browser_seed.py`), `browser-gtm.cjs` against the preview settings | **13/13, 8/8, 10/10** (2026-10-27). Release tree |
+| A5 | Mocked-backend SDK Chromium incl. web calendar links, `payment_required`, `verification_required` | `tests/browser-sdk.cjs` | **11/11** (2026-10-27). Release tree |
+| A6 | Python suite on PostgreSQL 16 + logical and application restore probe | `tests/run-pg16.sh` (includes `tests/restore_probe.py`) | **1,945 passed**, restore/decrypt/wrong-key/admin probe passed (2026-10-27, Python 3.12.16 / PostgreSQL 16.15). Release tree |
+| A7 | Base-image digests | `PYTHON_IMAGE` (`Dockerfile`) and Postgres (`compose.yaml`) pinned by `@sha256` | **Pinned** (2026-10-27); refresh procedure in README |
+| A8 | Dependency audit | `pip-audit` on the hash lock; dev pins separately | **No known vulnerabilities** (2026-10-27); dev `pytest` 9.0.3 |
+| A9 | OCI image and digest | `deploy/build-image.sh --save` | **`0.2.0-pre` from `09e104a`**, image ID `sha256:3ff6df0d…`, tar SHA-256 `11cd42aa…`, linux/arm64 (2026-10-27). **amd64: not built** (R24) |
+| A10 | Built-image runtime and Compose first run | README quick start against `WEBINAR_IMAGE` | **Passed on the release image** (2026-10-27): migrate, `sync_roles`, `bootstrap_admin`, `create_api_key`, seed, web + worker healthy, `/healthz` version, OpenAPI, `/mcp` (incl. attendance tools), studio login page, uid 10001 |
+| A11 | Backup/restore from the A10 database | `deploy/backup.sh`, `deploy/restore.sh` | **Passed** (2026-10-27, image from `3ec60ad`): restore into a fresh project, migrate no-op, secrets decrypt only with the original key, `--force` guard. Backup repeated on the release image |
+| A12 | Retention dry run | `purge_personal_data --older-than-days N --dry-run` on A10 data | **Passed** (2026-10-27), counts only |
+| A13 | Webhook receiver contract (offline) | `tests/test_verify_webhook_example.py` | **8 tests pass** (valid, tampered, stale, duplicate, wrong secret, rotation) |
+| A14 | Edge config syntax and routing | `nginx -t` on `docker/nginx.conf.example` and `sdk/kits/node/nginx-webinar-api.conf`; routing and rate-limit checks | **Passed after fixes** (2026-10-27, nginx 1.30 / 1.27) |
+| A15 | WordPress plugin lint and fresh install | `php -l`; `bash sdk/kits/test/fresh-install.sh` (WordPress 7.1 / PHP 8.2 in Docker, block + shortcode + cache + subdirectory) | **Passed** (2026-10-27) |
+| A16 | Framework and CMS kits from fresh scaffolds | `bash sdk/kits/test/fresh-install.sh` (Next 16, SvelteKit 3, Astro 7, Nuxt 4, static snippet, Sanity/Payload/Prismic/Contentful validation) | **Passed** (2026-10-27) |
+| A17 | End-to-end acceptance workflow | `tests/test_e2e_acceptance.py` (two scenarios: waiting-room attendance; Zoom attendance import + no-shows) | **Passed** (2026-10-27). Release tree |
+| A18 | In-place upgrade and rollback | `deploy/upgrade.sh --image …` from the previous release image; rollback by `WEBINAR_IMAGE` | **Passed** `da04cc7` → `3ec60ad` (no schema change, 2026-10-27). The release tree adds migration `0011`; rerun on the next upgrade |
 
-## B. Code fixes required (Pi can implement; then rerun A)
+## B. Code fixes required
+
+None open. Closed this cycle (retest covered by A):
 
 | # | Fix | Gap |
 |---|---|---|
-| B1 | CLOSED — disproven: outbox always preserves delivery metadata and serialization restores delivery ID; regression passes | R7 |
-| B2 | DONE — studio shows bounded refusal code/guidance; secret-redaction and valid/refused preview regressions pass | R8 |
-| B3 | DONE in source — Riverside REST/studio/MCP reconciliation, scoped confirmations, private-link redaction and attempt fencing; OpenAPI/docs and 21 new regressions included in 1,274 passing PG15 tests | R9 |
-| B4 | DONE — no shared-link prerequisite; personal links require current account/event binding. Apply migration0010 and reconcile legacy unbound links before use | R10 |
+| B1–B4 | Closed 2026-10-26 (outbox metadata disproven, studio refusal UX, Riverside reconciliation, personal-link binding) | R7–R10 |
+| B5 | nginx kit snippet `^~` shadowing and missing example locations | R25 |
+| B6 | WordPress cookie-expiry/subdirectory SDK path, Node proxy quoted cookie, Next 16 build, Svelte 5 runes | R26 |
+| B7 | Hosting transport tests updated for native `GET`/`PATCH` lookups; `CREDENTIAL_HEADERS` extended (`api-token`, `x-api-token`) | — |
 
 ## C. Owner accounts, approvals and decisions
 
@@ -50,32 +55,34 @@ None is approved by this document. External calls need explicit approval and own
 
 | # | Item | Gap | Needs owner account |
 |---|---|---|---|
-| C1 | Native adapter sandboxes, one per adapter to be enabled (HubSpot, Attio, PostHog, Customer.io, Segment, GA4, Amplitude, Mixpanel, RudderStack, Brevo); otherwise keep disabled | R11 | Yes |
+| C1 | Native adapter sandboxes, one per adapter to be enabled (HubSpot, Attio, PostHog, Customer.io, Segment, GA4, Amplitude, Mixpanel, RudderStack, Brevo, Salesforce, Pipedrive, ActiveCampaign, Mailchimp); otherwise keep disabled | R11 | Yes |
 | C2 | Stripe test-mode run of the full paid flow, webhooks, refunds, disputes | R12 | Yes (Stripe) |
-| C3 | Hosting sandboxes: Zoom Webinars licence, Wistia, Sequel, Riverside | R13 | Yes |
+| C3 | Hosting sandboxes: Zoom Webinars licence (provisioning and participant report), Wistia, Sequel, Riverside (attach, registrants, attendance) | R13 | Yes |
 | C4 | Real SMTP relay test to owner mailboxes (mandatory for paid tickets and invitations) | R14 | Yes |
-| C5 | Real webhook receiver test | R15 | Yes |
-| C6 | Kit compatibility on real WordPress and the frameworks/CMSs to be supported; Webflow/Framer plan feasibility | R16 | Yes (hosting / CMS / plan accounts) |
+| C5 | Real webhook receiver test over the internet | R15 | Yes |
+| C6 | Kit compatibility on the owner's real sites and hosts (https hosts, CDN, Vercel, Webflow/Framer plans, paid sessions through a kit) | R16 | Yes (hosting / CMS / plan accounts) |
 | C7 | Web calendar deep links against live Google/Outlook/Microsoft 365, or accept unverified | R17 | Yes (test calendars) |
-| C8 | Accept publication authority, confirmation-token, `config_read` draft-read and paid-flow policies | R18–R22 | No |
-| C9 | Accept residual behaviour (remaining-gaps §5) and A8 findings / A7 digests | R23 | No |
-| C10 | Decide scope for the requested backlog (remaining-gaps §4): which further CRM/marketing adapters and attendance import ship in this release vs the next | §4 | No |
+| C8 | Accept publication authority, confirmation-token, `config_read` draft-read, paid-flow, attendance-import and marketing-status policies | R18–R22, R27, R28 | No |
+| C9 | Accept residual behaviour (remaining-gaps §5) and the A7 digests | R23 | No |
+| C10 | Scope decision recorded: no further marketing destinations are committed; transactional email adapters stay unbuilt by design (remaining-gaps §4, §7). Confirm or amend | §4 | No |
 | C11 | Approve a staging host and run launch acceptance ([implementation-guide.md §11.1](implementation-guide.md#111-launch-acceptance-run-on-staging-record-results-in-validationmd)) | §3 | Yes (host) |
-| C12 | Approve live demo backend upgrade, production deployment, registry push, any preview renewal | — | Yes |
+| C12 | Approve live demo backend upgrade and frontend catalogue redeploy, production deployment, any preview renewal | — | Yes |
+| C13 | Approve pushing a `v0.2.0…` tag so `.github/workflows/release.yml` builds linux/amd64 + arm64 and publishes to GHCR (closes R24 when the amd64 first run is repeated) | R24 | Yes (GitHub) |
 
 ## D. Operator tasks (target environment)
 
 | # | Task | Gap |
 |---|---|---|
 | D1 | TLS with HTTP→HTTPS redirect | §3 |
-| D2 | Edge rate limits on `/webinar-api/*` (incl. proxy `my-registration`), `/w/`, `/mcp`, `/admin/`, `/studio/login/` | §3 |
+| D2 | Edge rate limits on `/webinar-api/*` (incl. proxy `my-registration`), `/w/`, `/mcp`, `/admin/`, `/studio/login/`, `/api/v1/payments/stripe/webhook` (`docker/nginx.conf.example`) | §3 |
 | D3 | MFA, SSO or VPN in front of `/admin/` and `/studio/` | §3 |
 | D4 | Mode B edges forward `/webinar-api/calendar.ics` (and `my-registration`), or set `WEBINAR_DIRECT_ICS_REWRITE=false` | R21 |
 | D5 | `RATE_LIMIT_TRUST_X_FORWARDED_FOR` only behind a trusted chain of matching depth | §3 |
 | D6 | Worker process running | §3 |
-| D7 | `WEBHOOK_HOST_ALLOWLIST` for enabled vendors, `api.stripe.com`, hosting hosts; https `PUBLIC_BASE_URL`; `PUBLIC_EVENT_URL_TEMPLATE` | §3 |
+| D7 | `WEBHOOK_HOST_ALLOWLIST` for enabled vendors (exact per-destination hosts for Salesforce, ActiveCampaign, Mailchimp, RudderStack), `api.stripe.com`, hosting hosts; https `PUBLIC_BASE_URL`; `PUBLIC_EVENT_URL_TEMPLATE` | §3 |
 | D8 | Stripe webhook endpoint with the five events from [tickets.md](tickets.md) | §3 |
-| D9 | `INTEGRATION_MASTER_KEY` outside backups; scheduled `pg_dump`; restore drill on the target host | §3 |
+| D9 | `INTEGRATION_MASTER_KEY` outside backups; scheduled `deploy/backup.sh --encrypt-to …`; restore drill with `deploy/restore.sh` on the target host | §3 |
 | D10 | Cron for `purge_personal_data` | §3 |
-| D11 | Existing deployments: `migrate` (incl. 0008, 0009), `sync_roles`; marketers to `/studio/` | §3 |
+| D11 | Existing deployments: `deploy/upgrade.sh --image <image>` (migrates 0008–0011, `sync_roles`); marketers to `/studio/` | §3 |
 | D12 | `manage.py check` on every deploy | §5 |
+| D13 | Pin `WEBINAR_IMAGE` to the exact published tag (or the locally built `<version>-<commit>` tag) in `.env`; never `latest` | §3 |

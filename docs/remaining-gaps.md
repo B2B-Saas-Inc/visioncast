@@ -1,32 +1,36 @@
 # Remaining gaps
 
-Status as of 2026-10-26, reconciled against [validation.md](validation.md) (latest entry
-2026-10-26T14:36:34Z). **Preview, not production-ready.** This page separates what the
-code implements, what blocks a release, what the owner has requested but is not built
-yet, and what is optional or out of scope. Test evidence lives only in
-[validation.md](validation.md); nothing on this page is a test result. The ordered,
-tickable list is [release-checklist.md](release-checklist.md). Detailed behaviour is
+Status as of 2026-10-27, reconciled against [validation.md](validation.md) (latest entries
+dated 2026-10-27). **Release candidate `0.2.0-pre`: every local gate has a recorded pass on
+the release tree; what remains needs owner-held accounts, an owner decision, or the target
+environment.** This page separates what the code implements, what blocks a release, what the
+owner has requested but is not built yet, and what is optional or out of scope. Test evidence
+lives only in [validation.md](validation.md); nothing on this page is a test result. The
+ordered, tickable list is [release-checklist.md](release-checklist.md). Detailed behaviour is
 owned by [mcp.md](mcp.md), [native-integrations.md](native-integrations.md),
-[tickets.md](tickets.md), [hosting.md](hosting.md) and [kits.md](kits.md); where they
-disagree with this page on detail, theirs win.
+[tickets.md](tickets.md), [hosting.md](hosting.md), [kits.md](kits.md) and
+[operations.md](operations.md); where they disagree with this page on detail, theirs win.
 
 ## 0. Current evidence (summary; validation.md is authoritative)
 
-| What | Latest recorded | Covers the current tree? |
+| What | Latest recorded | Covers the release tree? |
 |---|---|---|
-| Python suite, PostgreSQL 15 / Python 3.12, Ruff, system check, migration drift | **1,244 passed** (2026-10-26T14:36Z) | Yes |
-| Site (`site/`) tests, typecheck, production build | **50 tests** passed (2026-10-26T14:36Z) | Yes |
-| OCI image | `artifacts/pi-build-d49e1bea-a7ab-4752-88c4-7b59259f0a08/image.tar` (2026-10-26) | Built from the current tree. **No SHA-256 recorded; never loaded, run or smoke-tested** |
-| Python suite on PostgreSQL 16 + logical and application restore probe (`tests/run-pg16.sh`, `tests/restore_probe.py`) | 1,274 passed, restore/decrypt/wrong-key/admin probe passed (2026-10-26, Python3.12.15/PostgreSQL16.15) | **Yes, from source.** Does not prove built-image runtime |
-| Transitive hash lock (`requirements.in` → hashed `requirements.txt`), hash-enforced install | Adopted 2026-10-24 | Yes, unless dependencies changed since; dev packages not hash-locked |
-| `pip-audit` | No known vulnerabilities (2026-10-24, 837 tree) | Rerun for the release tree |
-| SDK + kit tests | 60 passed (2026-10-25T04:49Z) | Not rerun at the 1,244 tree |
-| Actual-app Chromium studio journey | 12/12 (2026-10-25T04:49Z) | Not rerun at the 1,244 tree |
-| Mocked-backend SDK Chromium (`tests/browser-sdk.cjs`) | 8/8 in an early wave | No; predates web-calendar links and paid/verification SDK states |
-| Live demo | Frontend `visioncast-ten.vercel.app` updated 2026-10-26 (catalogue lists ten adapters) | **Backend is the 2026-10-24 build** (no tickets, hosting or the newer adapters); no worker, email or destinations |
-| Real vendor, Stripe, hosting-provider, SMTP or receiver traffic | None | — |
+| Python suite, Python 3.12.16 / PostgreSQL 16.15, Ruff, system check, migration drift, logical + application restore probe (`tests/run-pg16.sh`) | **1,945 passed**, all checks and the restore probe passed (2026-10-27) | Yes |
+| Same suite locally on Python 3.12 / PostgreSQL 16 after the last merge | 1,945 passed (2026-10-27) | Yes |
+| End-to-end acceptance (`tests/test_e2e_acceptance.py`): create → provision (Zoom) → register/pay (room, mailbox code, Stripe webhook) → verify → attend (check-in, and separately Zoom attendance import + no-shows) → CRM follow-up (native HubSpot + signed webhook) | 2 scenarios pass, fake vendors (2026-10-27) | Yes |
+| Site (`site/`) tests, typecheck, production build | 50 passed, typecheck and build passed (2026-10-27) | Yes |
+| SDK unit, proxy and kit tests | 63 + 9 passed (2026-10-27) | Yes |
+| Mocked-backend SDK Chromium (`tests/browser-sdk.cjs`) incl. web calendar links, `payment_required`, `verification_required` | 11/11 (2026-10-27) | Yes |
+| Actual-app Chromium: studio journey, Riverside controls, GTM screen | 13/13, 8/8, 10/10 (2026-10-27, local preview on the merged tree) | Yes |
+| Website kits installed from fresh vendor scaffolds (WordPress 7.1 / PHP 8.2, Next 16, SvelteKit 3, Astro 7, Nuxt 4, static snippet behind nginx) with a 30-check Chromium flow; CMS schemas validated with vendor packages | All flows pass; five kit bugs fixed (2026-10-27) | Yes (`bash sdk/kits/test/fresh-install.sh` to repeat) |
+| Versioned OCI image built from the release tree (`deploy/build-image.sh`) | `0.2.0-pre`, revision `09e104a`, image ID `sha256:3ff6df0d…`, tarball SHA-256 `11cd42aa…`, **linux/arm64** (2026-10-27) | Yes, arm64 only |
+| Clean-server Compose first run, backup/restore, retention dry run, offline receiver contract, `nginx -t` + routing, in-place upgrade from `da04cc7` and rollback | All passed (2026-10-27, distribution entry; first run repeated on the final image) | Upgrade/restore evidence is from commit `3ec60ad`; the first run was repeated on the release image |
+| Base-image digest pins (`python:3.12-slim-bookworm`, `postgres:16-alpine`) | Pinned by `@sha256` (2026-10-27) | Yes |
+| `pip-audit` on the hash lock | No known vulnerabilities; dev-only `pytest` bumped to 9.0.3 (2026-10-27) | Yes |
+| Live demo | Frontend `visioncast-ten.vercel.app` (catalogue lists fourteen adapters only after the next deploy); backend is the 2026-10-26 build | No (owner-approved upgrade, C12) |
+| Real vendor, Stripe, hosting-provider, SMTP, registry or receiver traffic | None | — |
 
-## 1. Implemented in code (preview only; gates in §2–§3)
+## 1. Implemented in code (gates in §2–§3)
 
 | Area | Where |
 |---|---|
@@ -38,49 +42,51 @@ disagree with this page on detail, theirs win.
 | Signed outbox webhooks, retries, dead letters, SSRF policy, per-destination host pinning | `webinars/outbox.py`, `delivery.py`, `ssrf.py`; [webhooks.md](webhooks.md) |
 | Hosted waiting room, mailbox verification, check-in, finalization | `webinars/waiting_room*.py`; [waiting-room.md](waiting-room.md) |
 | Operational SMTP (room codes, invitations only) | `webinars/mail.py`; [email.md](email.md) |
-| Publication readiness on studio, REST, MCP and Django admin (incl. same-POST inline sessions) | `webinars/services.py`, `admin.py` |
+| Publication readiness on studio, REST, MCP and Django admin | `webinars/services.py`, `admin.py` |
 | Studio, admin, roles, audit, `purge_personal_data` | `webinars/studio/`, `admin.py`, `roles.py` |
-| MCP `/mcp` incl. ticket/hosting parity tools (gated where they mutate) | `webinars/mcp.py`, `mcp_config.py`; [mcp.md](mcp.md) |
-| Ten native adapters: PostHog, Customer.io, HubSpot, Attio, Segment, GA4, Amplitude, Mixpanel, RudderStack, Brevo. Multi-step sends stop if destination config changes mid-send (2026-10-26 fix). **Mock-tested only** | `webinars/native_integrations.py`, `delivery.py`; [native-integrations.md](native-integrations.md) |
+| MCP `/mcp` incl. ticket, hosting and attendance-import tools (gated where they mutate); `serverInfo.version` from `VERSION` | `webinars/mcp.py`, `mcp_config.py`; [mcp.md](mcp.md) |
+| **Fourteen native adapters**: PostHog, Customer.io, HubSpot, Attio, Segment, GA4, Amplitude, Mixpanel, RudderStack, Brevo, and (2026-10-27, one module each under `webinars/native_providers/`) **Salesforce, Pipedrive, ActiveCampaign, Mailchimp**. Contract points marked VERIFIED (official page fetched) or UNVERIFIED per adapter. **Mock-tested only** | `webinars/native_integrations.py`, `native_providers/`, `delivery.py`; [native-integrations.md](native-integrations.md) |
 | Capacity and Stripe Checkout tickets with mailbox verification before holds. **Stripe mocked only** | `webinars/capacity.py`, `payments.py`, `api/tickets.py`; [tickets.md](tickets.md) |
-| Hosting: Zoom create/update/attach; Wistia, Sequel create; Riverside attach + per-registrant links; StreamYard manual link; operation reconciliation. **No adapter sandbox-verified** | `webinars/hosting/`, `api/hosting.py`; [hosting.md](hosting.md) |
-| Website kits: WordPress plugin, framework/headless/proxy references, no-code and CMS schema references. Invariant tests pass; **not run against real WordPress, frameworks or CMSs** | `sdk/kits/`; [kits.md](kits.md) |
+| Hosting: Zoom create/update/attach; Wistia, Sequel create; Riverside attach + per-registrant links + reconciliation; StreamYard manual link. **No adapter sandbox-verified** | `webinars/hosting/`, `api/hosting.py`; [hosting.md](hosting.md) |
+| **Provider attendance import** (2026-10-27): authenticated Zoom participant pull (documented endpoint, paginated), Riverside registrant pull (UNVERIFIED constants), JSON/CSV file import for every provider; id-then-email matching, dedupe, ambiguity review, idempotent apply through `record_attendance` (`attendance.recorded` once per registration), separate confirmed no-show pass; REST, MCP and studio. Migration `0011` | `webinars/attendance_import.py`, `api/attendance_imports.py`; [hosting.md](hosting.md) "Attendance import" |
+| Website kits: WordPress plugin, framework/headless/proxy references, no-code and CMS schema references, fresh-install verification script | `sdk/kits/`; [kits.md](kits.md) |
+| Distribution: `VERSION`, `show_version`, `/healthz` version, OCI labels, `deploy/build-image.sh`, `backup.sh`, `restore.sh`, `upgrade.sh`, `WEBINAR_IMAGE` in Compose, GHCR release workflow (prepared, not run) | `deploy/`, `Dockerfile`, `compose.yaml`, `.github/workflows/release.yml`; [operations.md](operations.md) |
 
 ## 2. Release blockers
 
 Must be closed or explicitly accepted by the owner before production use.
 
-### 2a. Evidence on the exact release tree and image (Pi can do locally)
+### 2a. Evidence on the exact release tree and image
 
 | # | Blocker |
 |---|---|
-| R1 | **Closed for source verification, 2026-10-26:** Python3.12.15/PostgreSQL16.15 passes 1,274 tests plus logical/application restore, decryption, wrong-key rejection and authenticated admin request. Built-image runtime proof remains outstanding (R2). |
-| R2 | **Image digest and runtime.** Record the SHA-256 of the d49e1bea archive (or of a rebuild), then load it and run the Compose smoke test (`compose.yaml`, `postgres:16-alpine`): migrate, `sync_roles`, `create_api_key`, web and worker healthchecks, `/healthz`, studio login, OpenAPI, `/mcp`. Never done for any image. |
-| R3 | **Rerun SDK/kit tests, actual-app Chromium and mocked-backend SDK Chromium** on the release tree; add browser scenarios for web calendar links and the paid / verification-required SDK states (unit tests only today). |
-| R4 | **Base-image digest pins.** `Dockerfile` `PYTHON_IMAGE` and `compose.yaml` Postgres are still tags. Resolve, pin, rebuild. |
-| R5 | **`pip-audit` on the release lock**, and record findings. |
-| R6 | **Local operational rehearsals:** retention dry run, local webhook receiver contract (`examples/verify_webhook.py`: valid, tampered, stale, duplicate), `nginx -t` on `docker/nginx.conf.example` (untested). |
+| R1 | **Closed 2026-10-27:** 1,945 tests, checks and the restore probe pass under `tests/run-pg16.sh` (Python 3.12.16 / PostgreSQL 16.15) on the release tree. |
+| R2 | **Closed for arm64, open for amd64.** The release image (`0.2.0-pre`, revision `09e104a`) was built, saved with a recorded SHA-256, and passed the clean-server Compose first run (migrate, `sync_roles`, `bootstrap_admin`, `create_api_key`, seed, web + worker healthy, `/healthz` with version, OpenAPI, `/mcp`, studio login page, retention dry run, backup). **No linux/amd64 image has been built or run** (the host is Apple Silicon; the release workflow builds both). See R24. |
+| R3 | **Closed:** SDK/kit tests, the actual-app Chromium journeys (studio 13/13, Riverside 8/8, GTM 10/10) and the mocked-backend SDK Chromium suite (11/11, now covering web calendar links and the paid-session 202 states) were rerun on the merged release tree. |
+| R4 | **Closed:** `PYTHON_IMAGE` and the Compose Postgres image are pinned by digest; refresh procedure in README "Supply chain notes". |
+| R5 | **Closed:** `pip-audit` on the hash lock reports no known vulnerabilities; the only finding was dev-only `pytest` (bumped to 9.0.3). |
+| R6 | **Closed locally:** retention dry run, offline receiver contract (`tests/test_verify_webhook_example.py`: valid, tampered, stale, duplicate, wrong secret, rotation), `nginx -t` plus routing and rate-limit checks on both nginx files (two routing bugs fixed). A receiver over the internet is C5. |
+| R24 | **Open (owner/CI):** build and smoke the **linux/amd64** image, either by running `.github/workflows/release.yml` on a `v0.2.0…` tag (publishes to GHCR; needs approval, C13) or `deploy/build-image.sh --platform linux/amd64` on an amd64 host, then repeat the Compose first run there. |
 
 ### 2b. Known code defects and gaps still open
 
 | # | Blocker |
 |---|---|
-| R7 | **Closed: review finding disproven.** Delivery metadata is always retained by the outbox, and delivery serialization restores the delivery ID. Regression coverage confirms it survives omission from destination groups; no extra enable-time restriction is needed. |
-| R8 | **Closed:** studio previews now show bounded refusal codes and guidance without exposing exception text, secrets or personal data. PostgreSQL15 and PostgreSQL16 suites pass after this fix (1,253 tests each). |
-| R9 | **Closed in source:** REST, studio and MCP now expose stalled-registrant reconciliation with scoped authorization, private-link redaction, state-bound confirmation and an attempt fence under the service row lock. 1,274 PostgreSQL15 tests pass; no live Riverside account verification. |
-| R10 | **Closed:** enabled attached Riverside sessions can open without a shared link. Admission requires a valid personal link bound to the current provider account and event. Migration0010 leaves legacy links unbound: operators must reconcile them; no blind backfill. 1,320 PG16/Python3.12 tests pass. |
+| R7–R10 | **Closed** (see validation.md 2026-10-26 entries): outbox delivery metadata, studio preview refusals, Riverside reconciliation and personal-link binding. |
+| R25 | **Closed 2026-10-27:** `sdk/kits/node/nginx-webinar-api.conf` used `location ^~`, which made every proxied kit route answer 404 behind nginx; `docker/nginx.conf.example` lacked locations for `my-registration`, `calendar.ics`, `/w/`, `/studio/login/`, `/mcp` and the Stripe webhook. Both fixed and verified with `nginx -t` and routing checks. |
+| R26 | **Closed 2026-10-27:** the WordPress plugin dropped Django's cookie-expiry `Set-Cookie` on reset and emitted a doubled subdirectory path for a self-hosted SDK; the Node proxy had the same quoted-cookie bug; the Next.js reference page did not build under Next 16 `cacheComponents`; the Svelte component did not compile under Svelte 5 runes. All fixed by fresh-install verification. |
 
 ### 2c. Vendor contracts (owner accounts required)
 
 | # | Blocker |
 |---|---|
-| R11 | **Native adapters stay disabled** until each is checked in an owner-approved sandbox: HubSpot (409 on email collision), Attio (`matching_attribute`, list entries), PostHog and Customer.io dedupe, Segment, GA4, Amplitude, Mixpanel, RudderStack (auth ambiguity, regional hosts) and Brevo (contacts may become campaign-eligible under vendor defaults; event retries may duplicate automation triggers). Vendor writes are never recalled; no vendor-side erasure. |
+| R11 | **Native adapters stay disabled** until each is checked in an owner-approved sandbox: HubSpot (409 on email collision), Attio (`matching_attribute`, list entries), PostHog and Customer.io dedupe, Segment, GA4, Amplitude, Mixpanel, RudderStack (auth ambiguity, regional hosts), Brevo (campaign-eligible contacts under vendor defaults), **Salesforce** (client-credentials token flow unreadable in docs; composite upsert by External ID; `v62.0`), **Pipedrive** (v2 API; rate limits; `due_time` zone; activity dedupe scan limited to 500), **ActiveCampaign** (date custom-field format; regional hosts other than `api-us1.com`; account automations may fire), **Mailchimp** (`<dc>.api.mailchimp.com` form; whether API-created `pending` members get the opt-in mail; unknown merge tags). Vendor writes are never recalled; no vendor-side erasure. |
 | R12 | **Stripe test mode** for the full paid flow: Checkout create, `expires_at` minimum, idempotency replay, expire endpoint, all five webhook events, refunds and disputes. Mocked only. |
-| R13 | **Hosting provider sandboxes:** Zoom Webinars, Wistia Webinars, Sequel, Riverside (endpoint paths are our best reading). |
+| R13 | **Hosting provider sandboxes:** Zoom Webinars (create/update/attach **and** `past_webinars/{id}/participants` attendance pull), Wistia, Sequel, Riverside (attach, registrants, attendance: paths are our best reading). |
 | R14 | **Real SMTP relay** — required, not optional, if paid tickets are sold (mailbox verification) or invitations / room codes are used. |
-| R15 | **Real webhook receiver(s)** the owner will use. |
-| R16 | **Kit compatibility:** install the WordPress plugin on a real WordPress ≥ 6.3 / PHP ≥ 7.4 site (incl. subdirectory install, caching plugin), and exercise at least the frameworks the owner will ship (Next.js self-hosted and Vercel, Astro, Nuxt, SvelteKit). Webflow/Framer reverse-proxy feasibility, Astro middleware, Nuxt `routeRules`, Payload 2 vs 3, Prismic Slice Machine and Contentful CLI formats are unverified. |
-| R17 | **Web calendar deep links** (Google/Outlook/Microsoft 365) against the live services, or accept unverified. The endpoint is duplicated in `calendar_links.py`, `sdk/proxy/server.js` and the SDK. |
+| R15 | **Real webhook receiver(s)** the owner will use (the receiver contract is verified offline only). |
+| R16 | **Kit compatibility on the owner's real sites.** Fresh-install verification covered WordPress 7.1 / PHP 8.2 (block, shortcode, WP Super Cache, `/blog/` subdirectory), Next 16 self-hosted, SvelteKit 3 / Svelte 5, Astro 7 (behind nginx), Nuxt 4 (behind nginx), a static snippet behind nginx, and the four CMS schemas with vendor packages. **Not verified:** https hosts other than localhost, CDN caches in front of `/webinar-api`, Vercel route handlers, real Webflow/Framer hosting, paid sessions through a kit, Next 14/15, Nuxt 3, Svelte 4, Astro middleware mode, WordPress multisite. |
+| R17 | **Web calendar deep links** (Google/Outlook/Microsoft 365) against the live services, or accept unverified. |
 
 ### 2d. Owner policy acceptances
 
@@ -92,37 +98,44 @@ Must be closed or explicitly accepted by the owner before production use.
 | R21 | Direct-mode ICS rewrite default: Mode B edges must forward `/webinar-api/calendar.ics` (and `my-registration`) or set `WEBINAR_DIRECT_ICS_REWRITE=false`. |
 | R22 | Paid sessions require the waiting room and mail; join links sent to webhook destinations before a refund cannot be recalled. |
 | R23 | Residual behaviour in §5. |
+| R27 | Attendance import never runs automatically and never guesses an ambiguous match; a Zoom pull is capped at 50 pages (5,000 participants) and marked incomplete beyond that; no-shows are a separate confirmed step. |
+| R28 | Marketing adapters never subscribe anyone: Mailchimp members default to `transactional` (pending double opt-in needs an explicit acknowledgement; `subscribed` is impossible), ActiveCampaign contacts are never added to lists or automations. Whether the vendor's own automations react to contact or tag changes is the operator's responsibility. |
 
 ## 3. Operational gates (target environment; operator/owner)
 
-- A production host (the demo droplet runs the old backend without a worker; it is a demo,
-  not a release target unless the owner says so). Provisioning is the operator's job.
+- A production host (the demo droplet runs the 2026-10-26 backend without a worker; it is a
+  demo, not a release target unless the owner says so). Provisioning is the operator's job.
 - TLS, HTTP→HTTPS redirect, edge rate limits on `/webinar-api/*` (incl. the proxy's
-  `my-registration`), `/w/`, `/mcp`, `/admin/`, `/studio/login/`, `/api/v1/payments/stripe/webhook`;
-  MFA/SSO/VPN in front of `/admin/` and `/studio/`. Platform limits are per-process only.
+  `my-registration`), `/w/`, `/mcp`, `/admin/`, `/studio/login/`, `/api/v1/payments/stripe/webhook`
+  (`docker/nginx.conf.example` now covers all of them); MFA/SSO/VPN in front of `/admin/` and
+  `/studio/`. Platform limits are per-process only.
 - `RATE_LIMIT_TRUST_X_FORWARDED_FOR` only behind a trusted proxy chain of the configured depth.
-- `INTEGRATION_MASTER_KEY` stored outside backups; scheduled `pg_dump`; a restore drill on
-  the target host (the synthetic PG16 probe is not a production-volume drill).
-- Worker process running (outbox, reminders, Stripe sweep, hosting sweep, stale operations).
-- `WEBHOOK_HOST_ALLOWLIST` entries for every enabled vendor, Stripe and hosting host; https
-  `PUBLIC_BASE_URL`; `PUBLIC_EVENT_URL_TEMPLATE`; `manage.py check` on every deploy.
+- `INTEGRATION_MASTER_KEY` stored outside backups; scheduled `deploy/backup.sh` (encrypt with
+  `--encrypt-to`); a restore drill with `deploy/restore.sh` on the target host.
+- Worker process running (outbox, reminders, Stripe sweep, hosting sweep, stale operations
+  including lost attendance pulls).
+- `WEBHOOK_HOST_ALLOWLIST` entries for every enabled vendor (exact hosts for Salesforce My
+  Domain, ActiveCampaign account host, Mailchimp data center and RudderStack data plane),
+  Stripe and hosting hosts; https `PUBLIC_BASE_URL`; `PUBLIC_EVENT_URL_TEMPLATE`;
+  `manage.py check` on every deploy.
 - Stripe webhook endpoint registered with the five events in [tickets.md](tickets.md).
-- Cron for `purge_personal_data`.
-- Existing deployments: `migrate` (0008, 0009 are new), then `sync_roles`.
+- Cron for `purge_personal_data` (now also blanks attendance-import rows).
+- Existing deployments: `deploy/upgrade.sh --image <image>` (backup, `migrate` incl. 0011,
+  restart, `sync_roles`, health).
 - Launch acceptance in [implementation-guide.md §11.1](implementation-guide.md#111-launch-acceptance-run-on-staging-record-results-in-validationmd) on staging.
-- Upgrading the live demo backend to the current tree is separate owner-approved work.
+- Upgrading the live demo backend to the release tree is separate owner-approved work (C12).
 
-## 4. Requested feature backlog (owner asked for these; not yet built)
+## 4. Requested feature backlog
 
-These are part of the requested scope (CONTINUITY "full scope still OPEN"), not optional.
+Committed scope for this release is closed. What the owner asked for and is **not** built:
 
 | Item | State |
 |---|---|
-| Further CRM / marketing-automation / transactional-email native adapters (Salesforce, Pipedrive, other marketing-automation beyond Brevo, transactional email) | Not built. [native-integrations.md](native-integrations.md) lists them as the next wave. Signed webhooks are the interim path. |
-| Riverside registrant reconciliation route (REST, studio, MCP) | Implemented and regression-tested; live-provider verification remains required. |
-| Provider attendance import (Zoom, Wistia, Sequel, Riverside) | Not built. |
+| Salesforce, Pipedrive, ActiveCampaign, Mailchimp native adapters | **Built** (mock-tested; sandbox verification R11). No further marketing destinations are committed; the catalogue's remaining "roadmap" entries (Marketo, HubSpot Marketing, Loops, Intercom, n8n, Zapier, Make) are not scheduled. |
+| Transactional email adapters (Resend, Postmark, SES) | **Not built, by design** (§7: attendee confirmation/reminder email is delivered by the owner's ESP through signed webhooks, never by the platform). Remove them from the catalogue or accept them as "roadmap". |
+| Provider attendance import | **Built** for Zoom (documented endpoint), Riverside (unverified) and file import for every provider. Wistia and Sequel expose no attendance API this release; their reports go through the file import. |
 | Hosting update for Wistia/Sequel; Riverside create | Not built (Riverside create is undocumented by the vendor). |
-| Live demo backend upgrade to the current tree | Not done; frontend already advertises the features. |
+| Live demo backend upgrade to the release tree | Not done; the frontend catalogue must be redeployed to show the four new adapters. |
 
 ## 5. Known residual behaviour (accepted or documented, not blockers)
 
@@ -134,6 +147,8 @@ These are part of the requested scope (CONTINUITY "full scope still OPEN"), not 
 | `PUBLIC_EVENT_URL_TEMPLATE` check | `webinars.E101` does not run at Gunicorn start; run `manage.py check`. |
 | Rate limits | Per-process, not global. |
 | Stripe key rotation | Refused while orders are open. |
+| `__Host-webinar_csrf` on plain http | Stored only in a secure context (https, `localhost`, `127.0.0.1`); other http hosts get `403 csrf_failed` on POST ([kits.md](kits.md)). |
+| Native events are at-least-once | Mailchimp member events, Brevo and Customer.io events, Pipedrive activities beyond the 500-item dedupe scan can repeat on retry; consumers dedupe on the delivery ID. |
 
 ## 6. Optional / not planned (no commitment)
 
@@ -148,14 +163,17 @@ These are part of the requested scope (CONTINUITY "full scope still OPEN"), not 
 | Vendor-side erasure; native "send test to a chosen record" | Test sends cancel with `native_test_send_unsupported`. |
 | Automated refunds, coupons, taxes, subscriptions, quantity > 1, Connect | [tickets.md](tickets.md) "Not supported". |
 | Teams, Google Meet hosting | Not supported. |
+| Automatic attendance pulls after a session | Imports are always a person's (or key's) explicit, confirmed action. |
+| ActiveCampaign site tracking (`trackcmp.net`), Mailchimp `subscribed` status | Not implemented, by policy. |
 | Global rate limiting, built-in TLS/MFA, built-in retention scheduler | Edge / cron. |
 | MCP SSE/sessions/stdio | Stateless JSON over HTTP. |
 | Over MCP: environment settings, host provisioning, Administrators/superusers, secrets, join/invitation links, registrant PII | Excluded by design ([mcp.md](mcp.md)). |
 
 ## 7. Out of scope by design (do not build)
 
-- Streaming, video/recording hosting, gating or view tracking. Check-in measures admission.
-- Attendee confirmation/reminder/follow-up email and SMS sending (ESP via webhooks; SMS
-  consent evidence only).
+- Streaming, video/recording hosting, gating or view tracking. Check-in and imported
+  attendance measure admission or provider-reported presence, not viewing.
+- Attendee confirmation/reminder/follow-up email and SMS sending (ESP via webhooks or the
+  native marketing adapters' own automations; SMS consent evidence only).
 - Cross-device recognition and account recovery ([security.md](security.md)).
 - Multi-tenancy.
