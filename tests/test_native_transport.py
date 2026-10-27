@@ -89,14 +89,14 @@ def no_spawn(monkeypatch):
     return spawned
 
 
-@pytest.mark.parametrize("method", ["DELETE", "PATCH", "HEAD", "OPTIONS", "CONNECT", "TRACE", "post\r\nX: y"])
+@pytest.mark.parametrize("method", ["DELETE", "HEAD", "OPTIONS", "CONNECT", "TRACE", "post\r\nX: y"])
 def test_only_post_and_put(allow, no_spawn, method):
     with pytest.raises(ssrf.UnsafeDestination):
         ssrf.request_json_bounded(method, URL, b"{}", {}, 10, 5, allowed_hosts=VENDORS, _target=_ok_child)
     assert no_spawn == []
 
 
-@pytest.mark.parametrize("credential_header", ["authorization", "api-key", "Api-Key"])
+@pytest.mark.parametrize("credential_header", ["authorization", "api-key", "Api-Key", "x-api-token", "X-Api-Token"])
 def test_credentials_need_explicit_vendor_hosts(allow, no_spawn, credential_header):
     with pytest.raises(ssrf.UnsafeDestination):
         ssrf.request_json_bounded("POST", "https://hooks.example.net/x", b"{}", AUTH, 10, 5, _target=_ok_child)

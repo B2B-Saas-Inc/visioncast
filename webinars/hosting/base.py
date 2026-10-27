@@ -259,6 +259,11 @@ def store_token(provider, secrets, token, expires_in):
         _TOKENS[_token_key(provider, secrets)] = (token, time.monotonic() + ttl)
 
 
+def forget_token(provider, secrets):
+    """Drop one cached token (e.g. after the vendor answered 401 to it)."""
+    _TOKENS.pop(_token_key(provider, secrets), None)
+
+
 def clear_token_cache():
     _TOKENS.clear()
 

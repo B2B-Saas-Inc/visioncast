@@ -1,5 +1,11 @@
 # Preview validation
 
+## Salesforce and Pipedrive native adapters — 2026-10-27
+
+- Two provider modules (`webinars/native_providers/salesforce.py`, `webinars/native_providers/pipedrive.py`) registered through `PROVIDER_MODULES`; mock-only suites `tests/test_native_salesforce.py` and `tests/test_native_pipedrive.py` (fake transports, socket connects refused). `ssrf` native transport now admits `PATCH` (Pipedrive v2 updates) and treats `x-api-token` as a credential header.
+- **1,666 tests pass on Python 3.12 / PostgreSQL 16** (local disposable database `ws_crm`, `pytest -p no:cacheprovider tests`, 60 s); `ruff check .` clean; `manage.py check` and `makemigrations --check` clean. Site: **50/50 node tests pass** (`node --test`, no `node_modules` needed).
+- Contract points were compared with official pages fetched the same day (Salesforce REST API Developer Guide composite/upsert pages; Pipedrive v2 OpenAPI file and authentication guide). The Salesforce client-credentials token flow article could not be rendered and stays **UNVERIFIED**. No vendor account, sandbox or network call was used.
+
 Implemented with parallel Claude CLI `claude-opus-5-5` orchestrators and bounded subagents, independent security review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
 ## ActiveCampaign and Mailchimp native adapters — 2026-10-27

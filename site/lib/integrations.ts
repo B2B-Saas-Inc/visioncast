@@ -168,6 +168,31 @@ export const INTEGRATIONS: Integration[] = [
     ],
   },
   {
+    id: 'salesforce',
+    name: 'Salesforce',
+    category: 'crm',
+    status: 'built',
+    summary: 'Upsert a Lead or Contact, an optional Account and a custom participation record in one atomic Composite request.',
+    details: [
+      'Sends only to your own My Domain host, which your operator must allowlist exactly; OAuth client-credentials token kept in memory only.',
+      'External ID upserts keyed by our person, organisation and registration IDs, so retries target the same records; no email matching.',
+      'Registrations without a last name (or company, for Leads) are skipped rather than written with placeholders.',
+      'OAuth token request shape unverified against Salesforce Help; API v62.0 assumed.',
+    ],
+  },
+  {
+    id: 'pipedrive',
+    name: 'Pipedrive',
+    category: 'crm',
+    status: 'built',
+    summary: 'Find or create the person (and organisation) in Pipedrive and add one activity per webinar event.',
+    details: [
+      'API v2 search-then-write by our person ID in a custom field, or by email with confirmation.',
+      'Activities carry a registration marker; a retry finds it on the first page and does not duplicate.',
+      'Never changes marketing status, labels, deals or contact-sync fields.',
+    ],
+  },
+  {
     id: 'customerio',
     name: 'Customer.io',
     category: 'marketing',
@@ -275,8 +300,6 @@ export const INTEGRATIONS: Integration[] = [
   ]),
 
   // Roadmap -------------------------------------------------------------------
-  roadmap('salesforce', 'Salesforce', 'crm', 'Contacts, leads and campaign membership in Salesforce.'),
-  roadmap('pipedrive', 'Pipedrive', 'crm', 'People and activities in Pipedrive.'),
   {
     id: 'activecampaign',
     name: 'ActiveCampaign',
