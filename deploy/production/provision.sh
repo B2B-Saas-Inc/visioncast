@@ -101,7 +101,12 @@ OUT=$("${CMD[@]}")
 printf '   %s\n' "$OUT"
 ID=$(printf '%s' "$OUT" | awk '{print $1}')
 IP=$(printf '%s' "$OUT" | awk '{print $3}')
-[[ -n $IP && $IP != "<nil>" ]] || IP=$(doctl compute droplet get "$ID" --format PublicIPv4 --no-header)
+# The IPv4 can lag the create call by a few seconds; read it from the JSON networks list.
+for _try in 1 2 3 4 5 6; do
+    [[ -n $IP && $IP != "<nil>" && $IP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && break
+    IP=$(doctl compute droplet get "$ID" --output json | python3 -c 'import json,sys; d=json.load(sys.stdin)[0]; print(next((n["ip_address"] for n in d["networks"]["v4"] if n["type"]=="public"), ""))')
+    [[ -n $IP ]] || sleep 5
+done
 
 cat <<EOF
 
