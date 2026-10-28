@@ -29,6 +29,7 @@ urlpatterns = [
     path("forms/<str:version>/", v.form_edit, name="form-edit"),
     path("hosts/", v.hosts, name="hosts"),
     path("hosts/<slug:slug>/", v.host_edit, name="host-edit"),
+    path("hosts/<slug:slug>/delete/", v.host_delete, name="host-delete"),
     path("topics/<slug:slug>/", v.topic_edit, name="topic-edit"),
     path("reports/", v.reports, name="reports"),
 ]

@@ -2,6 +2,11 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Host deletion (studio and management API) — 2026-10-28T19:10Z
+
+- `services.delete_host` / `host_delete_problem`: a host on a public or unlisted event cannot be deleted (the studio shows the reason instead of the button; the API answers 409 `conflict`); otherwise the host is deleted inside a row lock, draft events lose it, and `host.deleted` is audited. Studio: `POST /studio/hosts/<slug>/delete/` (Administrators only: `delete_host` is not in the Editor or Analyst role), Delete panel on the host page with a confirmation. API: `DELETE /api/v1/manage/hosts/<slug>` (`content_write`), documented in OpenAPI and docs/management-api.md.
+- `tests/test_host_delete.py` (9 tests: admin delete, draft detach, published guard for both visibilities, Editor/Analyst 403, GET 405, API 409/204/404, scope 403/401). Full suite on Python 3.12 / PostgreSQL 16 (`webinar-pg16`): **2,381 passed**; `ruff check` clean; `manage.py check` and `makemigrations --check` clean. Not yet deployed to events.growthcast.app (needs a new release).
+
 ## growthcast.app Events integration deployed (Astro) — 2026-10-28T17:45Z
 
 - **Site:** the `events-astro` port (three commits on the live Astro 7 site, repo `ejwhite7/growth-model`) was fast-forwarded onto `main` and pushed. Vercel's Git integration deployed it to production at once (deployment `dpl_FpwZsg48YLb8njmP6fQ6MJ2DdU89`), so `https://growthcast.app/events` and `/events/<slug>` are live. Local gate before the push: lint clean, 270 tests, production build, 30/30 browser flow, `vercel dev` checks.

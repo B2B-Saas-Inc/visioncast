@@ -39,6 +39,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
 from webinars.admin import EventForm, OccurrenceForm, event_snapshot, persist_occurrence
+from webinars import services
 from webinars.audit import audit
 from webinars.models import (
     ApiKey,
@@ -740,8 +741,15 @@ def hosts(request, key, body):
     return 201, serialize_host(_save_simple(HostForm, HOST_FIELDS, values, key, "host.saved", extra_check=_check_host))
 
 
-@_endpoint(CONTENT, ("PATCH",))
+@_endpoint(CONTENT, ("PATCH", "DELETE"))
 def host_detail(request, key, body, slug):
+    if request.method == "DELETE":
+        host = Host.objects.get(slug=slug)
+        try:
+            services.delete_host(host, api_key=key)
+        except ValidationError as exc:
+            raise _conflict(exc.messages[0])
+        return 204, None
     values = _parse(body, HOST_FIELDS)
     host = Host.objects.get(slug=slug)
     return 200, serialize_host(

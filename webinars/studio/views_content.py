@@ -1190,9 +1190,24 @@ def host_edit(request, slug):
         request,
         "studio/content/catalog_edit.html",
         {"obj": host, "form": form, "kind": "host", "readonly": not can(request.user, "webinars.change_host"),
-         "events": host.events.order_by("internal_name")},
+         "events": host.events.order_by("internal_name"),
+         "can_delete": can(request.user, "webinars.delete_host"),
+         "delete_problem": services.host_delete_problem(host)},
         status=400 if request.method == "POST" else 200,
     )
+
+
+@studio_view(perm=("webinars.view_host", "webinars.delete_host"), methods=("POST",))
+def host_delete(request, slug):
+    host = get_object_or_404(Host, slug=slug)
+    name = host.name
+    try:
+        services.delete_host(host, user=request.user)
+    except ValidationError as exc:
+        _flash_validation(request, exc)
+        return redirect("studio:host-edit", slug=host.slug)
+    messages.success(request, f"Deleted host “{name}”.")
+    return redirect("studio:hosts")
 
 
 @studio_view(perm="webinars.view_topic", write_perm="webinars.change_topic")

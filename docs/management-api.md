@@ -148,6 +148,7 @@ Cancel is idempotent: repeating it causes no further bump or notification.
 |---|---|---|
 | POST | `/api/v1/manage/hosts` | `name`*, `slug`*, `title`, `bio`, `imageUrl` (https) |
 | PATCH | `/api/v1/manage/hosts/<slug>` | same, partial |
+| DELETE | `/api/v1/manage/hosts/<slug>` | 204; 409 while the host is on a published event (draft events lose the host) |
 | POST | `/api/v1/manage/topics` | `name`*, `slug`* |
 | PATCH | `/api/v1/manage/topics/<slug>` | same, partial |
 | POST | `/api/v1/manage/forms` | `version`*, `requiredFields`*, `optionalFields`, `fieldMapping`, `customFields`, `defaultPhoneRegion`, `smsDisclosureVersion`, `smsDisclosureText`, `isActive` |

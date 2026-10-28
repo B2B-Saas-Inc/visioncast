@@ -20,7 +20,7 @@ from django.utils import timezone
 from webinars.admin import DestinationForm, EventForm, FormVersionForm, OccurrenceForm, event_snapshot, persist_occurrence
 from webinars.audit import audit
 from webinars.forms_schema import build_definition
-from webinars.models import ApiKey, Destination, Event, EventRevision, FormVersion, Occurrence, Registration
+from webinars.models import ApiKey, Destination, Event, EventRevision, FormVersion, Host, Occurrence, Registration
 
 VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 # Scopes that act like an owner (publish, deliver data, mint keys, manage the team, or
@@ -164,6 +164,31 @@ def publish_problems(event):
     if not upcoming.exists():
         problems.append("Schedule at least one upcoming session.")
     return problems
+
+
+def host_delete_problem(host):
+    """Why the host cannot be deleted right now (``None`` when it can).
+
+    A host on a published event is part of a live landing page, so the event must be
+    edited (or unpublished) first; hosts on drafts are detached by the delete.
+    """
+    published = host.events.exclude(visibility=Event.Visibility.DRAFT).count()
+    if published:
+        noun = "event" if published == 1 else "events"
+        return f"This host is on {published} published {noun}. Remove them from those events (or unpublish) first."
+    return None
+
+
+def delete_host(host, *, user=None, api_key=None):
+    """Delete a host that is not on any published event; draft events lose the host."""
+    with transaction.atomic():
+        host = Host.objects.select_for_update().get(pk=host.pk)
+        problem = host_delete_problem(host)
+        if problem:
+            raise ValidationError(problem)
+        drafts = host.events.count()
+        audit("host.deleted", user=user, api_key=api_key, obj=host, slug=host.slug, detached_from_drafts=drafts)
+        host.delete()
 
 
 def delete_draft_event(event, *, user=None):

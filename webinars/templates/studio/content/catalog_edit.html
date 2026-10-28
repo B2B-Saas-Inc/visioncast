@@ -34,4 +34,18 @@
     {% else %}<div class="panel-body"><p class="help">Not used by any event yet.</p></div>{% endif %}
   </aside>
 </div>
+{% if kind == "host" and can_delete %}
+<section class="panel" aria-labelledby="danger-title" style="margin-top:var(--s-6)">
+  <div class="panel-head"><h2 id="danger-title">Delete host</h2></div>
+  {% if delete_problem %}
+    <div class="panel-body"><p class="help">{{ delete_problem }}</p></div>
+  {% else %}
+    <form method="post" action="{% url 'studio:host-delete' obj.slug %}" class="panel-body" data-confirm="Delete this host? Draft events lose them. This can't be undone.">
+      {% csrf_token %}
+      <p class="help">Hosts on published events can't be deleted; draft events simply lose the host.</p>
+      <button class="btn btn-danger btn-sm" type="submit">{% include "studio/_icon.html" with name="trash" size=16 %} Delete host</button>
+    </form>
+  {% endif %}
+</section>
+{% endif %}
 {% endblock %}
