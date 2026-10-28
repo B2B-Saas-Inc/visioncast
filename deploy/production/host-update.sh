@@ -114,7 +114,7 @@ if (( DRY_RUN )); then
     exit 0
 fi
 ( cd "$NEW_DIR" && deploy/upgrade.sh --image "$IMAGE" --backup-dir "$BASE/backups" ${SKIP_BACKUP[@]+"${SKIP_BACKUP[@]}"} )
-( cd "$NEW_DIR" && docker compose run --rm -T web manage check )
+( cd "$NEW_DIR" && docker compose run --rm -T web manage check </dev/null )
 ln -sfn "$NEW_DIR" "$BASE/app/current"
 log "  current -> $NEW_DIR"
 # Refresh host files that live in the release tree (templates, cron paths, STATUS); no secrets touched.

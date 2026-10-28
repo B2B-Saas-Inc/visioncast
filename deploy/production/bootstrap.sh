@@ -190,10 +190,13 @@ render() {
 http_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$@" || true; }
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 compose() { docker compose "$@"; }
-manage() { docker compose run --rm -T web manage "$@"; }
+manage() { docker compose run --rm -T web manage "$@" </dev/null; }
 # capture_secret FILE MARKER_REGEX CMD... : CMD prints a secret on the line after MARKER;
 # that line goes straight into a new 0600 FILE. Nothing from CMD's stdout is shown.
 capture_secret() {
+    # Never let the captured command read stdin: when this script arrives via `bash -s`,
+    # stdin IS the script, and a command that reads it swallows every later step.
+    exec 9<&0 </dev/null
     local file=$1 marker=$2 out; shift 2
     if [[ -s $file ]]; then log "  exists, unchanged: $file"; return 0; fi
     if (( DRY_RUN )); then log "  would create (value never shown): $file  via: $*"; return 0; fi
@@ -446,9 +449,9 @@ if want compose; then
         cd "$RELEASE_DIR"
         [[ -f $ENV_FILE ]] || die "$ENV_FILE missing; include the env step"
         run docker compose config -q
-        run docker compose run --rm -T migrate
-        run docker compose run --rm -T web manage check
-        run docker compose run --rm -T web manage sync_roles
+        run docker compose run --rm -T migrate </dev/null
+        run docker compose run --rm -T web manage check </dev/null
+        run docker compose run --rm -T web manage sync_roles </dev/null
         if (( SKIP_ADMIN )); then log "  --skip-admin: administrator not created"
         else capture_secret "$SECRETS_DIR/admin-password" '^Generated password' docker compose run --rm -T web manage bootstrap_admin --username "$ADMIN_USERNAME" --email "$ADMIN_EMAIL"; fi
         capture_secret "$SECRETS_DIR/proxy-api-key" '^Raw key' docker compose run --rm -T web manage create_api_key --name "$PROXY_KEY_NAME" --scope proxy

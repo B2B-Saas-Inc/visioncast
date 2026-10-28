@@ -231,3 +231,6 @@ Still the operator's job (nothing here does it):
 * **Everything in `docs/release-checklist.md` section D** that is not listed as "provided" above
   (D4 edge mode, D7 vendor hosts, D8 Stripe events, D11 marketers to `/studio/`), and the
   launch acceptance run.
+
+
+> **Note (2026-10-28):** when the script is fed over `bash -s`, stdin *is* the script. Every Compose invocation now redirects stdin from `/dev/null` so no step can swallow the rest of the script; after the `release` step you can also run it from the installed tree: `bash /srv/visioncast/app/current/deploy/production/bootstrap.sh --steps …`.
