@@ -66,7 +66,7 @@ None is approved by this document. External calls need explicit approval and own
 | C9 | Accept residual behaviour (remaining-gaps §5) and the A7 digests | R23 | No |
 | C10 | Scope decisions recorded 2026-10-27: beehiiv, Resend, Amazon SES, Zapier, Make and n8n built; Intercom, Loops and Marketo skipped; Postmark and HubSpot Marketing not committed (remaining-gaps §4) | §4 | No |
 | C11 | Approve a staging host and run launch acceptance ([implementation-guide.md §11.1](implementation-guide.md#111-launch-acceptance-run-on-staging-record-results-in-validationmd)) | §3 | Yes (host) |
-| C12 | Approve live demo backend upgrade and frontend catalogue redeploy, production deployment, any preview renewal | — | Yes |
+| C12 | Approve live demo backend upgrade and frontend catalogue redeploy, production deployment, any preview renewal. **growthcast.app Events pages live 2026-10-28** (unavailable state until `WEBINAR_API_BASE` and `WEBINAR_PROXY_KEY` are set on the Vercel project and the studio has a published event) | — | Yes |
 | C13 | **Done:** `v0.2.0-pre` and `v0.3.0-pre` tags pushed; `ghcr.io/b2b-saas-inc/visioncast:0.3.0-pre` published (digest `sha256:fa723b88…`, amd64 + arm64, private). **Remaining:** decide package visibility or grant deploy hosts a `read:packages` token; run the published manifest on a real amd64 host (C11) | R24 | Yes (GitHub) |
 
 ## D. Operator tasks (target environment)

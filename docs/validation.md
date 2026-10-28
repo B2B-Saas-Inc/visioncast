@@ -2,6 +2,13 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## growthcast.app Events integration deployed (Astro) — 2026-10-28T17:45Z
+
+- **Site:** the `events-astro` port (three commits on the live Astro 7 site, repo `ejwhite7/growth-model`) was fast-forwarded onto `main` and pushed. Vercel's Git integration deployed it to production at once (deployment `dpl_FpwZsg48YLb8njmP6fQ6MJ2DdU89`), so `https://growthcast.app/events` and `/events/<slug>` are live. Local gate before the push: lint clean, 270 tests, production build, 30/30 browser flow, `vercel dev` checks.
+- **Production state (variables not yet set):** `/events` 200 with the designed "Coming soon" unavailable state, `/api/events` 503 `not_configured`, `/events/<unknown>` 200 through the fallback rewrite. No other page changed.
+- **Preview with the backend origin supplied inline** (`vercel deploy --build-env/--env WEBINAR_API_BASE=https://events.growthcast.app`, deployment-protected, probed with `vercel curl`): `/api/events` 200 `{"upcoming":[],"recorded":[]}` from the live studio, `/events` 200, `/api/events/<unknown>` 404 `not_found`, `/events/<unknown>` 200 fallback, `/api/webinar-api/csrf` 503 `proxy_not_configured` (clean refusal without `WEBINAR_PROXY_KEY`), sitemap lists `/events/` only (nothing prerendered because the studio has no published events).
+- **Not verified yet:** an event card, an event page with real data and a registration through the proxy. The studio catalogue is empty; seeding it (`seed_public_demo`) and setting the two Vercel variables were refused by this session's permission classifier (remote writes, shared resources). Both are owner steps listed in the release checklist (C6, C12).
+
 ## Production studio deployed at events.growthcast.app — 2026-10-28T18:05Z
 
 - **Host:** one DigitalOcean droplet (nyc2, 1 vCPU / 2 GB Intel, Ubuntu 24.04) created with `deploy/production/provision.sh --apply`; cloud-init installed Docker 29.9 / Compose v5.6, nginx 1.24, certbot 2.9, age, ufw, fail2ban, swap and the deploy user.
