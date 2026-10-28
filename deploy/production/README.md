@@ -234,3 +234,6 @@ Still the operator's job (nothing here does it):
 
 
 > **Note (2026-10-28):** when the script is fed over `bash -s`, stdin *is* the script. Every Compose invocation now redirects stdin from `/dev/null` so no step can swallow the rest of the script; after the `release` step you can also run it from the installed tree: `bash /srv/visioncast/app/current/deploy/production/bootstrap.sh --steps …`.
+
+
+> **Cloudflare 525 after the first proxied request (2026-10-28):** Cloudflare's origin ClientHello leads with the post-quantum `X25519MLKEM768` key share; Ubuntu 24.04's OpenSSL 3.0 answers with a HelloRetryRequest and then rejects the retried hello (`SSL: error:0A0000BA ... bad cipher`) when the catch-all server and the vhost disagree on `ssl_prefer_server_ciphers`. The template now pins `ssl_prefer_server_ciphers on` in the vhost (same as nginx.conf). Diagnose with `error_log ... info;` and look for `SSL_do_handshake() failed` from Cloudflare addresses.
