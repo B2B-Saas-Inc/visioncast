@@ -71,6 +71,10 @@ None is approved by this document. External calls need explicit approval and own
 
 ## D. Operator tasks (target environment)
 
+For the `events.growthcast.app` droplet install, [deploy/production/README.md](../deploy/production/README.md)
+covers D1, D2, D5, D6, D9, D10, D12 and D13 with scripts (rehearsed locally only) and
+[deploy/production/cloudflare.md](../deploy/production/cloudflare.md) the Cloudflare part of D1–D3.
+
 | # | Task | Gap |
 |---|---|---|
 | D1 | TLS with HTTP→HTTPS redirect | §3 |

@@ -1,0 +1,21 @@
+# VisionCast production schedule. Rendered by deploy/production/bootstrap.sh from cron.tmpl
+# and installed as /etc/cron.d/visioncast (root, 0644). Times are UTC (host clock is UTC).
+# Logs: /var/log/visioncast/*.log (rotated by /etc/logrotate.d/visioncast). No secrets here.
+#
+# Placeholders: @@BASE@@ @@PURGE_DAYS@@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+MAILTO=""
+
+# Nightly encrypted database dump + 14-day rotation (deploy/backup.sh --encrypt-to <age>).
+# The .age files stay on this host until YOU copy them off-host.
+15 2 * * *   root  @@BASE@@/app/current/deploy/production/backup-nightly.sh >> /var/log/visioncast/backup.log 2>&1
+
+# Daily retention purge (docs/operations.md section 7).
+15 3 * * *   root  cd @@BASE@@/app/current && docker compose run --rm -T web manage purge_personal_data --older-than-days @@PURGE_DAYS@@ >> /var/log/visioncast/purge.log 2>&1
+
+# Weekly configuration check (docs/release-checklist.md D12) and service state.
+15 4 * * 1   root  cd @@BASE@@/app/current && docker compose run --rm -T web manage check >> /var/log/visioncast/check.log 2>&1 && docker compose ps >> /var/log/visioncast/check.log 2>&1
+
+# Weekly refresh of Cloudflare's address ranges (real IP + origin gate); reloads nginx only when they changed.
+45 4 * * 1   root  @@BASE@@/app/current/deploy/production/cloudflare-ips.sh --reload >> /var/log/visioncast/cloudflare-ips.log 2>&1

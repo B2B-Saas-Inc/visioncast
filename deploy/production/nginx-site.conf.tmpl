@@ -1,0 +1,93 @@
+# VisionCast production edge, part 1 (http context): client address behind Cloudflare,
+# rate-limit zones, log format, upstream, port 80 (ACME + redirect) and the catch-all
+# servers. Rendered by deploy/production/bootstrap.sh from nginx-site.conf.tmpl and
+# installed as /etc/nginx/conf.d/00-visioncast.conf (the 00- prefix keeps the zones and
+# log_format ahead of the TLS server in visioncast-tls.conf). Derived from
+# docker/nginx.conf.example; every location and zone of the example is kept.
+#
+# Placeholders: @@DOMAIN@@ @@ACME_ROOT@@
+#
+# Request path: client -> Cloudflare (proxied DNS) -> this nginx -> gunicorn 127.0.0.1:8000.
+# Cloudflare is the only trusted hop. nginx replaces the peer address with
+# CF-Connecting-IP ONLY when the TCP peer is inside Cloudflare's published ranges
+# (snippets/visioncast-cloudflare-realip.conf, refreshed by cloudflare-ips.sh), then
+# OVERWRITES X-Forwarded-For with that single address. Django therefore sees exactly one
+# trusted hop: RATE_LIMIT_TRUST_X_FORWARDED_FOR=1, RATE_LIMIT_TRUSTED_PROXY_COUNT=1.
+
+# ---------------------------------------------------------------------------
+# Client address (Cloudflare -> real client)
+# ---------------------------------------------------------------------------
+# set_real_ip_from <cloudflare range>; ... real_ip_header CF-Connecting-IP;
+include /etc/nginx/snippets/visioncast-cloudflare-realip.conf;
+
+# 1 when the TCP peer (before real-IP substitution) is a Cloudflare address.
+# Used to hide /admin/ and /studio/ from anyone who reaches the origin directly and
+# would thereby bypass Cloudflare Access (snippets/visioncast-origin-gate.conf).
+geo $realip_remote_addr $vc_from_cloudflare {
+    default 0;
+    include /etc/nginx/snippets/visioncast-cloudflare-geo.conf;
+}
+
+# ---------------------------------------------------------------------------
+# Rate-limit keys and zones (defence in depth behind Cloudflare's WAF rules)
+# ---------------------------------------------------------------------------
+# An empty key is not counted, so these maps limit only the methods that matter.
+map $request_method $vc_post_client {
+    POST    $binary_remote_addr;
+    default "";
+}
+map $request_method $vc_get_client {
+    GET     $binary_remote_addr;
+    default "";
+}
+
+# Starting points only; corporate NAT can put many real visitors behind one IP.
+limit_req_zone $vc_post_client     zone=vc_register:10m rate=10r/m;   # registrations, reset
+limit_req_zone $vc_get_client      zone=vc_profile:10m  rate=30r/m;   # profile, my-registration, ICS
+limit_req_zone $vc_post_client     zone=vc_login:10m    rate=5r/m;    # admin and studio login attempts
+limit_req_zone $binary_remote_addr zone=vc_api:10m      rate=300r/m;  # server-to-server API, MCP, Stripe
+limit_conn_zone $binary_remote_addr zone=vc_conn:10m;
+
+limit_req_status  429;
+limit_conn_status 429;
+limit_req_log_level warn;
+
+# Access log without query strings, cookies, referrer or user agent ($uri has no
+# query string). $remote_addr is the real client (after CF-Connecting-IP).
+log_format vc_min '$time_iso8601 $remote_addr "$request_method $uri" $status $body_bytes_sent $request_time';
+
+upstream vc_app {
+    server 127.0.0.1:8000;   # compose.yaml binds the web container here
+    keepalive 16;
+}
+
+# ---------------------------------------------------------------------------
+# Port 80: unknown Host -> close; the platform host -> ACME challenge or HTTPS
+# ---------------------------------------------------------------------------
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    server_tokens off;
+    access_log off;
+    return 444;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name @@DOMAIN@@;
+    server_tokens off;
+    access_log /var/log/nginx/visioncast.access.log vc_min;
+    client_max_body_size 1k;
+
+    # certbot certonly --webroot -w @@ACME_ROOT@@ (HTTP-01). Let's Encrypt follows the
+    # redirect below to HTTPS, so the same location exists in the TLS server too.
+    location ^~ /.well-known/acme-challenge/ {
+        root @@ACME_ROOT@@;
+        default_type text/plain;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}

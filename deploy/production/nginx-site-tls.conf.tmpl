@@ -1,0 +1,155 @@
+# VisionCast production edge, part 2: the HTTPS server. Rendered by
+# deploy/production/bootstrap.sh from nginx-site-tls.conf.tmpl and installed as
+# /etc/nginx/conf.d/visioncast-tls.conf only once the certificate exists.
+# Zones, maps, the upstream and the Cloudflare real-IP handling live in
+# 00-visioncast.conf (nginx-site.conf.tmpl).
+#
+# Placeholders: @@DOMAIN@@ @@CERT_DIR@@ @@ACME_ROOT@@
+#
+# Every location and limit of docker/nginx.conf.example is kept; additions are the
+# ACME location (renewals through Cloudflare arrive over HTTPS), a larger body limit
+# for studio/admin uploads (event cover, 2 MB), a per-client connection cap, and the
+# origin gate on /admin/ and /studio/ (404 unless the request came through Cloudflare).
+
+# Unknown SNI (or none): refuse the handshake instead of presenting our certificate.
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name _;
+    ssl_reject_handshake on;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name @@DOMAIN@@;
+    # No HTTP/2 at the origin: Cloudflare terminates the client connection and speaks
+    # HTTP/1.1 to us; Ubuntu 24.04's nginx 1.24 predates `http2 on` anyway.
+
+    ssl_certificate     @@CERT_DIR@@/fullchain.pem;
+    ssl_certificate_key @@CERT_DIR@@/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache   shared:vc_tls:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    server_tokens off;
+    access_log /var/log/nginx/visioncast.access.log vc_min;
+
+    client_max_body_size  64k;
+    client_body_timeout   10s;
+    client_header_timeout 10s;
+    limit_conn vc_conn 20;
+
+    # HSTS, nosniff, X-Frame-Options, referrer policy and secure cookies are set by
+    # Django (DJANGO_HSTS_SECONDS in .env).
+
+    # Forwarding headers. Defined once at server level; locations below inherit them
+    # because none of them sets its own proxy_set_header.
+    proxy_http_version 1.1;
+    proxy_set_header Connection        "";
+    proxy_set_header Host              $host;
+    proxy_set_header X-Forwarded-Proto https;          # overwrite, never pass the client's value
+    proxy_set_header X-Forwarded-For   $remote_addr;   # overwrite with the ONE real client address
+    proxy_set_header X-Forwarded-Host  "";
+    proxy_set_header X-Forwarded-Port  "";
+    proxy_connect_timeout 5s;
+    proxy_send_timeout    35s;
+    proxy_read_timeout    35s;                         # gunicorn --timeout is 30s
+
+    location ^~ /.well-known/acme-challenge/ {
+        root @@ACME_ROOT@@;
+        default_type text/plain;
+    }
+
+    # --- Admin and studio: Cloudflare Access in front (cloudflare.md), origin gate here ---
+    location = /admin/login/ {
+        include /etc/nginx/snippets/visioncast-origin-gate.conf;
+        limit_req zone=vc_login burst=5 nodelay;
+        client_max_body_size 3m;
+        proxy_pass http://vc_app;
+    }
+    location /admin/ {
+        include /etc/nginx/snippets/visioncast-origin-gate.conf;
+        client_max_body_size 3m;
+        proxy_pass http://vc_app;
+    }
+    location = /studio/login/ {
+        include /etc/nginx/snippets/visioncast-origin-gate.conf;
+        limit_req zone=vc_login burst=5 nodelay;
+        proxy_pass http://vc_app;
+    }
+    location /studio/ {
+        include /etc/nginx/snippets/visioncast-origin-gate.conf;
+        client_max_body_size 3m;         # event cover upload (2 MB)
+        proxy_pass http://vc_app;
+    }
+
+    # --- Same-origin direct browser API (no API key) ------------------------
+    location = /webinar-api/registrations {
+        limit_req zone=vc_register burst=10 nodelay;
+        proxy_pass http://vc_app;
+    }
+    location = /webinar-api/reset {
+        limit_req zone=vc_register burst=10 nodelay;
+        proxy_pass http://vc_app;
+    }
+    location = /webinar-api/profile {
+        limit_req zone=vc_profile burst=20 nodelay;
+        proxy_pass http://vc_app;
+    }
+    location = /webinar-api/my-registration {
+        limit_req zone=vc_profile burst=20 nodelay;
+        proxy_pass http://vc_app;
+    }
+    location = /webinar-api/calendar.ics {
+        limit_req zone=vc_profile burst=20 nodelay;
+        proxy_pass http://vc_app;
+    }
+    # Nothing else exists under /webinar-api/.
+    location /webinar-api/ {
+        return 404;
+    }
+
+    # --- Hosted waiting room, MCP, Stripe webhook ---------------------------
+    # Waiting room: code requests/guesses are POSTs; page and status polling are GETs.
+    location /w/ {
+        limit_req zone=vc_register burst=10 nodelay;
+        limit_req zone=vc_profile  burst=30 nodelay;
+        proxy_pass http://vc_app;
+    }
+    # MCP (agents with API keys): key-based, but still cap unauthenticated probing.
+    location = /mcp {
+        limit_req zone=vc_api burst=50 nodelay;
+        client_max_body_size 64k;        # the endpoint rejects larger bodies anyway
+        proxy_pass http://vc_app;
+    }
+    # Stripe webhook: signed by Stripe; keep the limit generous (one sender address range).
+    location = /api/v1/payments/stripe/webhook {
+        limit_req zone=vc_api burst=100 nodelay;
+        proxy_pass http://vc_app;
+    }
+
+    # --- Server-to-server API (keyed) --------------------------------------
+    # Requests from the first-party proxy arrive from that server's address, so strict
+    # per-visitor limits here would throttle every visitor at once; keep this generous.
+    location /api/v1/ {
+        limit_req zone=vc_api burst=100 nodelay;
+        proxy_pass http://vc_app;
+    }
+
+    location = /healthz {
+        access_log off;
+        proxy_pass http://vc_app;
+    }
+
+    location ^~ /static/ {
+        limit_except GET HEAD { deny all; }
+        proxy_pass http://vc_app;
+    }
+
+    location / {
+        proxy_pass http://vc_app;
+    }
+}
