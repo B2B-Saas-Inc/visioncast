@@ -73,3 +73,18 @@ def test_create_without_secret_still_works_and_edit_page_has_no_secret_boxes_in_
     html = admin.get(f"/studio/integrations/{dest.pk}/").content.decode()
     assert html.count('name="secret-api_key"') == 1 and "new-secret-help" not in html
     assert 'data-webhook-only hidden' in html
+
+
+@pytest.mark.parametrize("provider", sorted(__import__("webinars.native_integrations", fromlist=["FIELDS"]).FIELDS))
+def test_every_native_provider_loads_settings_and_secret_boxes_on_selection(admin, provider):
+    from webinars import native_integrations as native
+
+    html = admin.get(f"/studio/integrations/new/?provider={provider}").content.decode()
+    label = native.PROVIDER_LABELS[provider]
+    assert f"{label} settings" in html and f"sent server-side to {label}" in html
+    for f in native.FIELDS[provider]:
+        if f.secret:
+            assert f'name="secret-{f.name}"' in html, (provider, f.name)
+        else:
+            assert f'name="native-{f.name}"' in html, (provider, f.name)
+    assert 'data-webhook-only hidden' in html and "Save to load this provider" not in html
