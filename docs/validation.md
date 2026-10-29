@@ -2,6 +2,10 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## 0.3.5-pre installed on events.growthcast.app; website form script updated — 2026-10-30T00:05Z
+
+- Owner applied `update.sh` with the `v0.3.5-pre` tarball and pushed the vendored SDK to the site. `verify.sh --expect-version 0.3.5-pre --expect-access`: **12/12 PASS**; `https://growthcast.app/webinar-form.js` serves the PostHog, Mixpanel and Amplitude capture code. Live merge behaviour at the vendors remains unverified until real registrations are delivered.
+
 ## Amplitude and Mixpanel identity: e-mail user id and anonymous-device merge — 2026-10-29T23:30Z
 
 - Same treatment as PostHog, on request. User id = verified e-mail (setting `identity`: `email` default, `person_id`). The SDK captures, with analytics consent only, the Amplitude device id (`AMP_<prefix>` cookie: `btoa(encodeURIComponent(JSON))`, `deviceId`; verified in `amplitude/Amplitude-TypeScript` `analytics-core/src/storage/cookie.ts` and `cookie-name.ts` on 2026-10-29) and the Mixpanel device id (`mp_<token>_mixpanel`: `encodeURIComponent(JSON)` with `$device_id`/`distinct_id`; verified in `mixpanel/mixpanel-js` `src/utils.js` and `src/mixpanel-core.js`). Amplitude: `device_id` on the event (Amplitude docs: an event with both ids applies the user's Amplitude ID to the device's anonymous events). Mixpanel: Simplified ID merge sends `$user_id` + `$device_id` (docs: merged when both appear on one event); Original ID merge prepends `$identify` (`$identified_id`, `$anon_id` UUID v4) through `/import`, **unverified** (the documented path is `/track#create-identity`, form-encoded with the project token, which this adapter does not hold).
