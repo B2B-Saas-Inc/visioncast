@@ -65,6 +65,16 @@ test('analytics consent: UTMs, GA client id, stripped URLs; no ad IDs', () => {
   assert.equal(i.readPostHogDistinctId('ph_phc_abc_posthog=%7Bnot-json'), null);
   assert.equal(i.readPostHogDistinctId('ph_phc_abc_posthog=' + encodeURIComponent(JSON.stringify({ distinct_id: 'has space' }))), null);
   assert.equal(i.readPostHogDistinctId('other=' + ph), null);
+  const mp = encodeURIComponent(JSON.stringify({ distinct_id: '$device:1a2b3c4d-0000-4000-8000-000000000001', $device_id: '1a2b3c4d-0000-4000-8000-000000000001', __alias: 'x' }));
+  const amp = btoa(encodeURIComponent(JSON.stringify({ deviceId: 'f0e1d2c3-b4a5-4968-8776-655443322110', sessionId: 1, lastEventTime: 2 })));
+  const vendors = i.buildAttribution({ search: '', href: '', referrer: '', cookie: 'mp_phc123_mixpanel=' + mp + '; AMP_a2dbce0e18=' + amp }, ANALYTICS);
+  assert.deepEqual(vendors.identifiers, { mixpanelDeviceId: '1a2b3c4d-0000-4000-8000-000000000001', amplitudeDeviceId: 'f0e1d2c3-b4a5-4968-8776-655443322110' });
+  assert.equal(i.readMixpanelDeviceId('mp_t_mixpanel=' + encodeURIComponent(JSON.stringify({ distinct_id: '$device:abcdefgh-1234' }))), 'abcdefgh-1234');
+  assert.equal(i.readMixpanelDeviceId('mp_t_mixpanel=%7Bnope'), null);
+  assert.equal(i.readAmplitudeDeviceId('AMP_a2dbce0e18=' + encodeURIComponent(amp)), 'f0e1d2c3-b4a5-4968-8776-655443322110');
+  assert.equal(i.readAmplitudeDeviceId('AMP_MKTG_a2dbce0e18=' + amp), null);
+  assert.equal(i.readAmplitudeDeviceId('AMP_a2dbce0e18=not-base64!'), null);
+  assert.deepEqual(i.buildAttribution({ search: '', href: '', referrer: '', cookie: 'mp_phc123_mixpanel=' + mp + '; AMP_a2dbce0e18=' + amp }, { analytics: false, advertising: true }).identifiers, {});
   assert.equal(a.referrer, 'https://google.com/search');
 });
 

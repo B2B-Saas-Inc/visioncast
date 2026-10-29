@@ -26,6 +26,8 @@ IDENTIFIER_ALIASES = {
     "fbc": "fbc", "_fbc": "fbc",
     "gaClientId": "gaClientId", "_ga": "gaClientId", "ga4ClientId": "gaClientId",
     "posthogDistinctId": "posthogDistinctId", "posthog_distinct_id": "posthogDistinctId",
+    "mixpanelDeviceId": "mixpanelDeviceId", "mixpanel_device_id": "mixpanelDeviceId",
+    "amplitudeDeviceId": "amplitudeDeviceId", "amplitude_device_id": "amplitudeDeviceId",
     "gclAw": "gclAw", "_gcl_aw": "gclAw",
     "gclAu": "gclAu", "_gcl_au": "gclAu",
     "scid": "scid", "_scid": "scid",
@@ -36,6 +38,8 @@ IDENTIFIER_ALIASES = {
 IDENTIFIER_PURPOSE = {
     "gaClientId": "analytics",
     "posthogDistinctId": "analytics",
+    "mixpanelDeviceId": "analytics",
+    "amplitudeDeviceId": "analytics",
     "fbp": "advertising",
     "fbc": "advertising",
     "gclAw": "advertising",

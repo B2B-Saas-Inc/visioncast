@@ -226,13 +226,15 @@ def test_amplitude_exact_request():
     delivery = ni.SAMPLE_BODY["delivery_metadata"]["deliveryId"]
     assert call["json"]["api_key"] == AMP_KEY
     [event] = call["json"]["events"]
-    assert event["user_id"] == ni.SAMPLE_BODY["identity"]["personId"]
+    assert event["user_id"] == ni.SAMPLE_BODY["identity"]["email"]
     assert event["event_type"] == "webinar registered"
     assert event["time"] == OCCURRED_S * 1000
     assert event["insert_id"] == ni._stable_uuid(delivery, "amplitude-event")
     assert "device_id" not in event  # never fabricated
     sent = json.dumps(call["json"])
-    assert "person@example.com" not in sent and "Sample" not in sent.replace("Sample webinar", "")
+    # No profile data: the e-mail appears only as the user_id (identity setting), never as a property.
+    assert sent.count("person@example.com") == 1 and '"user_id": "person@example.com"' in sent
+    assert "Sample" not in sent.replace("Sample webinar", "")
 
 
 def test_amplitude_attendance_and_unknown_attendance_skipped():

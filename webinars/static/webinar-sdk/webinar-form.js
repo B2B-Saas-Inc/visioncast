@@ -67,6 +67,14 @@
   // visitor into the registrant ($anon_distinct_id) instead of creating a second person.
   var POSTHOG_COOKIE_RE = /^ph_[A-Za-z0-9_]{1,80}_posthog$/;
   var POSTHOG_ID_RE = /^[A-Za-z0-9._~:|@$\-]{1,200}$/;
+  // Mixpanel (mixpanel-js): cookie mp_<token>_mixpanel, encodeURIComponent(JSON) with $device_id
+  // (raw UUID) and distinct_id ("$device:<uuid>" until identified). Amplitude Browser SDK 2:
+  // cookie AMP_<first 10 chars of the API key>, btoa(encodeURIComponent(JSON)) with deviceId.
+  // Both read with analytics consent only; the server sends them as the vendor's device id so the
+  // anonymous website visitor is merged into the registrant instead of duplicated.
+  var MIXPANEL_COOKIE_RE = /^mp_[A-Za-z0-9]{1,80}_mixpanel$/;
+  var AMPLITUDE_COOKIE_RE = /^AMP_[A-Za-z0-9]{10}$/;
+  var DEVICE_ID_RE = /^[A-Za-z0-9._\-]{8,64}$/;
   var CSRF_COOKIE = '__Host-webinar_csrf';
   var CSRF_HEADER = 'X-Webinar-CSRF';
   var STORAGE_KEY = 'webinarForm.attribution.v1';
@@ -214,6 +222,62 @@
     return null;
   }
 
+  function cookiePairs(cookieString, nameRe) {
+    var found = [];
+    if (!cookieString) return found;
+    var pairs = String(cookieString).split(';');
+    for (var i = 0; i < pairs.length; i++) {
+      var eq = pairs[i].indexOf('=');
+      if (eq === -1 || !nameRe.test(pairs[i].slice(0, eq).trim())) continue;
+      var raw = pairs[i].slice(eq + 1).trim();
+      if (raw && raw.length <= 4096) found.push(raw);
+    }
+    return found;
+  }
+
+  /** The Mixpanel $device_id (or the device part of distinct_id) from mp_<token>_mixpanel, else null. */
+  function readMixpanelDeviceId(cookieString) {
+    var values = cookiePairs(cookieString, MIXPANEL_COOKIE_RE);
+    for (var i = 0; i < values.length; i++) {
+      try {
+        var parsed = JSON.parse(decodeURIComponent(values[i]));
+        if (!parsed || typeof parsed !== 'object') continue;
+        var id = typeof parsed.$device_id === 'string' ? parsed.$device_id : '';
+        if (!id && typeof parsed.distinct_id === 'string') {
+          id = parsed.distinct_id.indexOf('$device:') === 0 ? parsed.distinct_id.slice(8) : parsed.distinct_id;
+        }
+        if (DEVICE_ID_RE.test(id)) return id;
+      } catch (e) {
+        /* not Mixpanel's JSON: ignore */
+      }
+    }
+    return null;
+  }
+
+  /** The Amplitude deviceId from AMP_<api key prefix>, else null. */
+  function readAmplitudeDeviceId(cookieString) {
+    if (typeof atob !== 'function') return null;
+    var values = cookiePairs(cookieString, AMPLITUDE_COOKIE_RE);
+    for (var i = 0; i < values.length; i++) {
+      var raw = values[i];
+      var decoders = [
+        function () { return decodeURIComponent(atob(raw)); },
+        function () { return decodeURIComponent(atob(decodeURIComponent(raw))); }
+      ];
+      for (var d = 0; d < decoders.length; d++) {
+        try {
+          var parsed = JSON.parse(decoders[d]());
+          var id = parsed && typeof parsed.deviceId === 'string' ? parsed.deviceId : '';
+          if (DEVICE_ID_RE.test(id)) return id;
+          break;
+        } catch (e) {
+          /* try the next decoding */
+        }
+      }
+    }
+    return null;
+  }
+
   function collectIdentifiers(cookieString, consent) {
     var out = {};
     if (!consent) return out;
@@ -228,6 +292,10 @@
     if (consent.analytics) {
       var ph = readPostHogDistinctId(cookieString);
       if (ph) out.posthogDistinctId = ph;
+      var mp = readMixpanelDeviceId(cookieString);
+      if (mp) out.mixpanelDeviceId = mp;
+      var amp = readAmplitudeDeviceId(cookieString);
+      if (amp) out.amplitudeDeviceId = amp;
     }
     return out;
   }
@@ -1108,6 +1176,8 @@
       ADVERTISING_PARAMS: ADVERTISING_PARAMS,
       IDENTIFIER_COOKIES: IDENTIFIER_COOKIES,
       readPostHogDistinctId: readPostHogDistinctId,
+      readMixpanelDeviceId: readMixpanelDeviceId,
+      readAmplitudeDeviceId: readAmplitudeDeviceId,
       CONFIRM_LABEL: CONFIRM_LABEL,
       confirmLabel: confirmLabel,
       CSRF_COOKIE: CSRF_COOKIE,

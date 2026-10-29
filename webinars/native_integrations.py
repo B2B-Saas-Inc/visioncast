@@ -245,6 +245,13 @@ FIELDS = {
     "amplitude": (
         Field("region", "Region", "Amplitude data center of your project.", choices=(("us", "US (api2.amplitude.com)"), ("eu", "EU (api.eu.amplitude.com)"))),
         Field("api_key", "Project API key", "HTTP V2 API key of the project. Only IDs and webinar properties are sent, no profile.", secret=True, pattern=_SECRET),
+        Field(
+            "identity",
+            "User identity",
+            "Which user_id the registrant gets in Amplitude. Email matches users your website identifies by email; the platform person ID is an opaque UUID. When the registration form captured the visitor's Amplitude device ID (analytics consent, Attribution data group ticked) it is sent as device_id on the same event, so Amplitude links the anonymous device to the user instead of counting two users.",
+            required=False,
+            choices=(("email", "Email address (recommended)"), ("person_id", "Platform person ID")),
+        ),
         PROCESSING_ACK,
     ),
     "ga4": (
@@ -264,6 +271,22 @@ FIELDS = {
         Field("project_id", "Project ID", "Numeric project ID (sent as project_id on /import).", pattern=_MIXPANEL_PROJECT),
         Field("service_account_username", "Service account username", "Service account with access to this project.", secret=True, pattern=_BASIC_USER),
         Field("service_account_secret", "Service account secret", "Only IDs and webinar properties are sent, no profile.", secret=True, pattern=_SECRET),
+        Field(
+            "identity",
+            "User identity",
+            "Which $user_id the registrant gets in Mixpanel. Email matches users your website identifies by email; the platform person ID is an opaque UUID. When the registration form captured the visitor's Mixpanel device ID (analytics consent, Attribution data group ticked) it is sent with the event so Mixpanel merges the anonymous visitor into the registrant.",
+            required=False,
+            choices=(("email", "Email address (recommended)"), ("person_id", "Platform person ID")),
+        ),
+        Field(
+            "id_merge",
+            "ID management",
+            "Simplified ID merge (every project created since 2023, and older ones that migrated) merges on events carrying "
+            "both $user_id and $device_id. Original ID merge needs a $identify event with $identified_id and $anon_id "
+            "(the anon id must be a UUID v4), sent first through the same /import call (unverified against a live project).",
+            required=False,
+            choices=(("simplified", "Simplified ID merge (default)"), ("original", "Original ID merge")),
+        ),
         PROCESSING_ACK,
     ),
     "rudderstack": (
@@ -653,6 +676,8 @@ def _facts(body, event_type, org_namespace):
         "person_id": str(person_id),
         "identity_email": (identity.get("email") or profile.get("email") or None),
         "posthog_anon_id": posthog_distinct_id(body),
+        "mixpanel_device_id": captured_identifier(body, "mixpanelDeviceId", _DEVICE_ID),
+        "amplitude_device_id": captured_identifier(body, "amplitudeDeviceId", _DEVICE_ID),
         "email": profile.get("email") or None,
         "first_name": profile.get("firstName") or None,
         "last_name": profile.get("lastName") or None,
@@ -713,6 +738,11 @@ REDACTED = "[redacted]"
 
 def posthog_person_id(cfg, facts):
     """The registrant's PostHog ``distinct_id``: the verified e-mail (default) or the platform person id."""
+    return identified_id(cfg, facts)
+
+
+def identified_id(cfg, facts):
+    """The registrant's id at an analytics vendor: the verified e-mail (default) or the platform person id."""
     if cfg.get("identity") == "person_id" or not facts.get("identity_email"):
         return facts["person_id"]
     return facts["identity_email"]
@@ -865,11 +895,15 @@ def plan_amplitude(cfg, secrets, facts, event_type):
     one), so dedupe of a retried event is NOT assumed.
     """
     event = {
-        "user_id": facts["person_id"],
+        "user_id": identified_id(cfg, facts),
         "event_type": _event_name(event_type, facts),
         "insert_id": _stable_uuid(facts["delivery_id"], "amplitude-event"),
         "event_properties": _clean(dict(facts["properties"])),
     }
+    # The visitor's captured Amplitude device id (never invented): Amplitude links the anonymous
+    # device's events to this user, and its insert_id dedupe applies only to events with a device_id.
+    if facts.get("amplitude_device_id"):
+        event["device_id"] = facts["amplitude_device_id"]
     ts = unix_seconds(facts["occurred_at"])
     if ts is not None:
         event["time"] = ts * 1000  # milliseconds since epoch
@@ -932,14 +966,35 @@ def plan_mixpanel(cfg, secrets, facts, event_type):
         raise Skip("native_no_timestamp")  # /import needs a time; we do not invent one
     if not cfg.get("project_id"):
         raise _Stop(Outcome("dead", "native_config_incomplete"))
+    user_id = identified_id(cfg, facts)
+    device_id = facts.get("mixpanel_device_id")
     props = _clean(dict(facts["properties"]))
     props.update(
-        {"time": ts * 1000, "distinct_id": facts["person_id"], "$insert_id": _stable_uuid(facts["delivery_id"], "mixpanel-event"), "ip": 0}
+        {"time": ts * 1000, "distinct_id": user_id, "$user_id": user_id, "$insert_id": _stable_uuid(facts["delivery_id"], "mixpanel-event"), "ip": 0}
     )
+    events = []
+    if cfg.get("id_merge") == "original":
+        # Original ID merge: a $identify event links the anonymous (UUID v4) id to the user id.
+        if device_id and _UUID4.match(device_id):
+            events.append(
+                {
+                    "event": "$identify",
+                    "properties": {
+                        "time": ts * 1000,
+                        "distinct_id": user_id,
+                        "$identified_id": user_id,
+                        "$anon_id": device_id,
+                        "$insert_id": _stable_uuid(facts["delivery_id"], "mixpanel-identify"),
+                        "ip": 0,
+                    },
+                }
+            )
+    elif device_id:
+        props["$device_id"] = device_id  # Simplified ID merge: $user_id + $device_id on one event merges them
     _require_flat("import", props)
     if len(props) > MIXPANEL_MAX_PROPERTIES:
         raise _Stop(Outcome("dead", "import: payload_unsupported"))
-    events = [{"event": _event_name(event_type, facts), "properties": props}]
+    events.append({"event": _event_name(event_type, facts), "properties": props})
     # The body is the one-event array: at most 2 bytes more than the event, so this is stricter.
     if len(_encode(events)) >= MIXPANEL_MAX_EVENT_BYTES:
         raise _Stop(Outcome("dead", "import: payload_too_large"))
@@ -1104,22 +1159,30 @@ def ga_client_id(body):
 
 
 _POSTHOG_ID = re.compile(r"^[A-Za-z0-9._~:|@$\-]{1,200}$")
+_DEVICE_ID = re.compile(r"^[A-Za-z0-9._\-]{8,64}$")
+_UUID4 = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.I)
 
 
-def posthog_distinct_id(body):
-    """The website visitor's PostHog ``distinct_id`` captured at registration, else None.
+def captured_identifier(body, key, pattern):
+    """A vendor identifier the registration form captured (snapshot attribution), else None.
 
-    ``attribution.clean_attribution`` keeps ``posthogDistinctId`` only with analytics consent, and
-    the snapshot carries it only when the destination allows the Attribution data group.
+    ``attribution.clean_attribution`` keeps these only with the consent their purpose needs, and
+    the snapshot carries them only when the destination allows the Attribution data group.
+    Nothing is ever invented.
     """
     attribution = body.get("attribution") if isinstance(body.get("attribution"), dict) else {}
     for touch in ("registrationTouch", "firstTouch"):
         t = attribution.get(touch) if isinstance(attribution.get(touch), dict) else {}
         ids = t.get("identifiers") if isinstance(t.get("identifiers"), dict) else {}
-        value = ids.get("posthogDistinctId")
-        if isinstance(value, str) and _POSTHOG_ID.match(value):
+        value = ids.get(key)
+        if isinstance(value, str) and pattern.match(value):
             return value
     return None
+
+
+def posthog_distinct_id(body):
+    """The website visitor's PostHog ``distinct_id`` captured at registration, else None."""
+    return captured_identifier(body, "posthogDistinctId", _POSTHOG_ID)
 
 
 def _consent_granted_in(body, purpose):

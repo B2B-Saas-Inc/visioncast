@@ -1,6 +1,6 @@
 # Release checklist
 
-Status as of 2026-10-29 (release candidate `0.3.4-pre`, tag `v0.3.4-pre`: PostHog identity by e-mail with anonymous-visitor merge, on top of `0.3.3-pre` (native hosts need no allowlist entry, mandatory consent on save), `0.3.2-pre` (integration form) and `0.3.1-pre` (host deletion); `0.3.0-pre` tag `v0.3.0-pre` at `12c96f4`). **Nothing on
+Status as of 2026-10-29 (release candidate `0.3.5-pre`, tag `v0.3.5-pre`: PostHog, Amplitude and Mixpanel identity by e-mail with anonymous-visitor merge, on top of `0.3.3-pre` (native hosts need no allowlist entry, mandatory consent on save), `0.3.2-pre` (integration form) and `0.3.1-pre` (host deletion); `0.3.0-pre` tag `v0.3.0-pre` at `12c96f4`). **Nothing on
 this page is evidence.** Results are recorded only in [validation.md](validation.md); the
 gaps they close are in [remaining-gaps.md](remaining-gaps.md) (R1–R28). "Last recorded"
 quotes validation.md.

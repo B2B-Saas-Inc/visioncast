@@ -267,13 +267,14 @@ def test_mixpanel_exact_request():
     (event,) = call["json"]
     props = event["properties"]
     assert event["event"] == "webinar registered"
-    assert props["distinct_id"] == ni.SAMPLE_BODY["identity"]["personId"]
+    assert props["distinct_id"] == ni.SAMPLE_BODY["identity"]["email"] == props["$user_id"]
+    assert "$device_id" not in props  # nothing captured: nothing invented
     assert props["time"] == OCCURRED_S * 1000
     assert len(props["$insert_id"]) == 36
     assert props["webinar_registration_id"] == ni.SAMPLE_BODY["registration"]["id"]
-    # No profile data, no secrets in the body.
+    # No profile data, no secrets in the body: the e-mail appears only as the user id fields.
     text = repr(call["json"])
-    assert "person@example.com" not in text and "Sample" not in text.replace("Sample webinar", "")
+    assert text.count("person@example.com") == 2 and "Sample" not in text.replace("Sample webinar", "")
     assert not any(s in text for s in SECRETS)
 
 
