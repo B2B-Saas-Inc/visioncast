@@ -162,6 +162,17 @@ def _native_from_post(post, provider):
     return {f.name: (post.get(f"native-{f.name}") or "").strip() for f in native.FIELDS.get(provider, ()) if not f.secret}
 
 
+def _secrets_from_post(post, provider):
+    """Provider secrets typed into the create form (``secret-<name>``); blanks are dropped."""
+    out = {}
+    for f in native.FIELDS.get(provider, ()):
+        if f.secret:
+            value = (post.get(f"secret-{f.name}") or "").strip()
+            if value:
+                out[f.name] = value
+    return out
+
+
 def _native_fields(provider, config, creds):
     """Template rows for the provider's non-secret settings."""
     flags = native.secrets_set(creds, provider)
@@ -196,8 +207,17 @@ def _apply_native(dest, state, data, creds, errors):
     previous = native.provider_of(creds)
     if not provider and not previous:
         return None, []
-    # Non-secret settings only: secrets change through the separate credential form.
+    # Non-secret settings, plus secrets typed into the create form (the edit page changes
+    # secrets through the separate credential form; blank values keep what is stored).
     posted = dict(state["native"])
+    secrets = state.get("secrets") or {}
+    if provider and secrets:
+        for f in native.FIELDS[provider]:
+            if f.secret and secrets.get(f.name):
+                if f.pattern is not None and not f.pattern.match(secrets[f.name]):
+                    errors[f"secret-{f.name}"] = [f"{f.label} looks invalid (no spaces, 6–512 characters)."]
+                else:
+                    posted[f.name] = secrets[f.name]
     if provider and not posted.get("region"):
         posted["region"] = native.FIELDS[provider][0].choices[0][0]
     merged, notes = native.merge_credentials(creds, provider, posted)
@@ -225,6 +245,7 @@ def _dest_state(dest):
         return {
             "provider": "",
             "native": {},
+            "secrets": {},
             "preset": "",
             "name": "",
             "kind": Destination.Kind.GENERIC,
@@ -241,6 +262,7 @@ def _dest_state(dest):
     return {
         "provider": provider,
         "native": config,
+        "secrets": {},
         "preset": presets.destination_preset(dest),
         "name": dest.name,
         "kind": dest.kind,
@@ -266,6 +288,7 @@ def _dest_state_from_post(post):
     return {
         "provider": provider,
         "native": _native_from_post(post, provider),
+        "secrets": _secrets_from_post(post, provider),
         "preset": (post.get("preset") or "").strip(),
         "name": post.get("name", ""),
         "kind": post.get("kind", ""),
@@ -333,6 +356,8 @@ def _dest_context(request, dest, state, errors=None):
         "preset_info": presets.describe(state["preset"]),
         "stored_preset_info": presets.describe(presets.preset_of(creds)),
         "native_fields": _native_fields(state["provider"], state["native"], creds if state["provider"] == stored_provider else {}),
+        # Create page only: secret boxes live in the main form so the key is stored at creation.
+        "new_secret_fields": [r for r in _native_fields(state["provider"], {}, {}) if r["secret"]] if dest is None else [],
         "stored_provider": stored_provider,
         "stored_provider_label": native.PROVIDER_LABELS.get(stored_provider, ""),
         "secret_fields": [r for r in _native_fields(stored_provider, {}, creds) if r["secret"]],
@@ -424,7 +449,23 @@ def integration_new(request):
                     )
                 return redirect("studio:integration-edit", pk=dest.pk)
         return render(request, T + "integration_form.html", _dest_context(request, None, state, errors), status=400)
-    return render(request, T + "integration_form.html", _dest_context(request, None, _dest_state(None)))
+    # ?provider= / ?preset= / ?name= let the page show the chosen provider's settings and the
+    # credential boxes before anything is saved (studio.js reloads with these on change).
+    state = _dest_state(None)
+    provider = (request.GET.get("provider") or "").strip()
+    preset = (request.GET.get("preset") or "").strip()
+    if provider in native.FIELDS:
+        state["provider"] = provider
+        state["native"] = {"region": native.FIELDS[provider][0].choices[0][0]}
+        state["url"] = native.base_url(provider, native.merge_credentials({}, provider, state["native"])[0]) or ""
+        state["event_types"] = [e for e in state["event_types"] if e in native.supported_event_types(provider)] or list(
+            native.supported_event_types(provider)[:1]
+        )
+    elif preset in presets.PRESETS:
+        state["preset"] = preset
+        state["kind"] = Destination.Kind.GENERIC
+    state["name"] = (request.GET.get("name") or "")[:200]
+    return render(request, T + "integration_form.html", _dest_context(request, None, state))
 
 
 @studio_view(perm="webinars.view_destination", write_perm="webinars.change_destination")

@@ -7,7 +7,7 @@
 <div class="page-head">
   <div>
     <h1>{% if destination %}{{ destination.name }}{% else %}New integration{% endif %}</h1>
-    <p class="lede">We POST a signed JSON message to your endpoint for each event you pick. Failed deliveries are retried with back-off.</p>
+    <p class="lede">{% if state.provider %}Each event you pick is sent server-side to {{ provider_label }}'s API with credentials stored here, encrypted. Failed deliveries are retried with back-off.{% else %}We POST a signed JSON message to your endpoint for each event you pick. Failed deliveries are retried with back-off.{% endif %}</p>
   </div>
 </div>
 
@@ -15,13 +15,13 @@
 
 <div class="layout-split">
 <div>
-<form method="post" action="{% if destination %}{% url 'studio:integration-edit' pk=destination.pk %}{% else %}{% url 'studio:integration-new' %}{% endif %}" novalidate>
+<form method="post" action="{% if destination %}{% url 'studio:integration-edit' pk=destination.pk %}{% else %}{% url 'studio:integration-new' %}{% endif %}" novalidate{% if not destination %} data-provider-reload{% endif %}>
   {% csrf_token %}
   <fieldset class="fieldset" {% if not can_edit %}disabled{% endif %}>
   <legend class="visually-hidden">Integration settings</legend>
 
   <section class="panel">
-    <div class="panel-head"><h2>Endpoint</h2></div>
+    <div class="panel-head"><h2>{% if state.provider %}Integration{% else %}Endpoint{% endif %}</h2></div>
     <div class="panel-body">
       <div class="field">
         <label class="label" for="f-name">Name</label>
@@ -34,10 +34,14 @@
         <select class="select" id="f-provider" name="provider" aria-describedby="f-provider-help{% if errors.provider %} f-provider-err{% endif %}"{% if errors.provider %} aria-invalid="true"{% endif %}>
           {% for value, label in provider_choices %}<option value="{{ value }}"{% if value == state.provider %} selected{% endif %}>{{ label }}</option>{% endfor %}
         </select>
-        <p class="help" id="f-provider-help">Pick a native provider to send directly to its API with credentials stored here, or keep the generic signed webhook. After changing provider, save to load its settings.</p>
+        <p class="help" id="f-provider-help">Pick a native provider to send directly to its API with credentials stored here, or keep the generic signed webhook.{% if destination %} After changing provider, save to load its settings.{% endif %}</p>
         {% if errors.provider %}<p class="field-error" id="f-provider-err">{{ errors.provider|join:" " }}</p>{% endif %}
       </div>
-      <div class="field">
+      <div class="field" data-native-only{% if not state.provider %} hidden{% endif %}>
+        <span class="label">Endpoint</span>
+        <p class="help">{% if state.url %}<code>{{ state.url }}</code> — set from the provider and region; credentials are only sent to the provider's official API host.{% else %}Set from the provider and region once saved; credentials are only sent to the provider's official API host.{% endif %}</p>
+      </div>
+      <div class="field" data-webhook-only{% if state.provider %} hidden{% endif %}>
         <label class="label" for="f-preset">Platform preset</label>
         <select class="select" id="f-preset" name="preset" aria-describedby="f-preset-help{% if errors.preset %} f-preset-err{% endif %}"{% if errors.preset %} aria-invalid="true"{% endif %}>
           {% for value, label in preset_choices %}<option value="{{ value }}"{% if value == state.preset %} selected{% endif %}>{{ label }}</option>{% endfor %}
@@ -47,14 +51,14 @@
         </p>
         {% if errors.preset %}<p class="field-error" id="f-preset-err">{{ errors.preset|join:" " }}</p>{% endif %}
       </div>
-      <div class="field">
+      <div class="field" data-webhook-only{% if state.provider %} hidden{% endif %}>
         <label class="label" for="f-kind">Destination type</label>
         <select class="select" id="f-kind" name="kind"{% if errors.kind %} aria-invalid="true" aria-describedby="f-kind-err"{% endif %}>
           {% for value, label in kinds %}<option value="{{ value }}"{% if value == state.kind %} selected{% endif %}>{{ label }}</option>{% endfor %}
         </select>
         {% if errors.kind %}<p class="field-error" id="f-kind-err">{{ errors.kind|join:" " }}</p>{% endif %}
       </div>
-      <div class="field">
+      <div class="field" data-webhook-only{% if state.provider %} hidden{% endif %}>
         <label class="label" for="f-url">Endpoint URL</label>
         <input class="input" id="f-url" name="url" type="url" inputmode="url" value="{{ state.url }}" maxlength="1000"{% if state.provider %} readonly{% else %} required{% endif %} placeholder="https://hooks.example.com/webinars" aria-describedby="f-url-help{% if errors.url %} f-url-err{% endif %}"{% if errors.url %} aria-invalid="true"{% endif %}>
         <p class="help" id="f-url-help">{% if state.provider %}Set from the provider and region; credentials are only sent to the provider's official API host.{% elif preset_info %}Paste the {{ preset_info.label }} webhook URL. {{ preset_info.urlRule }}. The host must also be on the platform's webhook allowlist.{% else %}HTTPS only. The host must be on the platform's webhook allowlist.{% endif %}</p>
@@ -98,6 +102,19 @@
         {% endwith %}
       {% endif %}{% endfor %}
       {% if not native_fields %}<p class="help">Save to load this provider's settings.</p>{% endif %}
+      {% if new_secret_fields %}
+        <p class="help" id="new-secret-help">Credentials are encrypted at creation, used only by the server to call {{ provider_label }}, and never shown again. You can also add or rotate them later from the integration page.</p>
+        {% for f in new_secret_fields %}
+          {% with err_key="secret-"|add:f.name %}
+          <div class="field">
+            <label class="label" for="secret-{{ f.name }}">{{ f.label }}</label>
+            <input class="input" type="password" autocomplete="off" spellcheck="false" id="secret-{{ f.name }}" name="secret-{{ f.name }}" aria-describedby="secret-{{ f.name }}-help new-secret-help">
+            <p class="help" id="secret-{{ f.name }}-help">{{ f.help }}</p>
+            {% for k, msgs in errors.items %}{% if k == err_key %}<p class="field-error">{{ msgs|join:" " }}</p>{% endif %}{% endfor %}
+          </div>
+          {% endwith %}
+        {% endfor %}
+      {% endif %}
     </div>
   </section>
   {% endif %}

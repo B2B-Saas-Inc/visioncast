@@ -1,6 +1,6 @@
 # Release checklist
 
-Status as of 2026-10-28 (release candidate `0.3.1-pre`, tag `v0.3.1-pre`: host deletion on top of `0.3.0-pre`; `0.3.0-pre` tag `v0.3.0-pre` at `12c96f4`). **Nothing on
+Status as of 2026-10-29 (release candidate `0.3.2-pre`, tag `v0.3.2-pre`: integration-form fix on top of `0.3.1-pre` (host deletion); `0.3.0-pre` tag `v0.3.0-pre` at `12c96f4`). **Nothing on
 this page is evidence.** Results are recorded only in [validation.md](validation.md); the
 gaps they close are in [remaining-gaps.md](remaining-gaps.md) (R1–R28). "Last recorded"
 quotes validation.md.

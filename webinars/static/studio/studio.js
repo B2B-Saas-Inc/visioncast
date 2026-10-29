@@ -68,6 +68,26 @@
     }
   });
 
+  // Integration form: choosing a native provider hides the webhook-only fields at once; on the
+  // create page (form[data-provider-reload]) the page reloads with ?provider= so the provider's
+  // settings and credential boxes appear before anything is saved.
+  document.addEventListener("change", function (event) {
+    var select = event.target;
+    if (!select || select.id !== "f-provider") return;
+    var form = select.form;
+    var native = !!select.value;
+    Array.prototype.forEach.call(document.querySelectorAll("[data-webhook-only]"), function (el) { el.hidden = native; });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-native-only]"), function (el) { el.hidden = !native; });
+    if (form && form.hasAttribute("data-provider-reload")) {
+      var params = new URLSearchParams();
+      if (select.value) params.set("provider", select.value);
+      var name = form.querySelector("[name=name]");
+      if (name && name.value) params.set("name", name.value);
+      var query = params.toString();
+      window.location.href = window.location.pathname + (query ? "?" + query : "");
+    }
+  });
+
   // Confirm before destructive submits
   document.addEventListener("submit", function (event) {
     var form = event.target;
