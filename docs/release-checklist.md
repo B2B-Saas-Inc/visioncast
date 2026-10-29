@@ -36,7 +36,7 @@ accepted, and every D item is in place. Any code change (including B) re-opens A
 | A15 | WordPress plugin lint and fresh install | `php -l`; `bash sdk/kits/test/fresh-install.sh` (WordPress 7.1 / PHP 8.2 in Docker, block + shortcode + cache + subdirectory) | **Passed** (2026-10-27) |
 | A16 | Framework and CMS kits from fresh scaffolds | `bash sdk/kits/test/fresh-install.sh` (Next 16, SvelteKit 3, Astro 7, Nuxt 4, static snippet, Sanity/Payload/Prismic/Contentful validation) | **Passed** (2026-10-27) |
 | A17 | End-to-end acceptance workflow | `tests/test_e2e_acceptance.py` (two scenarios: waiting-room attendance; Zoom attendance import + no-shows) | **Passed** (2026-10-27). Release tree |
-| A18 | In-place upgrade and rollback | `deploy/upgrade.sh --image …` from the previous release image; rollback by `WEBINAR_IMAGE` | **Passed** `da04cc7` → `3ec60ad` (no schema change, 2026-10-27). The release tree adds migration `0011`; rerun on the next upgrade |
+| A18 | In-place upgrade and rollback | `deploy/upgrade.sh --image …` from the previous release image; rollback by `WEBINAR_IMAGE` | **Passed** `da04cc7` → `3ec60ad` (no schema change, 2026-10-27). **Real host:** 0.3.0-pre → 0.3.1-pre on events.growthcast.app via `update.sh` (2026-10-29, no schema change, verify 12/12); rollback not exercised there |
 
 ## B. Code fixes required
 
@@ -67,7 +67,7 @@ None is approved by this document. External calls need explicit approval and own
 | C10 | Scope decisions recorded 2026-10-27: beehiiv, Resend, Amazon SES, Zapier, Make and n8n built; Intercom, Loops and Marketo skipped; Postmark and HubSpot Marketing not committed (remaining-gaps §4) | §4 | No |
 | C11 | Approve a staging host and run launch acceptance ([implementation-guide.md §11.1](implementation-guide.md#111-launch-acceptance-run-on-staging-record-results-in-validationmd)) | §3 | Yes (host) |
 | C12 | Approve live demo backend upgrade and frontend catalogue redeploy, production deployment, any preview renewal. **growthcast.app Events pages live 2026-10-28** (unavailable state until `WEBINAR_API_BASE` and `WEBINAR_PROXY_KEY` are set on the Vercel project and the studio has a published event) | — | Yes |
-| C13 | **Done:** `v0.2.0-pre` and `v0.3.0-pre` tags pushed; `ghcr.io/b2b-saas-inc/visioncast:0.3.0-pre` published (digest `sha256:fa723b88…`, amd64 + arm64, private). **Remaining:** decide package visibility or grant deploy hosts a `read:packages` token; run the published manifest on a real amd64 host (C11) | R24 | Yes (GitHub) |
+| C13 | **Done:** `v0.2.0-pre`, `v0.3.0-pre` and `v0.3.1-pre` tags pushed; `ghcr.io/b2b-saas-inc/visioncast:0.3.0-pre` (digest `sha256:fa723b88…`) and `:0.3.1-pre` (run 40784413037) published (amd64 + arm64, private). **Remaining:** decide package visibility or grant deploy hosts a `read:packages` token; run the published manifest on a real amd64 host (C11) | R24 | Yes (GitHub) |
 
 ## D. Operator tasks (target environment)
 

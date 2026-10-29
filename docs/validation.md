@@ -2,6 +2,12 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## 0.3.1-pre released and installed on events.growthcast.app — 2026-10-29T00:20Z
+
+- **Release:** `VERSION` 0.3.1-pre (`4e83af3`, tag `v0.3.1-pre`); `release.yml` run 40784413037 published `ghcr.io/b2b-saas-inc/visioncast:0.3.1-pre`. Source tarball from the tag via `package-release.sh` (sha256 `0804c025…`).
+- **Host update (first real in-place upgrade):** the owner ran `deploy/production/update.sh --host … --tarball …` after this session's dry run passed (the apply itself was refused by the session's permission classifier). The script unpacked 0.3.1-pre beside 0.3.0-pre, built the image from source, took a backup, migrated (no schema change), restarted, re-synced roles, health-checked and switched `current`; the 0.3.0-pre tree stays for rollback.
+- **`verify.sh --domain events.growthcast.app --expect-version 0.3.1-pre`: 12/12 PASS** through Cloudflare (`/healthz` reports 0.3.1-pre; OpenAPI 61 paths and now serves `DELETE /api/v1/manage/hosts/{slug}`; studio and admin login forms; `/mcp` 401; 429 after a burst; unknown `/webinar-api/*` 404). Access is still not enabled, so `--expect-access` was not used.
+
 ## Host deletion (studio and management API) — 2026-10-28T19:10Z
 
 - `services.delete_host` / `host_delete_problem`: a host on a public or unlisted event cannot be deleted (the studio shows the reason instead of the button; the API answers 409 `conflict`); otherwise the host is deleted inside a row lock, draft events lose it, and `host.deleted` is audited. Studio: `POST /studio/hosts/<slug>/delete/` (Administrators only: `delete_host` is not in the Editor or Analyst role), Delete panel on the host page with a confirmation. API: `DELETE /api/v1/manage/hosts/<slug>` (`content_write`), documented in OpenAPI and docs/management-api.md.
