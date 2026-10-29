@@ -103,7 +103,7 @@ def test_posthog_single_batch_identify_group_capture():
     assert "Authorization" not in call["headers"]
     assert call["json"]["api_key"] == "phc_supersecret_value"
     identify, group, capture = call["json"]["batch"]
-    assert identify["event"] == "$identify" and identify["distinct_id"] == ni.SAMPLE_BODY["identity"]["personId"]
+    assert identify["event"] == "$identify" and identify["distinct_id"] == ni.SAMPLE_BODY["identity"]["email"]
     assert identify["properties"]["$set"]["email"] == "person@example.com"
     assert group["event"] == "$groupidentify"
     assert group["properties"]["$group_type"] == "company" and group["properties"]["$group_key"] == "acme-1"

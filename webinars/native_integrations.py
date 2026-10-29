@@ -187,6 +187,16 @@ FIELDS = {
         Field("region", "Region", "PostHog Cloud region of your project.", choices=(("us", "US Cloud"), ("eu", "EU Cloud"))),
         Field("api_key", "Project API key", "Server-side capture uses the project API key.", secret=True, pattern=_SECRET),
         Field(
+            "identity",
+            "Person identity",
+            "Which distinct_id the registrant gets in PostHog. Email matches people your website identifies by "
+            "email; the platform person ID is an opaque UUID. Either way, when the registration form captured the "
+            "visitor's PostHog distinct_id (analytics consent, Attribution data group ticked) the $identify call "
+            "carries it as $anon_distinct_id, so the anonymous website person is merged rather than duplicated.",
+            required=False,
+            choices=(("email", "Email address (recommended)"), ("person_id", "Platform person ID")),
+        ),
+        Field(
             "group_type",
             "Group type",
             "PostHog group type for organizations, e.g. company. Must already exist in the project.",
@@ -641,6 +651,8 @@ def _facts(body, event_type, org_namespace):
     }
     return {
         "person_id": str(person_id),
+        "identity_email": (identity.get("email") or profile.get("email") or None),
+        "posthog_anon_id": posthog_distinct_id(body),
         "email": profile.get("email") or None,
         "first_name": profile.get("firstName") or None,
         "last_name": profile.get("lastName") or None,
@@ -699,22 +711,41 @@ def _clean(d):
 REDACTED = "[redacted]"
 
 
+def posthog_person_id(cfg, facts):
+    """The registrant's PostHog ``distinct_id``: the verified e-mail (default) or the platform person id."""
+    if cfg.get("identity") == "person_id" or not facts.get("identity_email"):
+        return facts["person_id"]
+    return facts["identity_email"]
+
+
 def plan_posthog(cfg, secrets, facts, event_type):
-    """One ``POST /batch/``: $identify, $groupidentify, then the captured event."""
+    """One ``POST /batch/``: $identify, $groupidentify, then the captured event.
+
+    ``$identify`` is sent whenever there is a profile to set or a captured website
+    ``distinct_id`` to merge (``$anon_distinct_id``), so the anonymous visitor PostHog already
+    knows becomes the registrant instead of a second person.
+    """
     group_type, org = cfg.get("group_type"), facts["org_key"]
+    distinct_id = posthog_person_id(cfg, facts)
+    anon = facts.get("posthog_anon_id")
+    if anon and anon == distinct_id:
+        anon = None
     batch = []
-    if facts["has_profile"]:
+    if facts["has_profile"] or anon:
+        identify_props = {}
+        if facts["has_profile"]:
+            identify_props["$set"] = _clean(
+                {"email": facts["email"], "first_name": facts["first_name"], "last_name": facts["last_name"], "job_title": facts["job_title"]}
+            )
+        if anon:
+            identify_props["$anon_distinct_id"] = anon
         batch.append(
             {
                 "event": "$identify",
-                "distinct_id": facts["person_id"],
+                "distinct_id": distinct_id,
                 "uuid": _stable_uuid(facts["delivery_id"], "identify"),
                 "timestamp": facts["occurred_at"],
-                "properties": {
-                    "$set": _clean(
-                        {"email": facts["email"], "first_name": facts["first_name"], "last_name": facts["last_name"], "job_title": facts["job_title"]}
-                    )
-                },
+                "properties": identify_props,
             }
         )
     props = _clean(dict(facts["properties"]))
@@ -732,7 +763,7 @@ def plan_posthog(cfg, secrets, facts, event_type):
     batch.append(
         {
             "event": _event_name(event_type, facts),
-            "distinct_id": facts["person_id"],
+            "distinct_id": distinct_id,
             "uuid": _stable_uuid(facts["delivery_id"], "capture"),
             "timestamp": facts["occurred_at"],
             "properties": props,
@@ -1068,6 +1099,25 @@ def ga_client_id(body):
         if m:
             return m.group(1)
         if _GA_CLIENT_ID.match(value):
+            return value
+    return None
+
+
+_POSTHOG_ID = re.compile(r"^[A-Za-z0-9._~:|@$\-]{1,200}$")
+
+
+def posthog_distinct_id(body):
+    """The website visitor's PostHog ``distinct_id`` captured at registration, else None.
+
+    ``attribution.clean_attribution`` keeps ``posthogDistinctId`` only with analytics consent, and
+    the snapshot carries it only when the destination allows the Attribution data group.
+    """
+    attribution = body.get("attribution") if isinstance(body.get("attribution"), dict) else {}
+    for touch in ("registrationTouch", "firstTouch"):
+        t = attribution.get(touch) if isinstance(attribution.get(touch), dict) else {}
+        ids = t.get("identifiers") if isinstance(t.get("identifiers"), dict) else {}
+        value = ids.get("posthogDistinctId")
+        if isinstance(value, str) and _POSTHOG_ID.match(value):
             return value
     return None
 

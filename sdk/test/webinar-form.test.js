@@ -57,6 +57,14 @@ test('analytics consent: UTMs, GA client id, stripped URLs; no ad IDs', () => {
   assert.deepEqual(a.parameters, { utm_source: 'news', utm_medium: 'email' });
   assert.deepEqual(a.identifiers, { gaClientId: '123456.789' });
   assert.equal(a.pageUrl, 'https://www.example.com/w');
+  const ph = encodeURIComponent(JSON.stringify({ distinct_id: '0192f4c1-5b7e-7a3c-9d2e-1f0a2b3c4d5e', $sesid: [1, 'x'] }));
+  const withPh = i.buildAttribution({ search: '', href: '', referrer: '', cookie: 'ph_phc_abc123_posthog=' + ph + '; _ga=GA1.1.1.2' }, ANALYTICS);
+  assert.deepEqual(withPh.identifiers, { gaClientId: '1.2', posthogDistinctId: '0192f4c1-5b7e-7a3c-9d2e-1f0a2b3c4d5e' });
+  const noConsent = i.buildAttribution({ search: '', href: '', referrer: '', cookie: 'ph_phc_abc123_posthog=' + ph }, { analytics: false, advertising: true });
+  assert.deepEqual(noConsent.identifiers, {});
+  assert.equal(i.readPostHogDistinctId('ph_phc_abc_posthog=%7Bnot-json'), null);
+  assert.equal(i.readPostHogDistinctId('ph_phc_abc_posthog=' + encodeURIComponent(JSON.stringify({ distinct_id: 'has space' }))), null);
+  assert.equal(i.readPostHogDistinctId('other=' + ph), null);
   assert.equal(a.referrer, 'https://google.com/search');
 });
 

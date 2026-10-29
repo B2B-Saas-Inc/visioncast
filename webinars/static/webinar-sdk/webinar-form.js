@@ -62,6 +62,11 @@
   ];
   var MAX_PARAM_LENGTH = 256; // server MAX_VALUE_LENGTH
   var IDENTIFIER_RE = /^[A-Za-z0-9._~:|%\-]{1,256}$/;
+  // PostHog persists its distinct_id in a cookie named ph_<project token>_posthog (URL-encoded
+  // JSON). Read with analytics consent only, so the server can merge the anonymous website
+  // visitor into the registrant ($anon_distinct_id) instead of creating a second person.
+  var POSTHOG_COOKIE_RE = /^ph_[A-Za-z0-9_]{1,80}_posthog$/;
+  var POSTHOG_ID_RE = /^[A-Za-z0-9._~:|@$\-]{1,200}$/;
   var CSRF_COOKIE = '__Host-webinar_csrf';
   var CSRF_HEADER = 'X-Webinar-CSRF';
   var STORAGE_KEY = 'webinarForm.attribution.v1';
@@ -188,6 +193,27 @@
     return null;
   }
 
+  /** The PostHog distinct_id from the ph_<token>_posthog cookie, else null. */
+  function readPostHogDistinctId(cookieString) {
+    if (!cookieString) return null;
+    var pairs = String(cookieString).split(';');
+    for (var i = 0; i < pairs.length; i++) {
+      var pair = pairs[i];
+      var eq = pair.indexOf('=');
+      if (eq === -1 || !POSTHOG_COOKIE_RE.test(pair.slice(0, eq).trim())) continue;
+      var raw = pair.slice(eq + 1).trim();
+      if (!raw || raw.length > 4096) continue;
+      try {
+        var parsed = JSON.parse(decodeURIComponent(raw));
+        var id = parsed && typeof parsed.distinct_id === 'string' ? parsed.distinct_id : '';
+        if (POSTHOG_ID_RE.test(id)) return id;
+      } catch (e) {
+        /* not PostHog's JSON: ignore */
+      }
+    }
+    return null;
+  }
+
   function collectIdentifiers(cookieString, consent) {
     var out = {};
     if (!consent) return out;
@@ -198,6 +224,10 @@
       if (raw === null || !IDENTIFIER_RE.test(raw)) continue;
       var value = def.parse ? def.parse(raw) : raw;
       if (value) out[def.key] = value;
+    }
+    if (consent.analytics) {
+      var ph = readPostHogDistinctId(cookieString);
+      if (ph) out.posthogDistinctId = ph;
     }
     return out;
   }
@@ -1077,6 +1107,7 @@
       ANALYTICS_PARAMS: ANALYTICS_PARAMS,
       ADVERTISING_PARAMS: ADVERTISING_PARAMS,
       IDENTIFIER_COOKIES: IDENTIFIER_COOKIES,
+      readPostHogDistinctId: readPostHogDistinctId,
       CONFIRM_LABEL: CONFIRM_LABEL,
       confirmLabel: confirmLabel,
       CSRF_COOKIE: CSRF_COOKIE,

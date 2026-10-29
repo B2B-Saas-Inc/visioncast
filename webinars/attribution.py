@@ -25,6 +25,7 @@ IDENTIFIER_ALIASES = {
     "fbp": "fbp", "_fbp": "fbp",
     "fbc": "fbc", "_fbc": "fbc",
     "gaClientId": "gaClientId", "_ga": "gaClientId", "ga4ClientId": "gaClientId",
+    "posthogDistinctId": "posthogDistinctId", "posthog_distinct_id": "posthogDistinctId",
     "gclAw": "gclAw", "_gcl_aw": "gclAw",
     "gclAu": "gclAu", "_gcl_au": "gclAu",
     "scid": "scid", "_scid": "scid",
@@ -34,6 +35,7 @@ IDENTIFIER_ALIASES = {
 # Consent purpose required per identifier.
 IDENTIFIER_PURPOSE = {
     "gaClientId": "analytics",
+    "posthogDistinctId": "analytics",
     "fbp": "advertising",
     "fbc": "advertising",
     "gclAw": "advertising",

@@ -164,7 +164,7 @@ Privileged scopes are granted only by a superuser (studio) or `manage.py create_
 ## Quick start (local build, Docker Compose)
 
 Either pull the published image (see "Published image" below) or build it locally from
-this repository (`VERSION` is `0.3.3-pre`). Requirements: Docker with Compose v2, git, and
+this repository (`VERSION` is `0.3.4-pre`). Requirements: Docker with Compose v2, git, and
 Python 3 only for generating secrets. These commands were run end to end on
 2026-10-27 against the built image ([docs/validation.md](docs/validation.md)).
 

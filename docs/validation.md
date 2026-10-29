@@ -2,6 +2,11 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## PostHog identity: e-mail distinct_id and anonymous-visitor merge — 2026-10-29T22:10Z
+
+- Reported from the live preview: `distinct_id` was the platform's person UUID, which would create a second PostHog person next to the one the website already tracks. Now `distinct_id` is the registrant's verified e-mail (per-integration setting `identity`: `email` default, `person_id` on request), and the SDK captures the visitor's PostHog `distinct_id` from the `ph_<token>_posthog` cookie with analytics consent (`attribution.IDENTIFIER_PURPOSE`), stored like the GA client id; the adapter sends it as `$anon_distinct_id` on `$identify` (also when the profile group is off), which is PostHog's documented merge path. Malformed ids are ignored, an id equal to the distinct_id is not sent, nothing is ever invented.
+- Tests: `tests/test_posthog_identity.py` (13), SDK `sdk/test` 63 pass (cookie parsing, consent gating, rejects), existing PostHog contract test updated. Full suite **2,438 passed**; `ruff` clean. Live merge behaviour unverified until a real registration from growthcast.app with a PostHog cookie is delivered.
+
 ## 0.3.3-pre installed on events.growthcast.app — 2026-10-29T21:00Z
 
 - Owner applied `update.sh` with the `v0.3.3-pre` tarball (third in-place upgrade, no schema change). `verify.sh --expect-version 0.3.3-pre --expect-access`: **12/12 PASS** through Cloudflare.
