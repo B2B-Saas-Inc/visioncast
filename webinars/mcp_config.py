@@ -411,7 +411,8 @@ _DEST_MODEL = {"name": "name", "kind": "kind", "url": "url", "enabled": "enabled
                "includePrivateLinks": "include_private_links", "fieldMapping": "field_mapping", "maxAttempts": "max_attempts"}
 
 
-def _destination_form(args, instance, preset=""):
+def _destination_form(args, instance, preset="", creds=None):
+    from webinars import native_integrations as native
     from webinars.admin import DestinationForm
     from webinars.webhook_presets import pin_defaults
 
@@ -432,7 +433,10 @@ def _destination_form(args, instance, preset=""):
         data.pop("include_private_links", None)
     if preset:
         pin_defaults(data)
-    return DestinationForm(data=data, instance=instance)
+    # An existing native destination keeps its code-pinned vendor host (no operator entry needed).
+    provider = native.provider_of(creds or {})
+    pinned = native.allowed_hosts(provider, creds or {}) if provider else ()
+    return DestinationForm(data=data, instance=instance, pinned_hosts=pinned)
 
 
 def _preset_for_save(args, instance):
@@ -469,7 +473,7 @@ def save_destination(args, key):
     problem = url_problem(preset, args["url"] if "url" in args else instance.url)
     if problem:
         raise ToolError(400, "validation_error", "Request validation failed.", {"url": problem})
-    form = _destination_form(args, instance, preset)
+    form = _destination_form(args, instance, preset, creds)
     valid = form.is_valid()  # validation only; nothing saved before confirmation
     if not valid:
         raise ToolError(400, "validation_error", "Request validation failed.",

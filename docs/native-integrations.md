@@ -40,17 +40,17 @@ The vendor API contracts below are **UNVERIFIED** assumptions. Testing so far is
   - Amplitude: `api2.amplitude.com`, `api.eu.amplitude.com`
   - Google Analytics 4: `www.google-analytics.com` (no regional GA host is assumed)
   - Mixpanel: `api.mixpanel.com`, `api-eu.mixpanel.com`, `api-in.mixpanel.com` (unverified)
-  - RudderStack: the destination's own data plane host, which must be an exact operator allowlist entry (see below)
+  - RudderStack: the destination's own data plane host; a RudderStack Cloud host (`*.dataplane.rudderstack.com`) is vendor-pinned, a self-hosted one must be an exact operator allowlist entry (see below)
   - Brevo: `api.brevo.com` only (no other region or host)
-  - ActiveCampaign: the account's own API host (`<account>.api-us1.com`), typed by the marketer and required to be an exact operator allowlist entry, exactly like the RudderStack data plane
-  - Mailchimp: `<data center>.api.mailchimp.com`, derived from the configured data center, which must equal the API key's suffix and be an exact operator allowlist entry
-  - Salesforce: the destination's own My Domain host (`acme.my.salesforce.com`, or a sandbox host such as `acme--dev.sandbox.my.salesforce.com`), which must be an exact operator allowlist entry, like the RudderStack data plane. The token request goes there too.
+  - ActiveCampaign: the account's own API host (`<account>.api-us1.com`), typed by the marketer; it must end in `.api-us1.com`
+  - Mailchimp: `<data center>.api.mailchimp.com`, derived from the configured data center, which must equal the API key's suffix
+  - Salesforce: the destination's own My Domain host (`acme.my.salesforce.com`, or a sandbox host such as `acme--dev.sandbox.my.salesforce.com`), which must end in `.my.salesforce.com`. The token request goes there too.
   - Pipedrive: `api.pipedrive.com` only (the `{company}.pipedrive.com` form shown in the authentication guide is not used)
   - beehiiv: `api.beehiiv.com` only
   - Resend: `api.resend.com` only
   - Amazon SES: `email.<region>.amazonaws.com` for the chosen AWS Region, from the fixed list of 27 commercial regions in `native_providers/ses.py` (the SES endpoints table fetched 2026-10-27; GovCloud, FIPS and `.api.aws` dual-stack hosts are not offered)
 
-  The operator must also add the host to `WEBHOOK_HOST_ALLOWLIST`. The destination URL is set from provider and region and is read-only in the studio. Self-hosted PostHog and HubSpot EU-specific hosts are **not supported**.
+  Because every one of these hosts is pinned in code (a fixed vendor host, or a typed host that must sit under the vendor's domain), **no `WEBHOOK_HOST_ALLOWLIST` entry is needed** for native providers: `ssrf.validate_destination_url` accepts a host that the native layer pins (`pinned_hosts`), and the transports pass the same pinned set. An operator who wants the old double gate sets `NATIVE_VENDOR_HOSTS_IMPLICIT=0`; the allowlist then applies to vendor hosts again. The allowlist always governs generic webhooks, n8n/self-hosted receivers and self-hosted RudderStack data planes. The destination URL is set from provider and region and is read-only in the studio. Self-hosted PostHog and HubSpot EU-specific hosts are **not supported**.
 - **Studio.**
   - A provider dropdown, with fields for the provider's settings.
   - A separate credential form for secrets. Blank keeps the stored value, and values are never rendered.
@@ -148,7 +148,7 @@ Pi fetched the primary docs on 2026-10-25 and passed the extracted facts to this
 
 - It must be a bare lowercase DNS name: no scheme, port, path, userinfo, wildcard, IP literal or trailing dot.
 - It must not be one of the static vendor hosts.
-- It must be an **exact, non-wildcard entry** in the operator's `WEBHOOK_HOST_ALLOWLIST`. A parent domain (`rudderstack.com`) or wildcard entry (`*.example.com`) does **not** admit sub-domains here. This blocks suffix tricks such as `rudderstack.com.evil.net` and keeps a typed host from receiving the write key unless the operator named that host.
+- A RudderStack Cloud host (`<x>.dataplane.rudderstack.com`) is vendor-pinned and needs no allowlist entry. Any other (self-hosted) data plane must be an **exact, non-wildcard entry** in the operator's `WEBHOOK_HOST_ALLOWLIST`. A parent domain (`rudderstack.com`) or wildcard entry (`*.example.com`) does **not** admit sub-domains here. This blocks suffix tricks such as `rudderstack.com.evil.net` and keeps a typed host from receiving the write key unless the operator named that host.
 - It must also pass `ssrf.validate_destination_url` (https, no internal names).
 
 **Per-destination host pinning (implemented in source; tests mock-only; live unverified).** `webinars/delivery.py` sets `NATIVE_DESTINATION_HOSTS = True` and `_deliver_native` computes `allowed_hosts(provider, credentials)` once, from the credentials that passed `check_send_policy`, and passes it to both `_native_post` (including its `post_json_pinned` test seam) and `_native_request`. This narrows every provider, static or not, to its single configured host. `_native_post` and `_native_request` still default to `VENDOR_HOSTS` when called without `allowed_hosts` (compatibility for existing test seams); delivery never relies on that default. A delivery module without the constant keeps RudderStack fail-closed: `validate` reports the gap, `check_send_policy` returns `native_transport_unavailable` and `execute` refuses.
@@ -164,7 +164,7 @@ Status: **source implemented; tests mock-only (`tests/test_native_brevo.py`, fak
 
 **Settings** (schema-driven: the studio form, preview and validation pick these up from `FIELDS["brevo"]`):
 
-- **API host**: `api.brevo.com` only. The operator must add it to `WEBHOOK_HOST_ALLOWLIST`. Delivery pins every call to that one host (`allowed_hosts`), so the key is never sent anywhere else.
+- **API host**: `api.brevo.com` only (pinned in code; no allowlist entry needed). Delivery pins every call to that one host (`allowed_hosts`), so the key is never sent anywhere else.
 - **API key**: secret, set-only. It is sent only in the `api-key` header (the SDK samples use only this; the docs' generic OAuth alternative is not implemented). It is never rendered, previewed (`api-key: [redacted]`), logged or put in `last_error`.
 - **Contacts**: `events` (send events only) or `upsert` (create or update the contact by email, then send the event).
 - **Email match confirmation**: required in both modes, because every Brevo call identifies the contact by email. Events attach to whatever contact has that email, and in `upsert` mode the mapped attributes overwrite it. Only `identity.verified` registrations are sent. That flag means the platform bound the registration to the person (browser capability or new person); **it is not proof of mailbox ownership**. Without the confirmation the destination can't be enabled, and a send is dead-lettered `native_match_strategy_unconfirmed` with no call.

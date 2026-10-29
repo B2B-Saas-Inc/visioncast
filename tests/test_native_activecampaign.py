@@ -172,6 +172,7 @@ def test_bad_host_formats_rejected(host, settings):
     ],
 )
 def test_host_needs_exact_operator_entry(entries, host, settings):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False  # operator opted out of implicit vendor hosts
     settings.WEBHOOK_HOST_ALLOWLIST = entries
     creds = {**AC, "native_api_host": host}
     errors = ni.validate("activecampaign", creds, **KW)
@@ -190,6 +191,7 @@ def test_other_vendor_host_refused(settings):
 
 
 def test_host_removed_from_allowlist_after_enable_stops_send(settings):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False
     assert ni.check_send_policy("activecampaign", AC, dest()) is None
     settings.WEBHOOK_HOST_ALLOWLIST = ["hooks.example.net"]
     assert ni.check_send_policy("activecampaign", AC, dest()) == "native_config_invalid"
@@ -502,6 +504,7 @@ def test_preview_redacts_api_token():
 
 
 def test_preview_empty_without_host(settings):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False
     settings.WEBHOOK_HOST_ALLOWLIST = ["api-us1.com"]
     assert ni.preview("activecampaign", AC) == []
     assert ni.preview_refusal("activecampaign", AC) is None  # validate reports it
@@ -617,3 +620,16 @@ def test_e2e_without_request_transport_dead(occurrence, monkeypatch):
     msg, _ = _claimed(occurrence, AC)
     msg = _deliver(msg)
     assert msg.status == S.DEAD and msg.last_error == "native_transport_unavailable"
+
+
+@pytest.mark.parametrize("host,ok", [(HOST, True), ("evil" + HOST, True), (HOST + ".evil.net", False), ("acme.example.com", False)])
+def test_vendor_domain_host_needs_no_operator_entry_by_default(settings, host, ok):
+    settings.WEBHOOK_HOST_ALLOWLIST = []
+    creds = {**AC, "native_api_host": host}
+    errors = ni.validate("activecampaign", creds, **KW)
+    if ok:
+        assert errors == {} and ni.allowed_hosts("activecampaign", creds) == frozenset({host})
+        assert ni.check_send_policy("activecampaign", creds, dest()) is None
+    else:
+        assert "native-api_host" in errors and "provider" not in errors
+        assert ni.allowed_hosts("activecampaign", creds) == frozenset()

@@ -2,6 +2,13 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Native integrations: vendor-pinned hosts need no operator allowlist; mandatory consent applied on save — 2026-10-29T20:30Z
+
+- Reported from the live studio: enabling a PostHog integration demanded an operator `WEBHOOK_HOST_ALLOWLIST` entry for `us.i.posthog.com` and a manually ticked Analytics consent. Both were platform-imposed steps with nothing to decide, so they are now applied instead of asked.
+- **Hosts:** native providers send credentials only to hosts pinned in code (fixed vendor hosts, or typed hosts that must sit under the vendor's domain: `.my.salesforce.com`, `.api-us1.com`, `<dc>.api.mailchimp.com`, `*.dataplane.rudderstack.com`). `ssrf.validate_destination_url(url, pinned_hosts=…)` and both native transports accept a pinned host without an allowlist entry; `DestinationForm`, `services.save_destination`, the studio and the MCP destination save pass the pinned set. `NATIVE_VENDOR_HOSTS_IMPLICIT=0` restores the double gate. Generic webhooks, n8n and self-hosted RudderStack data planes still need the operator allowlist; other vendors' static hosts are still refused for typed fields; suffix tricks (`acme.my.salesforce.com.evil.net`) are refused by the domain rule.
+- **Consent:** `native.mandatory_consents(provider)` (analytics tools → `analytics`) is added to the destination on save by the studio and shown in the form's help; `validate` still enforces it for other callers.
+- Policy tests rewritten: strict-mode assertions kept behind the flag; new default-mode tests per provider, transport, studio create/enable with an empty allowlist. **2,423 passed**; `ruff`, `manage.py check`, `makemigrations --check` clean.
+
 ## 0.3.2-pre installed on events.growthcast.app — 2026-10-29T19:05Z
 
 - Owner applied `update.sh` with the `v0.3.2-pre` tarball (second in-place upgrade, no schema change). `verify.sh --expect-version 0.3.2-pre --expect-access`: **12/12 PASS** through Cloudflare; `/healthz` reports 0.3.2-pre, both login paths still redirect to Access, rate limit still trips.

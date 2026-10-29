@@ -204,6 +204,7 @@ def test_boolean_choices_are_strict(key, value):
 
 
 def test_host_needs_operator_entry(settings):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False  # operator opted out of implicit vendor hosts
     settings.WEBHOOK_HOST_ALLOWLIST = ["hooks.example.net"]
     errors = ni.validate("beehiiv", BH, **KW)
     assert any(HOST in m for m in errors.get("provider", []))
@@ -624,3 +625,9 @@ def test_e2e_without_request_transport_dead(occurrence, monkeypatch):
     msg, _ = _claimed(occurrence, BH)
     msg = _deliver(msg)
     assert msg.status == S.DEAD and msg.last_error == "native_transport_unavailable"
+
+
+def test_vendor_host_needs_no_operator_entry_by_default(settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = []
+    assert "provider" not in ni.validate("beehiiv", BH, **KW)
+    assert ni.check_send_policy("beehiiv", BH, dest()) is None

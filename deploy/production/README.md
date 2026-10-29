@@ -49,7 +49,7 @@ owner's.
    configured later in the studio (`docs/tickets.md`); `api.stripe.com` goes into
    `WEBHOOK_HOST_ALLOWLIST`.
 7. Decisions: the Let's Encrypt account e-mail (`ACME_EMAIL`), the administrator username/e-mail,
-   `WEBHOOK_HOST_ALLOWLIST` (every receiver and vendor host, `docs/release-checklist.md` D7),
+   `WEBHOOK_HOST_ALLOWLIST` (generic webhook receivers and self-hosted hosts only; native vendor hosts are pinned in code and need no entry, `docs/release-checklist.md` D7),
    retention (`--purge-days`, default 30, must match the privacy notice).
 
 A release **tag that contains `deploy/production/`**. `v0.3.0-pre` predates this directory and
@@ -140,7 +140,8 @@ manager or pipe them straight into the consumer (`… | vercel env add VISIONCAS
    point at the marketing site). Change it with
    `bootstrap.sh --public-event-url-template … --steps env,compose` (containers are recreated by
    `docker compose up -d` only when `.env` changed; run `docker compose up -d web worker` to be sure).
-6. Configure destinations (webhooks, native integrations) in the studio. Every destination host
+6. Configure destinations (webhooks, native integrations) in the studio. Native providers need no
+   allowlist entry (their hosts are pinned in code); generic webhook receivers and self-hosted hosts
    must be in `WEBHOOK_HOST_ALLOWLIST` (`bootstrap.sh --webhook-host-allowlist a,b,c --steps env,compose`).
 7. Stripe (if used): account and prices in the studio, webhook endpoint
    `https://events.growthcast.app/api/v1/payments/stripe/webhook` with the five events listed in

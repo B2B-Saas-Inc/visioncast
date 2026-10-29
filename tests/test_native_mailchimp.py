@@ -169,6 +169,7 @@ def test_bad_datacenter_rejected(dc, settings):
 
 @pytest.mark.parametrize("entries", [["api.mailchimp.com"], ["*.api.mailchimp.com"], [".api.mailchimp.com"], ["hooks.example.net"], ["us6.api.mailchimp.com"]])
 def test_host_needs_exact_operator_entry(entries, settings):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False  # operator opted out of implicit vendor hosts
     settings.WEBHOOK_HOST_ALLOWLIST = entries
     errors = ni.validate("mailchimp", MC, **KW)
     assert any("exactly" in m and HOST in m for m in errors.get("provider", []))
@@ -192,6 +193,7 @@ def test_datacenter_must_match_key_suffix_without_rendering_it(settings):
 
 
 def test_host_removed_from_allowlist_after_enable_stops_send(settings):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False
     assert ni.check_send_policy("mailchimp", MC, dest()) is None
     settings.WEBHOOK_HOST_ALLOWLIST = ["hooks.example.net"]
     assert ni.check_send_policy("mailchimp", MC, dest()) == "native_config_invalid"
@@ -467,6 +469,7 @@ def test_preview_redacts_api_key():
 
 
 def test_preview_empty_without_host(settings):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False
     settings.WEBHOOK_HOST_ALLOWLIST = ["api.mailchimp.com"]
     assert ni.preview("mailchimp", MC) == []
     assert ni.preview_refusal("mailchimp", MC) is None  # validate reports it
@@ -586,3 +589,9 @@ def test_e2e_without_request_transport_dead(occurrence, monkeypatch):
     msg, _ = _claimed(occurrence, MC)
     msg = _deliver(msg)
     assert msg.status == S.DEAD and msg.last_error == "native_transport_unavailable"
+
+
+def test_datacenter_host_needs_no_operator_entry_by_default(settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = []
+    assert ni.validate("mailchimp", MC, **KW) == {} and ni.allowed_hosts("mailchimp", MC) == frozenset({HOST})
+    assert ni.check_send_policy("mailchimp", MC, dest()) is None

@@ -9,8 +9,8 @@ Contract (API v3, official references fetched 2026-10-27, see docs/native-integr
   other key: the contact is never subscribed to a list or automation.
 * ``POST /api/3/contactTags`` applies one existing tag (by numeric id) to the contact returned
   by the sync: 201 applied, 200 already applied (documented; a retry is safe).
-* Auth: ``Api-Token`` header only, sent to the account's own API host, which the operator
-  types (``acme.api-us1.com``) and must list exactly in ``WEBHOOK_HOST_ALLOWLIST``.
+* Auth: ``Api-Token`` header only, sent to the account's own API host, which the marketer
+  types (``acme.api-us1.com``); it must end in ``.api-us1.com``.
 
 Event tracking (``trackcmp.net``, form-encoded, a different host) is NOT implemented.
 """
@@ -44,11 +44,11 @@ FIELD_MAP = re.compile(rf"^{_PAIR}(?:,{_PAIR}){{0,{len(FIELD_SOURCES) - 1}}}$")
 TAG_SETTINGS = {"registered": "tag_registered", "attended": "tag_attended", "no_show": "tag_no_show"}
 
 FIELDS = (
-    ni.Field("region", "API host", "Your account's own API host, entered below.", choices=(("account", "Operator-allowlisted account API host"),)),
+    ni.Field("region", "API host", "Your account's own API host, entered below.", choices=(("account", "Your account API host"),)),
     ni.Field(
         "api_host",
         "Account API host",
-        "Bare host name only, e.g. acme.api-us1.com (from Settings > Developer). Your operator must list this exact host in WEBHOOK_HOST_ALLOWLIST.",
+        "Bare host name only, e.g. acme.api-us1.com (from Settings > Developer). It must end in .api-us1.com.",
         pattern=ni._HOSTNAME,
     ),
     ni.Field("api_key", "API key", "Developer API key, sent only in the Api-Token header to the host above.", secret=True, pattern=ni._SECRET),
@@ -76,12 +76,19 @@ FIELDS = (
 )
 
 
+HOST_SUFFIXES = (".api-us1.com",)
+
+
+def host_problem(host):
+    return ni.vendor_host_problem(host, HOST_SUFFIXES)
+
+
 def host_of(credentials):
-    """The account API host when it is a bare, operator-allowlisted, non-vendor host; else None."""
+    """The account API host when it is a bare host under the vendor's domain; else None."""
     if credentials.get(ni.NATIVE_PREFIX + "region") != "account":
         return None
     host = credentials.get(ni.NATIVE_PREFIX + "api_host", "")
-    return host if host and ni.destination_host_problem(host) is None else None
+    return host if host and host_problem(host) is None else None
 
 
 def field_map(value):
@@ -99,13 +106,16 @@ def field_map(value):
 
 def validate_extra(cfg, credentials, add, **kw):
     host = cfg.get("api_host", "")
-    problem = ni.destination_host_problem(host) if host else None
+    problem = host_problem(host) if host else None
     if problem == "format":
         add("native-api_host", "Enter a bare lowercase host name: no https://, port, path or wildcard.")
     elif problem == "vendor_host":
         add("native-api_host", "That host belongs to another provider; enter your ActiveCampaign account API host.")
     elif problem == "not_allowlisted":
-        add("provider", f"Ask your operator to add exactly {host} (not a wildcard or parent domain) to WEBHOOK_HOST_ALLOWLIST before enabling.")
+        if ni.implicit_vendor_hosts():
+            add("native-api_host", "Enter your account's API host, which ends in .api-us1.com.")
+        else:
+            add("provider", f"Ask your operator to add exactly {host} (not a wildcard or parent domain) to WEBHOOK_HOST_ALLOWLIST before enabling.")
     elif problem == "unsafe":
         add("native-api_host", "That host is not allowed as a destination.")
     mapping = cfg.get("field_map")

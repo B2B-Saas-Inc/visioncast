@@ -132,6 +132,7 @@ def test_unknown_region_has_no_host(region):
 
 
 def test_host_must_be_operator_allowlisted(settings):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False  # operator opted out of implicit vendor hosts
     settings.WEBHOOK_HOST_ALLOWLIST = ["hooks.example.net"]
     assert any("api.brevo.com" in m for m in ni.validate("brevo", BREVO, **KW)["provider"])
     assert ni.check_send_policy("brevo", BREVO, dest()) == "native_config_invalid"
@@ -509,3 +510,9 @@ def test_e2e_never_sent_to_another_host(occurrence, monkeypatch, transport, capl
     assert transport.calls == []
     assert msg.status == S.DEAD and msg.last_error.endswith(": unsafe_destination")
     assert KEY not in msg.last_error and KEY not in caplog.text
+
+
+def test_vendor_host_needs_no_operator_entry_by_default(settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = []
+    assert "provider" not in ni.validate("brevo", BREVO, **KW)
+    assert ni.check_send_policy("brevo", BREVO, dest()) is None

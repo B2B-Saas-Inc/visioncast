@@ -151,8 +151,10 @@ def test_ga4_field_validation(field, value):
     assert f"native-{field}" in ni.validate("ga4", {**GA4, f"native_{field}": value}, **KW)
 
 
-def test_host_must_be_operator_allowlisted(settings):
+def test_host_must_be_operator_allowlisted_when_implicit_is_off(settings):
     settings.WEBHOOK_HOST_ALLOWLIST = ["hooks.example.net"]
+    assert "provider" not in ni.validate("amplitude", AMPLITUDE, **KW)  # pinned vendor host: no entry needed
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False
     errors = ni.validate("amplitude", AMPLITUDE, **KW)
     assert errors["provider"] == ["Ask your operator to add api.eu.amplitude.com to WEBHOOK_HOST_ALLOWLIST before enabling."]
 

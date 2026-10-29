@@ -206,6 +206,7 @@ def test_bad_host_formats_rejected(host, settings, pinned):
     ],
 )
 def test_host_needs_exact_operator_entry(entries, host, settings, pinned):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False  # operator opted out of implicit vendor hosts
     settings.WEBHOOK_HOST_ALLOWLIST = entries
     creds = {**RUDDER, "native_dataplane_host": host}
     errors = ni.validate("rudderstack", creds, **KW)
@@ -222,6 +223,7 @@ def test_other_vendor_host_refused(settings, pinned):
 
 
 def test_host_removed_from_allowlist_after_enable_stops_send(settings, pinned):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False
     assert ni.check_send_policy("rudderstack", RUDDER, dest()) is None
     settings.WEBHOOK_HOST_ALLOWLIST = ["hooks.example.net"]
     assert ni.check_send_policy("rudderstack", RUDDER, dest()) == "native_config_invalid"
@@ -503,6 +505,7 @@ def test_preview_redacts_credentials(creds):
 
 
 def test_preview_empty_for_unallowlisted_dataplane(settings):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False
     settings.WEBHOOK_HOST_ALLOWLIST = ["rudderstack.com"]
     assert ni.preview("rudderstack", RUDDER) == []
 
@@ -618,3 +621,13 @@ def test_credentials_never_sent_to_another_host(creds, target, occurrence, monke
     assert transport.calls == []
     assert msg.status == S.DEAD and msg.last_error.endswith(": unsafe_destination")
     assert not any(s in msg.last_error or s in caplog.text for s in SECRETS)
+
+
+def test_cloud_dataplane_needs_no_operator_entry_but_self_hosted_does(settings, pinned):
+    settings.WEBHOOK_HOST_ALLOWLIST = []
+    assert ni.validate("rudderstack", RUDDER, **KW) == {} and ni.allowed_hosts("rudderstack", RUDDER) == frozenset({RS_HOST})
+    own = {**RUDDER, "native_dataplane_host": "events.example.com"}
+    errors = ni.validate("rudderstack", own, **KW)
+    assert any("self-hosted" in m and "events.example.com" in m for m in errors["provider"])
+    settings.WEBHOOK_HOST_ALLOWLIST = ["events.example.com"]
+    assert ni.validate("rudderstack", own, **KW) == {}

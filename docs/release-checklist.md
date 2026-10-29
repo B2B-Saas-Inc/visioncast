@@ -1,6 +1,6 @@
 # Release checklist
 
-Status as of 2026-10-29 (release candidate `0.3.2-pre`, tag `v0.3.2-pre`: integration-form fix on top of `0.3.1-pre` (host deletion); `0.3.0-pre` tag `v0.3.0-pre` at `12c96f4`). **Nothing on
+Status as of 2026-10-29 (release candidate `0.3.3-pre`, tag `v0.3.3-pre`: native hosts need no allowlist entry and mandatory consent is applied on save, on top of `0.3.2-pre` (integration form) and `0.3.1-pre` (host deletion); `0.3.0-pre` tag `v0.3.0-pre` at `12c96f4`). **Nothing on
 this page is evidence.** Results are recorded only in [validation.md](validation.md); the
 gaps they close are in [remaining-gaps.md](remaining-gaps.md) (R1–R28). "Last recorded"
 quotes validation.md.
@@ -83,7 +83,7 @@ covers D1, D2, D5, D6, D9, D10, D12 and D13 with scripts (rehearsed locally only
 | D4 | Mode B edges forward `/webinar-api/calendar.ics` (and `my-registration`), or set `WEBINAR_DIRECT_ICS_REWRITE=false` | R21 |
 | D5 | `RATE_LIMIT_TRUST_X_FORWARDED_FOR` only behind a trusted chain of matching depth | §3 |
 | D6 | Worker process running | §3 |
-| D7 | `WEBHOOK_HOST_ALLOWLIST` for enabled vendors (exact per-destination hosts for Salesforce, ActiveCampaign, Mailchimp, RudderStack), `api.stripe.com`, hosting hosts; https `PUBLIC_BASE_URL`; `PUBLIC_EVENT_URL_TEMPLATE` | §3 |
+| D7 | `WEBHOOK_HOST_ALLOWLIST` for generic webhook receivers, self-hosted RudderStack data planes and n8n hosts, `api.stripe.com`, hosting hosts (native vendor hosts are pinned in code and need no entry unless `NATIVE_VENDOR_HOSTS_IMPLICIT=0`); https `PUBLIC_BASE_URL`; `PUBLIC_EVENT_URL_TEMPLATE` | §3 |
 | D8 | Stripe webhook endpoint with the five events from [tickets.md](tickets.md) | §3 |
 | D9 | `INTEGRATION_MASTER_KEY` outside backups; scheduled `deploy/backup.sh --encrypt-to …`; restore drill with `deploy/restore.sh` on the target host | §3 |
 | D10 | Cron for `purge_personal_data` | §3 |

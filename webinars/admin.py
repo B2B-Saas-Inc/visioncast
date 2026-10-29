@@ -907,12 +907,18 @@ class DestinationForm(forms.ModelForm):
         model = Destination
         exclude = ("signing_secret_encrypted", "credentials_encrypted")
 
+    def __init__(self, *args, pinned_hosts=(), **kwargs):
+        # Native destinations: the URL is derived from the provider and pinned in code, so it
+        # passes without an operator allowlist entry (ssrf honours NATIVE_VENDOR_HOSTS_IMPLICIT).
+        super().__init__(*args, **kwargs)
+        self.pinned_hosts = tuple(pinned_hosts or ())
+
     def clean_url(self):
         from webinars.ssrf import UnsafeDestination, validate_destination_url
 
         value = self.cleaned_data.get("url", "")
         try:
-            validate_destination_url(value)
+            validate_destination_url(value, pinned_hosts=self.pinned_hosts)
         except UnsafeDestination as exc:
             raise ValidationError(str(exc))
         return value

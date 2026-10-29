@@ -327,8 +327,8 @@ def save_form_version(rows, meta, *, user=None, instance=None, new_version=None)
 # ---------------------------------------------------------------------------
 
 
-def save_destination(data, *, user, instance=None):
-    form = DestinationForm(data=data, instance=instance)
+def save_destination(data, *, user, instance=None, pinned_hosts=()):
+    form = DestinationForm(data=data, instance=instance, pinned_hosts=pinned_hosts)
     if not form.is_valid():
         raise FormErrors(form)
     with transaction.atomic():

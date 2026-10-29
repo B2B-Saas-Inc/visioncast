@@ -223,6 +223,7 @@ def test_field_formats(field, value):
 
 
 def test_host_must_be_operator_allowlisted(settings):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False  # operator opted out of implicit vendor hosts
     settings.WEBHOOK_HOST_ALLOWLIST = ["hooks.example.net"]
     assert any(HOST in m for m in ni.validate("ses", SES, **KW)["provider"])
     assert ni.check_send_policy("ses", SES, dest()) == "native_config_invalid"
@@ -531,3 +532,9 @@ def test_e2e_without_request_transport_dead(occurrence, monkeypatch):
     msg, _ = _claimed(occurrence, SES)
     msg = _deliver(msg)
     assert msg.status == S.DEAD and msg.last_error == "native_transport_unavailable"
+
+
+def test_vendor_host_needs_no_operator_entry_by_default(settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = []
+    assert "provider" not in ni.validate("ses", SES, **KW)
+    assert ni.check_send_policy("ses", SES, dest()) is None

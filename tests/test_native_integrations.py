@@ -273,6 +273,8 @@ def test_validate_posthog(settings):
     assert "event_types" in ni.validate("posthog", POSTHOG, **{**OK, "event_types": ["occurrence.cancelled"]})
     assert "allowed_groups" in ni.validate("posthog", POSTHOG, **{**OK, "allowed_groups": ["event"]})
     settings.WEBHOOK_HOST_ALLOWLIST = ["hooks.example.net"]
+    assert "provider" not in ni.validate("posthog", POSTHOG, **OK)  # pinned vendor host needs no operator entry
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False
     assert "WEBHOOK_HOST_ALLOWLIST" in " ".join(ni.validate("posthog", POSTHOG, **OK)["provider"])
     assert ni.validate("", {}, **OK) == {}
 

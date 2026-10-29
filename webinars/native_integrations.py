@@ -68,8 +68,10 @@ def required_groups(provider):
     declared = getattr(module, "REQUIRED_GROUPS", None) if module is not None else None
     return tuple(declared) if declared else REQUIRED_GROUPS
 
-# Strict per-vendor host allowlists. Credentials are only ever sent to these hosts, and the
-# host must *also* be on the operator's WEBHOOK_HOST_ALLOWLIST (validated by ssrf).
+# Strict per-vendor host allowlists. Credentials are only ever sent to these hosts. Because the
+# hosts are pinned here (never typed), they pass ``ssrf.validate_destination_url`` without an
+# operator WEBHOOK_HOST_ALLOWLIST entry unless NATIVE_VENDOR_HOSTS_IMPLICIT=0 (then the operator
+# must list them as before).
 HOSTS = {
     "posthog": {"us": "us.i.posthog.com", "eu": "eu.i.posthog.com"},
     "hubspot": {"global": "api.hubapi.com"},
@@ -255,11 +257,12 @@ FIELDS = {
         PROCESSING_ACK,
     ),
     "rudderstack": (
-        Field("region", "Data plane", "Your own data plane host below.", choices=(("dataplane", "Operator-allowlisted data plane"),)),
+        Field("region", "Data plane", "Your own data plane host below.", choices=(("dataplane", "Your data plane host"),)),
         Field(
             "dataplane_host",
             "Data plane host",
-            "Bare host name only, e.g. example.dataplane.rudderstack.com. Your operator must list this exact host in WEBHOOK_HOST_ALLOWLIST.",
+            "Bare host name only, e.g. example.dataplane.rudderstack.com. A RudderStack Cloud host (*.dataplane.rudderstack.com) works as is; "
+            "a self-hosted data plane must be listed exactly in WEBHOOK_HOST_ALLOWLIST by your operator.",
             pattern=_HOSTNAME,
         ),
         Field("write_key", "Source write key", "Write key of an HTTP source. Profile traits are sent only when the Profile data group is allowed.", secret=True, pattern=_SECRET),
@@ -297,6 +300,11 @@ FIELDS = {
 
 # Analytics tools: the platform's own analytics consent purpose must gate delivery.
 ANALYTICS_PROVIDERS = {"posthog", "amplitude", "ga4", "mixpanel", "rudderstack"}
+
+
+def mandatory_consents(provider):
+    """Consent purposes the platform itself requires for ``provider`` (the studio adds them on save)."""
+    return ("analytics",) if provider in ANALYTICS_PROVIDERS else ()
 # Adapters that also refuse a message whose snapshot carries consents without an analytics grant
 # (defence in depth on top of delivery's required-consent check).
 ANALYTICS_GUARDED = {"mixpanel", "rudderstack"}
@@ -379,30 +387,49 @@ def _exact_allowlist_entries():
     return out
 
 
-def dataplane_host_problem(host):
-    """Why ``host`` may not be a RudderStack data plane, else None. No DNS.
+def implicit_vendor_hosts():
+    """True (default) when hosts pinned to a vendor's domain need no operator allowlist entry."""
+    from django.conf import settings
 
-    The host is user-entered, so it must be a bare DNS name *and* an exact, non-wildcard entry of
-    the operator allowlist: an operator entry like ``rudderstack.com`` or ``*.example.com`` does
-    not admit arbitrary sub-domains here. Static vendor hosts are refused (a write key must not go
-    to another vendor). ``validate_destination_url`` then applies the usual https/internal-name policy.
+    return bool(getattr(settings, "NATIVE_VENDOR_HOSTS_IMPLICIT", True))
+
+
+RUDDERSTACK_CLOUD_SUFFIX = ".dataplane.rudderstack.com"
+
+
+def vendor_host_problem(host, suffixes):
+    """Why a typed per-destination ``host`` may not be used, else None. No DNS.
+
+    ``suffixes`` are the vendor's own domains (``.my.salesforce.com`` ...). A host under one of
+    them is pinned to that vendor, so it needs no operator allowlist entry (unless
+    NATIVE_VENDOR_HOSTS_IMPLICIT=0). Any other host must be an exact, non-wildcard entry of the
+    operator allowlist. Static hosts of other vendors are always refused (a credential must not
+    go to another vendor). ``validate_destination_url`` then applies the https/internal-name policy.
+    Problems: ``format`` | ``vendor_host`` | ``not_allowlisted`` | ``unsafe``.
     """
     if not isinstance(host, str) or not _HOSTNAME.match(host):
         return "format"
     if host in VENDOR_HOSTS:
         return "vendor_host"
-    if host not in _exact_allowlist_entries():
+    pinned = implicit_vendor_hosts() and any(host.endswith(sfx) and len(host) > len(sfx) for sfx in suffixes)
+    if not pinned and host not in _exact_allowlist_entries():
         return "not_allowlisted"
     try:
-        validate_destination_url(f"https://{host}")
+        validate_destination_url(f"https://{host}", pinned_hosts=(host,) if pinned else ())
     except UnsafeDestination:
         return "unsafe"
     return None
 
 
-# Generic name for provider modules with a per-destination host (same policy as RudderStack).
+def dataplane_host_problem(host):
+    """RudderStack data plane: a Cloud host (``*.dataplane.rudderstack.com``) is vendor-pinned; a
+    self-hosted one must be an exact operator allowlist entry."""
+    return vendor_host_problem(host, (RUDDERSTACK_CLOUD_SUFFIX,))
+
+
+# Per-destination hosts that are the customer's own (n8n ...): exact operator allowlist entry.
 def destination_host_problem(host):
-    return dataplane_host_problem(host)
+    return vendor_host_problem(host, ())
 
 
 def _host(provider, credentials):
@@ -500,7 +527,7 @@ def validate(provider, credentials, *, event_types=(), allowed_groups=(), requir
     url = base_url(provider, credentials)
     if url:
         try:
-            validate_destination_url(url)
+            validate_destination_url(url, pinned_hosts=allowed_hosts(provider, credentials))
         except UnsafeDestination:
             host = url.split("//", 1)[1]
             add("provider", f"Ask your operator to add {host} to WEBHOOK_HOST_ALLOWLIST before enabling.")
@@ -513,7 +540,7 @@ def validate(provider, credentials, *, event_types=(), allowed_groups=(), requir
         elif problem == "vendor_host":
             add("native-dataplane_host", "That host belongs to another provider; enter your RudderStack data plane host.")
         elif problem == "not_allowlisted":
-            add("provider", f"Ask your operator to add exactly {host} (not a wildcard or parent domain) to WEBHOOK_HOST_ALLOWLIST before enabling.")
+            add("provider", f"A self-hosted data plane must be listed exactly as {host} in WEBHOOK_HOST_ALLOWLIST by your operator before enabling.")
         elif problem == "unsafe":
             add("native-dataplane_host", "That host is not allowed as a destination.")
     cfg = config_of(credentials or {}, provider)

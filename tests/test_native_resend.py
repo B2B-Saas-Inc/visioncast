@@ -127,6 +127,7 @@ def test_unknown_region_has_no_host(region):
 
 
 def test_host_must_be_operator_allowlisted(settings):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False  # operator opted out of implicit vendor hosts
     settings.WEBHOOK_HOST_ALLOWLIST = ["hooks.example.net"]
     assert any(HOST in m for m in ni.validate("resend", RESEND, **KW)["provider"])
     assert ni.check_send_policy("resend", RESEND, dest()) == "native_config_invalid"
@@ -508,3 +509,9 @@ def test_e2e_test_send_is_unsupported(occurrence, transport):
 
 def test_body_helper_is_the_shared_sample():
     assert body()["identity"]["personId"] == mail_body()["identity"]["personId"]
+
+
+def test_vendor_host_needs_no_operator_entry_by_default(settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = []
+    assert "provider" not in ni.validate("resend", RESEND, **KW)
+    assert ni.check_send_policy("resend", RESEND, dest()) is None

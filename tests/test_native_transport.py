@@ -126,10 +126,21 @@ def test_url_policy_unchanged(allow, no_spawn, url):
 
 
 def test_vendor_host_must_also_be_operator_allowlisted(settings, no_spawn):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False
     settings.WEBHOOK_HOST_ALLOWLIST = ["hooks.example.net"]
     with pytest.raises(ssrf.UnsafeDestination):
         ssrf.request_json_bounded("POST", URL, b"{}", AUTH, 10, 5, allowed_hosts=VENDORS, _target=_ok_child)
     assert no_spawn == []
+
+
+def test_pinned_vendor_host_needs_no_operator_entry_by_default(settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = []
+    status, *_ = ssrf.request_json_bounded("POST", URL, b"{}", AUTH, 10, 5, allowed_hosts=VENDORS, _target=_ok_child)
+    assert status == 201  # _ok_child answers 201
+    with pytest.raises(ssrf.UnsafeDestination):  # the pin is the whole point: an unpinned host still needs the allowlist
+        ssrf.request_json_bounded("POST", URL, b"{}", AUTH, 10, 5, allowed_hosts=frozenset({"other.example.net"}), _target=_ok_child)
+    with pytest.raises(ssrf.UnsafeDestination):  # generic webhooks are unaffected
+        ssrf.validate_destination_url(URL)
 
 
 # ---------------------------------------------------------------- child execution

@@ -222,6 +222,11 @@ def _apply_native(dest, state, data, creds, errors):
         posted["region"] = native.FIELDS[provider][0].choices[0][0]
     merged, notes = native.merge_credentials(creds, provider, posted)
     if provider:
+        # The platform's own rules (analytics tools gate on analytics consent) are applied, not asked.
+        for purpose in native.mandatory_consents(provider):
+            if purpose not in state["required_consents"]:
+                state["required_consents"].append(purpose)
+        data["required_consents"] = json.dumps(state["required_consents"])
         url = native.base_url(provider, merged)
         if url:
             data["url"] = url
@@ -367,6 +372,7 @@ def _dest_context(request, dest, state, errors=None):
         # Per provider: a module may declare its own EVENT_TYPES (transactional email sends
         # reminders and changes; CRM adapters only the person-linked lifecycle events).
         "native_event_types": native.supported_event_types(state["provider"]),
+        "mandatory_consents": [label for value, label in ConsentRecord.Purpose.choices if value in native.mandatory_consents(state["provider"])],
         "generic_credential_names": [n for n in (services.credential_names(dest) if dest else []) if not n.startswith(native.NATIVE_PREFIX)],
         **_base_context(request, dest, state, errors, rows),
     }
@@ -430,7 +436,9 @@ def integration_new(request):
         if not errors:
             try:
                 with transaction.atomic():
-                    dest = services.save_destination(data, user=request.user)
+                    dest = services.save_destination(
+                        data, user=request.user, pinned_hosts=native.allowed_hosts(state["provider"], merged or {})
+                    )
                     if merged:
                         services.set_credentials(dest, merged, user=request.user)
             except ValidationError as exc:
@@ -491,7 +499,10 @@ def integration_edit(request, pk):
         if not errors:
             try:
                 with transaction.atomic():
-                    dest = services.save_destination(data, user=request.user, instance=dest)
+                    dest = services.save_destination(
+                        data, user=request.user, instance=dest,
+                        pinned_hosts=native.allowed_hosts(state["provider"], merged if merged is not None else creds),
+                    )
                     if merged is not None and merged != creds:
                         services.set_credentials(dest, merged, user=request.user)
             except ValidationError as exc:

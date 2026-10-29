@@ -112,17 +112,36 @@ def test_blank_secret_submit_keeps_value(admin):
     assert _creds(dest)["native_api_key"] == SECRET
 
 
-def test_enable_without_analytics_consent_refused(admin):
+def test_enable_adds_the_mandatory_analytics_consent(admin):
     dest = _create(admin)
     url = f"/studio/integrations/{dest.pk}/"
     admin.post(url + "credentials", {"action": "native", "secret-api_key": SECRET})
     resp = admin.post(url, _form(enabled="on", required_consents=[]))
-    assert resp.status_code == 400
+    assert resp.status_code == 302, resp.context.get("errors") if resp.context else resp.content[:500]
     dest.refresh_from_db()
-    assert dest.enabled is False
+    assert dest.enabled is True and "analytics" in dest.required_consents
 
 
-def test_vendor_host_must_be_operator_allowlisted(admin, settings):
+def test_enable_needs_no_operator_allowlist_entry_for_the_vendor_host(admin, settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = []
+    dest = _create(admin)
+    url = f"/studio/integrations/{dest.pk}/"
+    admin.post(url + "credentials", {"action": "native", "secret-api_key": SECRET})
+    resp = admin.post(url, _form(enabled="on"))
+    assert resp.status_code == 302, resp.context.get("errors") if resp.context else resp.content[:500]
+    dest.refresh_from_db()
+    assert dest.enabled is True
+
+
+def test_vendor_host_needs_no_operator_entry_by_default(admin, settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = []
+    resp = admin.post("/studio/integrations/new/", _form())
+    assert resp.status_code == 302, resp.context.get("errors") if resp.context else resp.content[:500]
+    assert Destination.objects.get(name="PostHog").url == "https://us.i.posthog.com"
+
+
+def test_vendor_host_must_be_operator_allowlisted_when_implicit_is_off(admin, settings):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False
     settings.WEBHOOK_HOST_ALLOWLIST = ["hooks.example.net"]
     resp = admin.post("/studio/integrations/new/", _form())
     assert resp.status_code == 400

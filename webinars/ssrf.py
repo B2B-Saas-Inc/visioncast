@@ -148,7 +148,21 @@ def _is_ip_literal(host):
     return all(_NUMERICISH_RE.match(label) for label in labels if label)
 
 
-def validate_destination_url(url: str) -> None:
+def _pinned_ok(host, pinned_hosts):
+    """A host pinned in code (native vendor host) passes without an operator allowlist entry,
+    unless the operator set NATIVE_VENDOR_HOSTS_IMPLICIT=0."""
+    if not pinned_hosts or not getattr(settings, "NATIVE_VENDOR_HOSTS_IMPLICIT", True):
+        return False
+    pinned = set()
+    for h in pinned_hosts:
+        try:
+            pinned.add(_normalize_host(str(h)))
+        except UnsafeDestination:
+            continue
+    return host in pinned
+
+
+def validate_destination_url(url: str, *, pinned_hosts=()) -> None:
     if not isinstance(url, str) or not url or len(url) > 2000:
         raise UnsafeDestination("Invalid URL")
     if any(c in url for c in "\r\n\t ") or any(ord(c) < 0x20 for c in url):
@@ -180,7 +194,7 @@ def validate_destination_url(url: str) -> None:
     if not all(_LABEL_RE.match(label) for label in host.split(".")):
         raise UnsafeDestination("Invalid hostname")
     allow = _allowlist()
-    if not any(host == entry or host.endswith("." + entry) for entry in allow):
+    if not any(host == entry or host.endswith("." + entry) for entry in allow) and not _pinned_ok(host, pinned_hosts):
         raise UnsafeDestination("Host is not on WEBHOOK_HOST_ALLOWLIST")
 
 
@@ -295,9 +309,9 @@ def post_json_pinned(url, body: bytes, headers: dict, timeout: float):
     return _post_validated(*_validated_target(url), body, headers, timeout)
 
 
-def _validated_target(url):
+def _validated_target(url, pinned_hosts=()):
     """Policy checks that need Django settings; returns ``(host, port, path)``."""
-    validate_destination_url(url)
+    validate_destination_url(url, pinned_hosts=pinned_hosts)
     parts = urlsplit(url)
     host = _normalize_host(parts.hostname)
     port = parts.port or 443
@@ -520,7 +534,7 @@ def request_json_bounded(
     import multiprocessing
 
     method = str(method).upper()
-    host, port, path = _validated_target(url)
+    host, port, path = _validated_target(url, pinned_hosts=allowed_hosts or ())
     _check_native_request(method, host, headers, allowed_hosts)
     if method == "GET":
         body = b""  # lookups never carry a body
@@ -626,7 +640,7 @@ def vendor_request_bounded(
         raise UnsafeDestination("Method not allowed")
     if not allowed_hosts:
         raise UnsafeDestination("Vendor requests need an explicit vendor host")
-    host, port, path = _validated_target(url)
+    host, port, path = _validated_target(url, pinned_hosts=allowed_hosts or ())
     if host not in {_normalize_host(h) for h in allowed_hosts}:
         raise UnsafeDestination("Host is not an allowed vendor host")
     if method == "GET":

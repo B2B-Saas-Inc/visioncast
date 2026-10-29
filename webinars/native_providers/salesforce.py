@@ -5,9 +5,9 @@ Contract points marked "verified" were read on 2026-10-27 from the REST API Deve
 requests-composite, resources-composite-subrequest-result, resources-sobject-upsert-patch and
 dome-upsert); everything else is an assumption (docs/native-integrations.md lists both).
 
-* Host: the destination's own My Domain host (``instance_host``), typed by the marketer and
-  checked like the RudderStack data plane (bare name, exact operator allowlist entry, not a
-  static vendor host). ``host_of`` pins every call to it, token request included.
+* Host: the destination's own My Domain host (``instance_host``), typed by the marketer; it
+  must be a bare name under ``.my.salesforce.com`` (sandboxes included), never a static vendor
+  host. ``host_of`` pins every call to it, token request included.
 * Auth: OAuth 2.0 client-credentials token from ``POST /services/oauth2/token`` (form body).
   The token is cached in memory only (``hosting.base``), never stored, and the response's
   ``instance_url`` must be the configured host or the message is dead-lettered.
@@ -38,12 +38,13 @@ from webinars.native_integrations import (
     _event_name,
     _headers,
     _HOSTNAME,
+    implicit_vendor_hosts,
     _require_flat,
     _require_size,
     _SECRET,
     _Stop,
     _clean,
-    destination_host_problem,
+    vendor_host_problem,
 )
 
 PROVIDER = "salesforce"
@@ -82,13 +83,12 @@ _PAIR = r"webinar_[a-z_]{1,40}=[A-Za-z][A-Za-z0-9_]{0,76}__c"
 _FIELD_MAP = re.compile(rf"^{_PAIR}(?:,{_PAIR}){{0,9}}$")
 
 FIELDS = (
-    Field("region", "Host", "Your org's own My Domain host, entered below.", choices=(("mydomain", "Operator-allowlisted My Domain host"),)),
+    Field("region", "Host", "Your org's own My Domain host, entered below.", choices=(("mydomain", "Your My Domain host"),)),
     Field(
         "instance_host",
         "My Domain host",
         "Bare host name only, e.g. acme.my.salesforce.com (a sandbox is just another host, e.g. "
-        "acme--dev.sandbox.my.salesforce.com). Your operator must list this exact host in WEBHOOK_HOST_ALLOWLIST; "
-        "the token request and every write go only there.",
+        "acme--dev.sandbox.my.salesforce.com). It must end in .my.salesforce.com; the token request and every write go only there.",
         pattern=_HOSTNAME,
     ),
     Field(
@@ -157,12 +157,19 @@ FIELDS = (
 )
 
 
+HOST_SUFFIXES = (".my.salesforce.com",)
+
+
+def host_problem(host):
+    return vendor_host_problem(host, HOST_SUFFIXES)
+
+
 def host_of(credentials):
     """The configured My Domain host when it passes the per-destination host policy, else None."""
     if credentials.get(NATIVE_PREFIX + "region") != "mydomain":
         return None
     host = credentials.get(NATIVE_PREFIX + "instance_host", "")
-    return host if isinstance(host, str) and host and destination_host_problem(host) is None else None
+    return host if isinstance(host, str) and host and host_problem(host) is None else None
 
 
 def participation_field_map(value):
@@ -180,13 +187,16 @@ def participation_field_map(value):
 
 def validate_extra(cfg, credentials, add, *, event_types=(), allowed_groups=(), required_consents=()):
     host = cfg.get("instance_host", "")
-    problem = destination_host_problem(host) if host else None
+    problem = host_problem(host) if host else None
     if problem == "format":
         add("native-instance_host", "Enter a bare lowercase host name: no https://, port, path or wildcard.")
     elif problem == "vendor_host":
         add("native-instance_host", "That host belongs to another provider; enter your own Salesforce My Domain host.")
     elif problem == "not_allowlisted":
-        add("provider", f"Ask your operator to add exactly {host} (not a wildcard or parent domain) to WEBHOOK_HOST_ALLOWLIST before enabling.")
+        if implicit_vendor_hosts():
+            add("native-instance_host", "Enter your org's My Domain host, which ends in .my.salesforce.com.")
+        else:
+            add("provider", f"Ask your operator to add exactly {host} (not a wildcard or parent domain) to WEBHOOK_HOST_ALLOWLIST before enabling.")
     elif problem == "unsafe":
         add("native-instance_host", "That host is not allowed as a destination.")
     mapping = cfg.get("participation_field_map")

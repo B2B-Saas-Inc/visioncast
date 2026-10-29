@@ -62,6 +62,7 @@ def test_vendor_rejects_unpinned_host_even_if_allowlisted(allow, no_spawn):
 
 
 def test_vendor_still_needs_operator_allowlist(settings, no_spawn):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False
     settings.WEBHOOK_HOST_ALLOWLIST = ["hooks.example.net"]
     with pytest.raises(ssrf.UnsafeDestination):
         ssrf.vendor_request_bounded("GET", URL, b"", {}, 10, 5, allowed_hosts=PINNED)

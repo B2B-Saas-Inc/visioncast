@@ -146,7 +146,7 @@
 
       <fieldset class="fieldset" id="f-required_consents" style="margin-top:var(--s-5)" aria-describedby="f-rc-help{% if errors.required_consents %} f-rc-err{% endif %}">
         <legend>Required consent</legend>
-        <p class="help" id="f-rc-help">People who haven't granted every ticked consent are skipped for this integration.</p>
+        <p class="help" id="f-rc-help">People who haven't granted every ticked consent are skipped for this integration.{% if mandatory_consents %} {{ provider_label }} always requires {{ mandatory_consents|join:", " }} consent; it is added when you save.{% endif %}</p>
         {% if errors.required_consents %}<p class="field-error" id="f-rc-err">{{ errors.required_consents|join:" " }}</p>{% endif %}
         {% for opt in consent_options %}
           <label class="choice"><input type="checkbox" name="required_consents" value="{{ opt.value }}"{% if opt.checked %} checked{% endif %}><span><strong>{{ opt.label }}</strong> — {{ opt.help }}</span></label>

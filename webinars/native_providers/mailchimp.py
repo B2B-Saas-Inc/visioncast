@@ -87,16 +87,19 @@ FIELDS = (
 )
 
 
+HOST_SUFFIXES = (".api.mailchimp.com",)
+
+
 def host_of(credentials):
-    """``<dc>.api.mailchimp.com`` when the data center is well-formed and the host is an exact
-    operator allowlist entry; else None (every call is then refused)."""
+    """``<dc>.api.mailchimp.com`` when the data center is well-formed (vendor-pinned by
+    construction); else None (every call is then refused)."""
     if credentials.get(ni.NATIVE_PREFIX + "region") != "datacenter":
         return None
     dc = credentials.get(ni.NATIVE_PREFIX + "datacenter", "")
     if not isinstance(dc, str) or not DATACENTER.match(dc):
         return None
     host = f"{dc}.api.mailchimp.com"
-    return host if ni.destination_host_problem(host) is None else None
+    return host if ni.vendor_host_problem(host, HOST_SUFFIXES) is None else None
 
 
 def key_matches_datacenter(credentials):
@@ -124,9 +127,9 @@ def validate_extra(cfg, credentials, add, **kw):
     dc = cfg.get("datacenter", "")
     if dc and DATACENTER.match(dc):
         host = f"{dc}.api.mailchimp.com"
-        problem = ni.destination_host_problem(host)
+        problem = ni.vendor_host_problem(host, HOST_SUFFIXES)
         if problem == "not_allowlisted":
-            add("provider", f"Ask your operator to add exactly {host} (not a wildcard or parent domain) to WEBHOOK_HOST_ALLOWLIST before enabling.")
+            add("provider", f"Ask your operator to add exactly {host} to WEBHOOK_HOST_ALLOWLIST before enabling (implicit vendor hosts are turned off).")
         elif problem is not None:
             add("native-datacenter", "That data center host is not allowed as a destination.")
         if credentials.get(ni.NATIVE_PREFIX + "api_key") and not key_matches_datacenter(credentials):

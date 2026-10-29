@@ -311,6 +311,11 @@ WEBINAR_ALLOWED_ORIGINS = env_list("WEBINAR_ALLOWED_ORIGINS")
 WEBINAR_DIRECT_ICS_REWRITE = env_bool("WEBINAR_DIRECT_ICS_REWRITE", True)
 THANK_YOU_REDIRECT_HOSTS = env_list("THANK_YOU_REDIRECT_HOSTS")
 WEBHOOK_HOST_ALLOWLIST = env_list("WEBHOOK_HOST_ALLOWLIST")
+# Native integrations send credentials only to hosts pinned in code (the vendor's official API
+# host, or a typed host that must end in the vendor's domain). Those pinned hosts are allowed
+# without a WEBHOOK_HOST_ALLOWLIST entry unless an operator turns this off; the allowlist then
+# governs generic webhooks and self-hosted receivers only.
+NATIVE_VENDOR_HOSTS_IMPLICIT = env_bool("NATIVE_VENDOR_HOSTS_IMPLICIT", True)
 WEBHOOK_ALLOWED_PORTS = env_int_list("WEBHOOK_ALLOWED_PORTS", [443])
 WEBHOOK_TIMEOUT_SECONDS = env_int("WEBHOOK_TIMEOUT_SECONDS", 10)
 # Hard deadline for one whole send (DNS, connect, TLS, request, response). At run time

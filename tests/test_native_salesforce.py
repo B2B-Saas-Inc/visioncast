@@ -247,6 +247,7 @@ def test_bad_host_formats_rejected(host, settings):
     ],
 )
 def test_host_needs_exact_operator_entry(entries, host, settings):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False  # operator opted out of implicit vendor hosts
     settings.WEBHOOK_HOST_ALLOWLIST = entries
     creds = {**SF, "native_instance_host": host}
     errors = ni.validate("salesforce", creds, **KW)
@@ -273,6 +274,7 @@ def test_sandbox_host_is_just_another_host(settings):
 
 
 def test_host_removed_from_allowlist_after_enable_stops_send(settings):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False
     assert ni.check_send_policy("salesforce", SF, dest()) is None
     settings.WEBHOOK_HOST_ALLOWLIST = ["hooks.example.net"]
     assert ni.check_send_policy("salesforce", SF, dest()) == "native_config_invalid"
@@ -606,6 +608,7 @@ def test_preview_redacts_secrets_and_token():
 
 
 def test_preview_empty_without_allowlisted_host(settings):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False
     settings.WEBHOOK_HOST_ALLOWLIST = ["salesforce.com"]
     assert ni.preview("salesforce", SF) == [] and ni.preview_refusal("salesforce", SF) is None
 
@@ -734,3 +737,19 @@ def test_e2e_test_send_unsupported(occurrence, monkeypatch):
     msg.refresh_from_db()
     msg = _deliver(msg)
     assert msg.status == S.CANCELLED and msg.last_error == "native_test_send_unsupported" and fake.calls == []
+
+
+@pytest.mark.parametrize(
+    "host,ok",
+    [(HOST, True), ("acme--dev.sandbox.my.salesforce.com", True), (HOST + ".evil.net", False), ("acme.salesforce.com", False), ("acme.example.com", False)],
+)
+def test_my_domain_host_needs_no_operator_entry_by_default(settings, host, ok):
+    settings.WEBHOOK_HOST_ALLOWLIST = []
+    creds = {**SF, "native_instance_host": host}
+    errors = ni.validate("salesforce", creds, **KW)
+    if ok:
+        assert errors == {} and ni.allowed_hosts("salesforce", creds) == frozenset({host})
+        assert ni.check_send_policy("salesforce", creds, dest()) is None
+    else:
+        assert "native-instance_host" in errors and "provider" not in errors
+        assert ni.allowed_hosts("salesforce", creds) == frozenset()
