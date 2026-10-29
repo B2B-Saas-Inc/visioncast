@@ -18,13 +18,12 @@
   <div class="table-wrap">
     <table class="table">
       <caption class="visually-hidden">API keys</caption>
-      <thead><tr><th scope="col">Name</th><th scope="col">Prefix</th><th scope="col">Scopes</th><th scope="col">Last used</th><th scope="col">Status</th>{% if can_revoke %}<th scope="col"><span class="visually-hidden">Actions</span></th>{% endif %}</tr></thead>
+      <thead><tr><th scope="col" style="min-width:11rem">Name</th><th scope="col">Scopes</th><th scope="col">Last used</th><th scope="col">Status</th>{% if can_revoke %}<th scope="col"><span class="visually-hidden">Actions</span></th>{% endif %}</tr></thead>
       <tbody>
         {% for row in rows %}
           {% with k=row.obj %}
           <tr>
-            <td class="primary-cell">{{ k.name }}</td>
-            <td><code>{{ k.prefix }}…</code></td>
+            <td class="primary-cell">{{ k.name }}<br><code class="small muted">{{ k.prefix }}…</code></td>
             <td>{% for s in row.scope_labels %}<span class="badge badge-plain">{{ s }}</span> {% endfor %}</td>
             <td>{% if k.last_used_at %}{{ k.last_used_at|date:"M j, Y H:i" }}{% else %}Never{% endif %}</td>
             <td>{% if k.revoked_at %}<span class="badge badge-revoked">Revoked {{ k.revoked_at|date:"M j" }}</span>{% else %}<span class="badge badge-success">Active</span>{% endif %}</td>
@@ -63,9 +62,17 @@
     <fieldset class="fieldset" id="f-scopes" style="margin-top:var(--s-4)"{% if errors.scopes %} aria-describedby="scopes-err"{% endif %}>
       <legend>Scopes</legend>
       {% if errors.scopes %}<p class="field-error" id="scopes-err">{{ errors.scopes|join:" " }}</p>{% endif %}
-      {% for opt in scope_options %}
+      {% for opt in scope_options %}{% if not opt.admin %}
         <label class="choice-card" style="margin-bottom:var(--s-2)"><input type="checkbox" name="scopes" value="{{ opt.value }}"{% if opt.checked %} checked{% endif %}><span><strong>{{ opt.label }}</strong>{% if opt.mcp %} <span class="badge badge-accent badge-plain">MCP</span>{% endif %}<br><span class="small">{{ opt.help }}</span></span></label>
-      {% endfor %}
+      {% endif %}{% endfor %}
+      <details class="disclosure" style="margin-top:var(--s-3)"{% if admin_scope_checked %} open{% endif %}>
+        <summary>Administrative scopes <span class="small muted">(superuser-granted)</span></summary>
+        <div class="panel-body">
+      {% for opt in scope_options %}{% if opt.admin %}
+        <label class="choice-card" style="margin-bottom:var(--s-2)"><input type="checkbox" name="scopes" value="{{ opt.value }}"{% if opt.checked %} checked{% endif %}><span><strong>{{ opt.label }}</strong>{% if opt.mcp %} <span class="badge badge-accent">MCP</span>{% endif %}<br><span class="small">{{ opt.help }}</span></span></label>
+      {% endif %}{% endfor %}
+        </div>
+      </details>
       <p class="help">Scopes marked MCP also work with the MCP server at <code>/mcp</code>, so assistants like Claude can read events, draft content, record attendance or pull reports. <a href="{% url 'developers' %}">How to connect</a>.</p>
     </fieldset>
     <div class="form-actions"><button class="btn btn-primary" type="submit">{% include "studio/_icon.html" with name="key" size=16 %} Create key</button></div>

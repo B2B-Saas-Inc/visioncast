@@ -53,7 +53,13 @@
     function syncCustom(row) {
       var select = row.querySelector("[data-row-key]");
       var custom = row.querySelector("[data-row-custom]");
-      if (select && custom) custom.hidden = select.value !== "__custom__";
+      var options = row.querySelector("[data-row-options]");
+      var type = row.querySelector('select[name$="-type"]');
+      var isCustom = !!select && select.value === "__custom__";
+      if (custom) custom.hidden = !isCustom;
+      if (options && select) {
+        options.hidden = !(select.value === "companySize" || (isCustom && type && type.value === "select"));
+      }
     }
 
     function label(row) {
@@ -71,7 +77,7 @@
     renumber();
 
     list.addEventListener("change", function (event) {
-      if (event.target.matches("[data-row-key]")) syncCustom(event.target.closest("[data-row]"));
+      if (event.target.matches('[data-row-key], select[name$="-type"]')) syncCustom(event.target.closest("[data-row]"));
     });
 
     list.addEventListener("click", function (event) {

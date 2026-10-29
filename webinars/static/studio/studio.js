@@ -88,6 +88,22 @@
     }
   });
 
+  // Progressive disclosure: <input data-reveals="#id, #other"> shows its targets only while it is
+  // checked (checkbox/radio) or filled (other inputs). Server-rendered `hidden` gives the same
+  // state without JavaScript; this keeps it in step as the user changes the control.
+  function syncReveals() {
+    var controls = document.querySelectorAll("[data-reveals]");
+    Array.prototype.forEach.call(controls, function (control) {
+      var on = control.type === "checkbox" || control.type === "radio" ? control.checked : !!control.value;
+      var targets = document.querySelectorAll(control.getAttribute("data-reveals"));
+      Array.prototype.forEach.call(targets, function (el) { el.hidden = !on; });
+    });
+  }
+  document.addEventListener("change", function (event) {
+    if (event.target && event.target.matches && event.target.matches("[data-reveals]")) syncReveals();
+  });
+  document.addEventListener("DOMContentLoaded", syncReveals);
+
   // Confirm before destructive submits
   document.addEventListener("submit", function (event) {
     var form = event.target;

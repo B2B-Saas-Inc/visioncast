@@ -36,7 +36,7 @@ test('no status claims a live connection', () => {
 });
 
 test('backend test claim is static-mock only', () => {
-  assert.equal(BACKEND_TESTS.passed, 2452);
+  assert.equal(BACKEND_TESTS.passed, 2453);
   assert.equal(BACKEND_TESTS.database, 'PostgreSQL');
   assert.match(BACKEND_TESTS.note, /static mocks/i);
   assert.match(BACKEND_TESTS.note, /no test talks to a live vendor/i);

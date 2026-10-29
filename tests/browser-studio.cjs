@@ -155,6 +155,9 @@ async function main() {
       const cover = await page.locator('h1').first().screenshot();
       await page.locator('[name="hero_image_url"]').fill('');
       await page.getByLabel('Upload a cover image').setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: cover });
+      // Button labels live behind the "After registering & button text" disclosure.
+      const advanced = page.locator('#advanced-page');
+      if (!(await advanced.evaluate((el) => el.open))) await advanced.locator('summary').click();
       await page.getByLabel(/^Button text\s*\(optional\)$/).fill('Reserve my spot');
       await page.getByLabel('Button text for returning visitors').fill('Confirm my spot');
       await page.getByRole('button', { name: 'Save changes', exact: true }).click();

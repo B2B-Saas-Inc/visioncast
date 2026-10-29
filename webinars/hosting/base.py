@@ -339,7 +339,9 @@ class Adapter:
         missing = []
         for host in sorted(self.allowed_hosts):
             try:
-                ssrf.validate_destination_url(f"https://{host}/")
+                # Provider hosts are pinned in code: no WEBHOOK_HOST_ALLOWLIST entry is needed
+                # unless the operator set NATIVE_VENDOR_HOSTS_IMPLICIT=0.
+                ssrf.validate_destination_url(f"https://{host}/", pinned_hosts=self.allowed_hosts)
             except ssrf.UnsafeDestination:
                 missing.append(host)
         if missing:

@@ -42,7 +42,7 @@
 
 <section class="panel" aria-labelledby="outbox-title" style="margin-top:var(--s-6)">
   <div class="panel-head"><h2 id="outbox-title">Integration deliveries</h2></div>
-  <div class="panel-body grid-3">
+  <div class="panel-body stat-grid">
     {% for label, count in outbox %}
       <div class="stat"><span class="stat-value">{{ count }}</span><span class="stat-label">{{ label }}</span></div>
     {% endfor %}

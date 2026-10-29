@@ -60,17 +60,17 @@
         </div>
       </section>
 
-      <section class="panel" aria-labelledby="sms-title">
-        <div class="panel-head"><h2 id="sms-title">SMS consent</h2></div>
+      <details class="disclosure" aria-labelledby="sms-title"{% if meta.sms_disclosure_version or meta.sms_disclosure_text or errors.sms_disclosure_version or errors.sms_disclosure_text %} open{% endif %}>
+        <summary id="sms-title">SMS consent <span class="small muted">(only if you text reminders)</span></summary>
         <div class="panel-body">
           <p class="help">If you text reminders, show this disclosure next to the phone field. Leave empty to skip SMS consent.</p>
           {% include "studio/content/_field.html" with name="sms_disclosure_version" label="Disclosure version" value=meta.sms_disclosure_version error=errors.sms_disclosure_version readonly=readonly optional=True help="Stored with each consent, e.g. sms-2026-01." %}
           {% include "studio/content/_field.html" with name="sms_disclosure_text" label="Disclosure text" kind="textarea" value=meta.sms_disclosure_text error=errors.sms_disclosure_text readonly=readonly optional=True help="Exactly what people agree to." %}
         </div>
-      </section>
+      </details>
 
-      <section class="panel" aria-labelledby="mapping-title">
-        <div class="panel-head"><h2 id="mapping-title">Field name aliases</h2></div>
+      <details class="disclosure" aria-labelledby="mapping-title"{% if has_aliases or errors.field_mapping %} open{% endif %}>
+        <summary id="mapping-title">Field name aliases <span class="small muted">(advanced)</span></summary>
         <div class="panel-body">
           <p class="help" id="mapping-help">If your website form sends a different name (e.g. <code>work_email</code>), map it to a standard field.</p>
           {% if errors.field_mapping %}<p class="field-error" id="id_field_mapping">{{ errors.field_mapping|join:" " }}</p>{% endif %}
@@ -91,7 +91,7 @@
           {% endfor %}
           <input type="hidden" name="alias-count" value="{{ aliases|length }}">
         </div>
-      </section>
+      </details>
 
       {% if fv and in_use %}
         <section class="panel" aria-labelledby="used-title">

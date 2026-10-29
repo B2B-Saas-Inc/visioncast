@@ -9,7 +9,7 @@
 
 /** Back-end test run the statuses below rely on. Static mocks only; no live vendor calls. */
 export const BACKEND_TESTS = {
-  passed: 2452,
+  passed: 2453,
   database: 'PostgreSQL',
   note: 'All vendor calls in the test suite use static mocks. No test talks to a live vendor account.',
 } as const;

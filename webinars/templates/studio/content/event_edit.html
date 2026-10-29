@@ -102,26 +102,26 @@
       </div>
     </section>
 
-    <section class="panel" aria-labelledby="thanks-title" style="margin-top:var(--s-5)">
-      <div class="panel-head"><h2 id="thanks-title">After registering</h2></div>
+    <details class="disclosure" id="advanced-page"{% if errors.thank_you_message or errors.thank_you_url or errors.register_label or errors.confirm_label or values.thank_you_mode == "redirect" or values.register_label or values.confirm_label %} open{% endif %}>
+      <summary>After registering &amp; button text <span class="small muted">(thank-you message, redirect, labels)</span></summary>
       <div class="panel-body">
         <fieldset class="fieldset" id="id_thank_you_mode">
           <legend>What should people see?</legend>
-          <label class="choice"><input type="radio" name="thank_you_mode" value="message"{% if values.thank_you_mode != "redirect" %} checked{% endif %}{% if readonly %} disabled{% endif %}> Show a thank-you message</label>
-          <label class="choice"><input type="radio" name="thank_you_mode" value="redirect"{% if values.thank_you_mode == "redirect" %} checked{% endif %}{% if readonly %} disabled{% endif %}> Send them to another page</label>
+          <label class="choice"><input type="radio" name="thank_you_mode" value="message" data-reveals="#thanks-message"{% if values.thank_you_mode != "redirect" %} checked{% endif %}{% if readonly %} disabled{% endif %}> Show a thank-you message</label>
+          <label class="choice"><input type="radio" name="thank_you_mode" value="redirect" data-reveals="#thanks-redirect"{% if values.thank_you_mode == "redirect" %} checked{% endif %}{% if readonly %} disabled{% endif %}> Send them to another page</label>
         </fieldset>
-        {% include "studio/content/_field.html" with name="thank_you_message" label="Thank-you message" kind="textarea" value=values.thank_you_message error=errors.thank_you_message readonly=readonly optional=True help="Shown when the message option is selected." %}
-        {% include "studio/content/_field.html" with name="thank_you_url" label="Redirect URL" kind="url" value=values.thank_you_url error=errors.thank_you_url readonly=readonly optional=True help="Required when sending people to another page." %}
+        <div id="thanks-message"{% if values.thank_you_mode == "redirect" %} hidden{% endif %}>
+          {% include "studio/content/_field.html" with name="thank_you_message" label="Thank-you message" kind="textarea" value=values.thank_you_message error=errors.thank_you_message readonly=readonly optional=True help="Shown when the message option is selected." %}
+        </div>
+        <div id="thanks-redirect"{% if values.thank_you_mode != "redirect" %} hidden{% endif %}>
+          {% include "studio/content/_field.html" with name="thank_you_url" label="Redirect URL" kind="url" value=values.thank_you_url error=errors.thank_you_url readonly=readonly optional=True help="Required when sending people to another page." %}
+        </div>
+        <div class="grid-2" style="margin-top:var(--s-4)">
+          {% include "studio/content/_field.html" with name="register_label" label="Button text" value=values.register_label error=errors.register_label readonly=readonly optional=True maxlength=60 placeholder=default_register_label help="Leave blank to use “Register”. Up to 60 characters of plain text." %}
+          {% include "studio/content/_field.html" with name="confirm_label" label="Button text for returning visitors" value=values.confirm_label error=errors.confirm_label readonly=readonly optional=True maxlength=60 placeholder=default_confirm_label help="Shown when we already know everything the form asks for. Leave blank to use “Confirm my RSVP”." %}
+        </div>
       </div>
-    </section>
-
-    <section class="panel" aria-labelledby="cta-title" style="margin-top:var(--s-5)">
-      <div class="panel-head"><h2 id="cta-title">Registration button</h2></div>
-      <div class="panel-body">
-        {% include "studio/content/_field.html" with name="register_label" label="Button text" value=values.register_label error=errors.register_label readonly=readonly optional=True maxlength=60 placeholder=default_register_label help="Leave blank to use “Register”. Up to 60 characters of plain text." %}
-        {% include "studio/content/_field.html" with name="confirm_label" label="Button text for returning visitors" value=values.confirm_label error=errors.confirm_label readonly=readonly optional=True maxlength=60 placeholder=default_confirm_label help="Shown when we already know everything the form asks for. Leave blank to use “Confirm my RSVP”." %}
-      </div>
-    </section>
+    </details>
 
     {% if can_change %}
       <div class="sticky-actions form-actions">
@@ -185,9 +185,10 @@
         <div class="panel-body"><p class="help">No sessions yet. Add the first one below.</p></div>
       {% endif %}
       {% if can_add_session %}
-        <form method="post" action="{% url 'studio:session-new' event.pk %}" class="panel-body" novalidate aria-labelledby="add-session-title" style="border-top:1px solid var(--border)">
+        <details class="disclosure" style="border:0;border-top:1px solid var(--border);border-radius:0"{% if not sessions or session_summary %} open{% endif %}>
+          <summary id="add-session-title">Add a session</summary>
+        <form method="post" action="{% url 'studio:session-new' event.pk %}" class="panel-body" novalidate aria-labelledby="add-session-title">
           {% csrf_token %}
-          <h3 id="add-session-title">Add a session</h3>
           {% include "studio/content/_error_summary.html" with items=session_summary summary_id="session-errors" heading="The session wasn't added" %}
           <div class="field">
             <label class="label" for="id_session_timezone">Time zone</label>
@@ -214,6 +215,7 @@
           </div>
           <div class="form-actions"><button class="btn btn-primary btn-sm" type="submit">{% include "studio/_icon.html" with name="plus" size=16 %} Add session</button></div>
         </form>
+        </details>
       {% endif %}
     </section>
 

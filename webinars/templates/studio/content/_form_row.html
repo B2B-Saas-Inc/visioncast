@@ -40,7 +40,7 @@
       <label class="label" for="rows-{{ i }}-help">Help text <span class="optional">(optional)</span></label>
       <input class="input" type="text" id="rows-{{ i }}-help" name="rows-{{ i }}-help" value="{{ row.help }}" maxlength="300"{% if readonly %} disabled{% endif %}>
     </div>
-    <div class="field">
+    <div class="field" data-row-options{% if row.choice != "companySize" and not row.choice == custom_choice %} hidden{% endif %}>
       <label class="label" for="rows-{{ i }}-options">Options <span class="optional">(Company size and custom dropdowns only)</span></label>
       <p class="help" id="rows-{{ i }}-options-help">One option per line.</p>
       <textarea class="textarea" id="rows-{{ i }}-options" name="rows-{{ i }}-options" rows="3" aria-describedby="rows-{{ i }}-options-help"{% if readonly %} disabled{% endif %}>{{ row.options_text }}</textarea>

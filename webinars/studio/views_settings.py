@@ -354,6 +354,7 @@ def _dest_context(request, dest, state, errors=None):
         refusal = native.preview_refusal(stored_provider, creds)
         if refusal:
             readiness.append(f"Preview unavailable ({refusal[0]}): {refusal[1]}")
+    context_native_fields = _native_fields(state["provider"], state["native"], creds if state["provider"] == stored_provider else {})
     context = {
         "provider_choices": native.PROVIDER_CHOICES,
         "provider_label": native.PROVIDER_LABELS.get(state["provider"], ""),
@@ -363,6 +364,11 @@ def _dest_context(request, dest, state, errors=None):
         "native_fields": _native_fields(state["provider"], state["native"], creds if state["provider"] == stored_provider else {}),
         # Create page only: secret boxes live in the main form so the key is stored at creation.
         "new_secret_fields": [r for r in _native_fields(state["provider"], {}, {}) if r["secret"]] if dest is None else [],
+        # Required settings stay in view; optional ones sit behind a disclosure, open when one is set or wrong.
+        "native_fields_basic": [r for r in context_native_fields if not r["secret"] and r["required"]],
+        "native_fields_advanced": [r for r in context_native_fields if not r["secret"] and not r["required"]],
+        "native_advanced_open": any(r["value"] for r in context_native_fields if not r["secret"] and not r["required"])
+        or any(k.startswith("native-") and k[len("native-"):] in {r["name"] for r in context_native_fields if not r["required"]} for k in errors),
         "stored_provider": stored_provider,
         "stored_provider_label": native.PROVIDER_LABELS.get(stored_provider, ""),
         "secret_fields": [r for r in _native_fields(stored_provider, {}, creds) if r["secret"]],
@@ -703,6 +709,7 @@ def _scope_options(selected=()):
             "help": SCOPE_HELP.get(value, ""),
             "mcp": value in mcp_scopes,
             "checked": value in selected,
+            "admin": "superuser-granted" in (label + SCOPE_HELP.get(value, "")).lower(),
         }
         for value, label in ApiKey.Scope.choices
     ]
@@ -719,6 +726,7 @@ def _api_keys_page(request, *, name="", scopes=(), errors=None, status=200):
         {
             "rows": rows,
             "scope_options": _scope_options(scopes),
+            "admin_scope_checked": any(o["checked"] and o["admin"] for o in _scope_options(scopes)),
             "name": name,
             "errors": errors,
             "summary": _summary(errors, {"name": "Key name", "scopes": "Scopes"}),

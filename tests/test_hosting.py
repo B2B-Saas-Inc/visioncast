@@ -154,6 +154,7 @@ def test_cancel_never_calls_provider(occ):
 
 
 def test_unallowlisted_host_is_a_problem(occ, settings):
+    settings.NATIVE_VENDOR_HOSTS_IMPLICIT = False  # pinned provider hosts need no entry unless the operator opts out
     settings.WEBHOOK_HOST_ALLOWLIST = ["hooks.example.net"]
     problems = service.preview(occ, _account(), "create")["problems"]
     assert any("WEBHOOK_HOST_ALLOWLIST" in p for p in problems)
@@ -436,3 +437,10 @@ def test_studio_analyst_forbidden_and_admin_page_hides_secrets(client, occ):
     assert "client-secret-xyz" not in edit and "Set" in edit
     panel = client.get(f"/studio/sessions/{occ.pk}/hosting")
     assert panel.status_code == 200 and JOIN_URL not in panel.content.decode()
+
+
+def test_pinned_provider_host_needs_no_operator_entry_by_default(settings):
+    settings.WEBHOOK_HOST_ALLOWLIST = []
+    from webinars.hosting import get_adapter
+
+    assert get_adapter("zoom").allowlist_problems() == []

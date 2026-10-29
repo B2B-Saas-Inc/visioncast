@@ -31,7 +31,7 @@
         <div class="grid-3">
           <div class="stat"><span class="stat-value" data-live="registered">{{ counts.registered }}</span><span class="stat-label">Registered</span></div>
           <div class="stat"><span class="stat-value" data-live="checkedIn">{{ counts.checked_in }}</span><span class="stat-label">Checked in{% if not occ.waiting_room_enabled %} (needs waiting room){% endif %}</span></div>
-          <div class="stat"><span class="stat-value" data-live="admissionMode">{{ occ.get_admission_mode_display }}</span><span class="stat-label">Door mode</span></div>
+          <div class="stat"><span class="stat-value stat-value-text" data-live="admissionMode">{{ occ.get_admission_mode_display }}</span><span class="stat-label">Door mode</span></div>
         </div>
         <p class="small muted" aria-live="polite" data-live="summary" style="margin-top:var(--s-4)">Doors {% if occ.admission_mode == "auto" %}open automatically at {{ room.opens_at|date:"H:i" }} UTC{% else %}follow your manual setting{% endif %}. Updates every 10 seconds.</p>
       </div>
@@ -51,8 +51,8 @@
         {% endif %}
         <form method="post" action="{% url 'studio:session-waiting-room' occ.pk %}" class="stack-sm">
           {% csrf_token %}
-          <label class="switch"><input type="checkbox" role="switch" name="enabled" value="on"{% if occ.waiting_room_enabled %} checked{% endif %}{% if readonly %} disabled{% endif %}><span class="switch-track"></span> Use the waiting room for this session</label>
-          <div class="field">
+          <label class="switch"><input type="checkbox" role="switch" name="enabled" value="on" data-reveals="#room-settings"{% if occ.waiting_room_enabled %} checked{% endif %}{% if readonly %} disabled{% endif %}><span class="switch-track"></span> Use the waiting room for this session</label>
+          <div class="field" id="room-settings"{% if not occ.waiting_room_enabled %} hidden{% endif %}>
             <label class="label" for="id_admission_lead_minutes">Open doors this many minutes before the start</label>
             <input class="input" type="number" min="0" max="240" id="id_admission_lead_minutes" name="admission_lead_minutes" value="{{ occ.admission_lead_minutes }}" style="max-width:10rem"{% if readonly %} disabled{% endif %}>
           </div>
@@ -120,6 +120,9 @@
           <input class="input" type="datetime-local" id="id_local_start" name="local_start" value="{{ values.local_start }}"{% if readonly %} disabled{% endif %}{% if errors.local_start %} aria-invalid="true" aria-describedby="id_local_start-error"{% endif %}>
           {% if errors.local_start %}<p class="field-error" id="id_local_start-error">{{ errors.local_start|join:" " }}</p>{% endif %}
         </div>
+        <details class="disclosure" style="margin-top:var(--s-4)"{% if values.dst_fold == "0" or values.dst_fold == "1" or errors.dst_fold %} open{% endif %}>
+          <summary>Clock change <span class="small muted">(if this time happens twice)</span></summary>
+          <div class="panel-body">
         <div class="field">
           <label class="label" for="id_dst_fold">If this clock time happens twice</label>
           <p class="help" id="id_dst_fold-help">Only matters on the night clocks go back.</p>
@@ -130,6 +133,8 @@
           </select>
           {% if errors.dst_fold %}<p class="field-error" id="id_dst_fold-error">{{ errors.dst_fold|join:" " }}</p>{% endif %}
         </div>
+          </div>
+        </details>
         <div class="field">
           <label class="label" for="id_duration_minutes">Duration (minutes)</label>
           <input class="input" type="number" min="1" max="1440" id="id_duration_minutes" name="duration_minutes" value="{{ values.duration_minutes }}"{% if readonly %} disabled{% endif %}{% if errors.duration_minutes %} aria-invalid="true" aria-describedby="id_duration_minutes-error"{% endif %}>

@@ -57,10 +57,9 @@
         {% for step in steps %}
           <li data-done="{% if step.done %}true{% else %}false{% endif %}">
             <div>
-              <span class="step-title">{{ step.title }}</span>{% if step.done %}<span class="visually-hidden"> (done)</span>{% endif %}
+              {% if not step.done and step.url %}<a class="step-title" href="{{ step.url }}">{{ step.title }}</a>{% else %}<span class="step-title">{{ step.title }}</span>{% endif %}{% if step.done %}<span class="visually-hidden"> (done)</span>{% endif %}
               <p class="help">{{ step.detail }}</p>
             </div>
-            {% if not step.done and step.url %}<a class="btn btn-sm btn-ghost" href="{{ step.url }}">Start<span class="visually-hidden">: {{ step.title }}</span></a>{% else %}<span></span>{% endif %}
           </li>
         {% endfor %}
       </ol>
