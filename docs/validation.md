@@ -2,6 +2,10 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## 0.3.2-pre installed on events.growthcast.app — 2026-10-29T19:05Z
+
+- Owner applied `update.sh` with the `v0.3.2-pre` tarball (second in-place upgrade, no schema change). `verify.sh --expect-version 0.3.2-pre --expect-access`: **12/12 PASS** through Cloudflare; `/healthz` reports 0.3.2-pre, both login paths still redirect to Access, rate limit still trips.
+
 ## Create-integration form: native providers load on selection — 2026-10-29T18:10Z
 
 - Reported from the live studio: after picking PostHog the form still showed the preset, destination type and endpoint URL and offered no place for the API key until the integration was saved. Fix: `GET /studio/integrations/new/?provider=<id>` (and `?preset=`, `?name=`) renders the provider's settings panel, derived endpoint and credential boxes at once; `studio.js` reloads the create page with those parameters when the provider changes and hides `[data-webhook-only]` fields live on both pages; secrets typed at creation (`secret-<name>`) are pattern-checked and stored encrypted with the configuration, never echoed. Edit page unchanged apart from the hidden webhook fields (secrets still rotate through the aside form).
