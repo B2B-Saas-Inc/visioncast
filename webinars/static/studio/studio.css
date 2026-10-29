@@ -112,6 +112,7 @@ body {
   background: var(--paper);
 }
 a { color: var(--link); text-underline-offset: 2px; }
+a > svg, .btn > svg, .badge > svg { vertical-align: -0.2em; }
 a:hover { color: var(--teal-800); }
 img { max-width: 100%; }
 h1, h2, h3, h4 { margin: 0 0 var(--s-3); line-height: var(--lh-tight); font-weight: 600; }
@@ -242,6 +243,13 @@ details.disclosure > .panel-body { border-top: 1px solid var(--border); }
 .callout-teal { background: var(--teal-50); border-color: var(--teal-100); }
 .callout-coral { background: var(--coral-50); border-color: var(--coral-100); }
 .callout-warn { background: var(--warn-50); border-color: #efd9a8; color: var(--warn-700); }
+/* Callout internals: no stray browser margins; a title, then tight copy or a flush list. */
+.callout > * { margin: 0; }
+.callout > * + * { margin-top: var(--s-2); }
+.callout ul, .callout ol { padding-left: 1.2em; }
+.callout li + li { margin-top: var(--s-1); }
+.callout p strong:only-child { display: block; }
+.callout-warn strong, .callout-warn a { color: inherit; }
 
 .layout-split { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--s-5); align-items: start; }
 .layout-split > aside { position: sticky; top: var(--s-5); }

@@ -2,6 +2,10 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Callout (warning) styling — 2026-10-29T22:20Z
+
+- Reported from the live studio: the "Before you publish" warning kept browser default paragraph/list margins (loose title, indented bullets) and the Publish buttons touched it. Callout internals are now a component rule set (`.callout > *` margins reset, title then flush list, list bullets inside the padding, inherited colour for links/strong), the status panel uses the standard stack spacing instead of inline `margin-top:0`, the preview link is a block so spacing applies, and inline icons align to the text baseline. Verified by screenshot on draft and published events; studio suites and the full suite (**2,453 passed**) unchanged.
+
 ## Studio visual pass: alignment, empty/full states, progressive disclosure — 2026-10-29T21:10Z
 
 - Method: every studio route screenshotted with Playwright/Chromium at 1440, 900 and 390 px against two local PostgreSQL databases, one empty (fresh install) and one populated (demo seed plus registrations, attendance, a native PostHog destination, a Zapier webhook, outbox rows, API key, team members, invitation, hosting account); inspected, fixed, re-shot.

@@ -134,10 +134,10 @@
   <aside class="stack">
     <section class="panel" aria-labelledby="status-title">
       <div class="panel-head"><h2 id="status-title">Status</h2><span class="badge badge-{{ event.visibility }}">{{ event.get_visibility_display }}</span></div>
-      <div class="panel-body stack-sm">
+      <div class="panel-body stack">
         {% if event.visibility == "draft" %}
           {% if problems %}
-            <div class="callout callout-warn">
+            <div class="callout callout-warn" role="status">
               <p><strong>Before you publish</strong></p>
               <ul>{% for p in problems %}<li>{{ p }}</li>{% endfor %}</ul>
             </div>
@@ -145,7 +145,7 @@
             <p class="callout callout-teal">Ready to publish.</p>
           {% endif %}
           {% if can_change %}
-            <form method="post" action="{% url 'studio:event-publish' event.pk %}" class="form-actions" style="margin-top:0">
+            <form method="post" action="{% url 'studio:event-publish' event.pk %}" class="form-actions">
               {% csrf_token %}
               <button class="btn btn-teal" type="submit" name="visibility" value="public"{% if problems %} aria-describedby="status-title"{% endif %}>Publish</button>
               <button class="btn btn-ghost" type="submit" name="visibility" value="unlisted">Publish unlisted</button>
@@ -155,14 +155,14 @@
           <p class="small">{% if event.visibility == "public" %}Listed and open for registration.{% else %}Unlisted: only people with the link can find it.{% endif %}</p>
           <p class="small muted">Public API: <code>{{ api_path }}</code></p>
           {% if can_change %}
-            <form method="post" action="{% url 'studio:event-publish' event.pk %}" class="form-actions" style="margin-top:0" data-confirm="Unpublish this event? The landing page stops working until you publish again.">
+            <form method="post" action="{% url 'studio:event-publish' event.pk %}" class="form-actions" data-confirm="Unpublish this event? The landing page stops working until you publish again.">
               {% csrf_token %}
               {% if event.visibility == "public" %}<button class="btn btn-ghost btn-sm" type="submit" name="visibility" value="unlisted">Make unlisted</button>{% else %}<button class="btn btn-ghost btn-sm" type="submit" name="visibility" value="public">Make public</button>{% endif %}
               <button class="btn btn-danger btn-sm" type="submit" name="visibility" value="draft">Unpublish</button>
             </form>
           {% endif %}
         {% endif %}
-        <a href="{% url 'studio:event-preview' event.pk %}">{% include "studio/_icon.html" with name="eye" size=16 %} Preview the landing page</a>
+        <p><a href="{% url 'studio:event-preview' event.pk %}">{% include "studio/_icon.html" with name="eye" size=16 %} Preview the landing page</a></p>
       </div>
     </section>
 
