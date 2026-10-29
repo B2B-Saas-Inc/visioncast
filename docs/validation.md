@@ -2,6 +2,11 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Cloudflare Access in front of /admin/ and /studio/ — 2026-10-29T01:05Z
+
+- After the owner completed the Zero Trust onboarding, the self-hosted application "VisionCast studio and admin" was created through the Cloudflare MCP: public hostnames `events.growthcast.app/admin` and `events.growthcast.app/studio`, 24 h session, HTTP-only and binding cookies, SameSite Lax, app launcher hidden, policy "Owner" = Allow for the owner's e-mail; login method One-time PIN (the account's built-in provider). Nothing else was added to the application, so `/api/v1/*`, `/w/*`, `/webinar-api/*`, `/mcp` and `/healthz` stay reachable without a Cloudflare login (checked: 200/400/301/401/200 as before; the growthcast.app site proxy still answers 200).
+- `verify.sh --domain events.growthcast.app --expect-version 0.3.1-pre --expect-access`: **12/12 PASS** (both login paths 302 to the team's `cloudflareaccess.com` login). During the first minute after creation one of the two paths intermittently answered 200 while the application propagated; consistent afterwards. The studio's own username/password login still applies behind Access.
+
 ## Cloudflare zone rules applied for events.growthcast.app — 2026-10-29T00:45Z
 
 - Applied through the Cloudflare MCP after the owner allowed the tool: SSL mode **Full (strict)**, **Always Use HTTPS on**, minimum TLS 1.2 (zone-wide; the Vercel-hosted marketing site answered 200 and the HTTP redirect 301 afterwards). Host-scoped rules on `events.growthcast.app` only: one WAF rate-limiting rule (Free plan: 20 requests / 10 s per IP, block 10 s; the plan refuses any other timeout) over `/w/*`, the proxy registration/reset/profile/my-registration/calendar paths, both login POST paths and `/mcp`; a cache rule "visioncast bypass" over `/webinar-api/`, `/w/`, `/studio/`, `/admin/`, `/api/`, `/mcp`, `/healthz`; a configuration rule disabling e-mail obfuscation, Rocket Loader, Mirage and automatic HTTPS rewrites for this host so the studio and the GTM script are served byte-for-byte (zone defaults untouched for the marketing site). Bot Fight Mode was already off.

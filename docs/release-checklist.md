@@ -79,7 +79,7 @@ covers D1, D2, D5, D6, D9, D10, D12 and D13 with scripts (rehearsed locally only
 |---|---|---|
 | D1 | TLS with HTTP→HTTPS redirect | §3 | **In place** on events.growthcast.app (Let's Encrypt origin, Full strict + Always Use HTTPS at Cloudflare, 2026-10-29)
 | D2 | Edge rate limits on `/webinar-api/*` (incl. proxy `my-registration`), `/w/`, `/mcp`, `/admin/`, `/studio/login/`, `/api/v1/payments/stripe/webhook` (`docker/nginx.conf.example`) | §3 | **In place**: nginx zones plus one Cloudflare rate-limiting rule (Free plan) on events.growthcast.app, 2026-10-29
-| D3 | MFA, SSO or VPN in front of `/admin/` and `/studio/` | §3 |
+| D3 | MFA, SSO or VPN in front of `/admin/` and `/studio/` | §3 | **In place**: Cloudflare Access (One-time PIN, owner policy) on events.growthcast.app, verify `--expect-access` 12/12, 2026-10-29
 | D4 | Mode B edges forward `/webinar-api/calendar.ics` (and `my-registration`), or set `WEBINAR_DIRECT_ICS_REWRITE=false` | R21 |
 | D5 | `RATE_LIMIT_TRUST_X_FORWARDED_FOR` only behind a trusted chain of matching depth | §3 |
 | D6 | Worker process running | §3 |
