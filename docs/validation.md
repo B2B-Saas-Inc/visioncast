@@ -2,6 +2,12 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Cloudflare zone rules applied for events.growthcast.app — 2026-10-29T00:45Z
+
+- Applied through the Cloudflare MCP after the owner allowed the tool: SSL mode **Full (strict)**, **Always Use HTTPS on**, minimum TLS 1.2 (zone-wide; the Vercel-hosted marketing site answered 200 and the HTTP redirect 301 afterwards). Host-scoped rules on `events.growthcast.app` only: one WAF rate-limiting rule (Free plan: 20 requests / 10 s per IP, block 10 s; the plan refuses any other timeout) over `/w/*`, the proxy registration/reset/profile/my-registration/calendar paths, both login POST paths and `/mcp`; a cache rule "visioncast bypass" over `/webinar-api/`, `/w/`, `/studio/`, `/admin/`, `/api/`, `/mcp`, `/healthz`; a configuration rule disabling e-mail obfuscation, Rocket Loader, Mirage and automatic HTTPS rewrites for this host so the studio and the GTM script are served byte-for-byte (zone defaults untouched for the marketing site). Bot Fight Mode was already off.
+- `verify.sh --domain events.growthcast.app --expect-version 0.3.1-pre`: **12/12 PASS** afterwards; the studio login HTML contains no Cloudflare rewrites; the public events API is `cf-cache-status: DYNAMIC`.
+- **Still open:** Cloudflare Access (Zero Trust onboarding not done on the account, so no API can create the application yet), SES SMTP credentials.
+
 ## 0.3.1-pre released and installed on events.growthcast.app — 2026-10-29T00:20Z
 
 - **Release:** `VERSION` 0.3.1-pre (`4e83af3`, tag `v0.3.1-pre`); `release.yml` run 40784413037 published `ghcr.io/b2b-saas-inc/visioncast:0.3.1-pre`. Source tarball from the tag via `package-release.sh` (sha256 `0804c025…`).
