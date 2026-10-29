@@ -2,6 +2,10 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## 0.3.3-pre installed on events.growthcast.app — 2026-10-29T21:00Z
+
+- Owner applied `update.sh` with the `v0.3.3-pre` tarball (third in-place upgrade, no schema change). `verify.sh --expect-version 0.3.3-pre --expect-access`: **12/12 PASS** through Cloudflare.
+
 ## Native integrations: vendor-pinned hosts need no operator allowlist; mandatory consent applied on save — 2026-10-29T20:30Z
 
 - Reported from the live studio: enabling a PostHog integration demanded an operator `WEBHOOK_HOST_ALLOWLIST` entry for `us.i.posthog.com` and a manually ticked Analytics consent. Both were platform-imposed steps with nothing to decide, so they are now applied instead of asked.
