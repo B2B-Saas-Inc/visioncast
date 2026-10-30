@@ -1,4 +1,4 @@
-/* Visioncast editorial theme: charcoal, ivory, lime. System fonts only (no external requests). */
+/* VisionCast editorial theme: charcoal, ivory, lime. System fonts only (no external requests). */
 
 :root {
   --charcoal: #1c1d1f;
@@ -168,11 +168,10 @@ p {
   gap: 0.55rem;
 }
 
-.wordmark-dot {
-  width: 0.8rem;
-  height: 0.8rem;
-  border-radius: 50%;
-  background: var(--lime);
+.wordmark img {
+  display: block;
+  height: 28px;
+  width: auto;
 }
 
 .site-nav ul {

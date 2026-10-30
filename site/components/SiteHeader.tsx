@@ -6,9 +6,9 @@ export function SiteHeader() {
   return (
     <header className="site-header dark">
       <div className="wrap">
-        <Link href="/" className="wordmark" aria-label="Visioncast home">
-          <span className="wordmark-dot" aria-hidden="true" />
-          Visioncast
+        <Link href="/" className="wordmark" aria-label="VisionCast home">
+          {/* eslint-disable-next-line @next/next/no-img-element -- static SVG logo, no optimisation needed */}
+          <img src="/brand/visioncast-logo-dark.svg" alt="VisionCast" width={146} height={28} />
         </Link>
         <nav className="site-nav" aria-label="Main">
           <ul>

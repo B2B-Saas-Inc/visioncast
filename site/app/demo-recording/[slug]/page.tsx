@@ -65,7 +65,7 @@ export default async function DemoRecordingPage({ params }: { params: Params }) 
         <div className="notice" role="note">
           <h2>Why this page exists</h2>
           <p>
-            The Visioncast demo catalogue includes past events so you can see how a finished session with a published
+            The VisionCast demo catalogue includes past events so you can see how a finished session with a published
             recording link looks. That link leads here. No video is hosted, streamed or embedded for this event, and
             none will appear later.
           </p>

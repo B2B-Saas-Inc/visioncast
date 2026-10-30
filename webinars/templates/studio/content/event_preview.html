@@ -6,6 +6,7 @@
   <meta name="robots" content="noindex">
   <title>Preview: {{ event.public_title }}</title>
   <link rel="stylesheet" href="{% static 'studio/studio.css' %}">
+  {% include "_brand_icons.html" %}
   <style>
     body { background: var(--paper); }
     .pv-banner { position: sticky; top: 0; z-index: 10; display: flex; gap: var(--s-3); align-items: center; justify-content: space-between; flex-wrap: wrap; padding: var(--s-2) var(--s-5); background: var(--ink-950); color: #efe9df; font-size: var(--fs-sm); }

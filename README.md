@@ -1,4 +1,9 @@
-# VisionCast
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/visioncast-logo-dark.svg">
+    <img src="docs/brand/visioncast-logo.svg" alt="VisionCast" height="56">
+  </picture>
+</h1>
 
 **The open-source headless CMS for webinars.** Your event pages and registration form live on your own website. Your registrations go straight to the tools you already use. Your video stays in Zoom, Riverside, StreamYard, Wistia or Sequel.
 

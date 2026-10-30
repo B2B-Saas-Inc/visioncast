@@ -4,13 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>Sign in · Webinar Studio</title>
+  <title>Sign in · VisionCast Studio</title>
   <link rel="stylesheet" href="{% static 'studio/studio.css' %}">
+  {% include "_brand_icons.html" %}
 </head>
 <body>
 <main class="auth" id="main">
   <section class="auth-art" aria-label="About the studio">
-    <p class="brand"><span class="brand-mark" aria-hidden="true">W</span> Studio</p>
+    <p class="brand"><img class="brand-mark" src="{% static 'brand/visioncast-mark.svg' %}" alt="" width="28" height="28"> Studio</p>
     <blockquote>Plan the session, write the page, open the doors. <span class="accent">One place for all of it.</span></blockquote>
     <p class="small">Events, registration forms, waiting rooms and reports for your team.</p>
   </section>

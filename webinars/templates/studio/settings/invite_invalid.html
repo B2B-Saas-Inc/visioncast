@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <meta name="referrer" content="no-referrer">
-  <title>{% if rate_limited %}Too many attempts{% else %}Invitation not available{% endif %} · Webinar Studio</title>
+  <title>{% if rate_limited %}Too many attempts{% else %}Invitation not available{% endif %} · VisionCast Studio</title>
   <link rel="stylesheet" href="{% static 'studio/studio.css' %}">
+  {% include "_brand_icons.html" %}
 </head>
 <body>
 <main class="auth" id="main">
   <div class="auth-art">
-    <span class="brand"><span class="brand-mark" aria-hidden="true">W</span> Studio</span>
+    <span class="brand"><img class="brand-mark" src="{% static 'brand/visioncast-mark.svg' %}" alt="" width="28" height="28"> Studio</span>
     <blockquote>Every great webinar starts with a <span class="accent">good team</span>.</blockquote>
   </div>
   <div class="auth-form">

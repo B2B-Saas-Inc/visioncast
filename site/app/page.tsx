@@ -123,7 +123,7 @@ export default async function Home() {
             <li>
               <h3>Live catalogue</h3>
               <p>
-                Pages are rendered on the server from <code>GET /api/v1/events</code> on the Visioncast back end, a
+                Pages are rendered on the server from <code>GET /api/v1/events</code> on the VisionCast back end, a
                 Django service on its own dedicated server. If it does not answer, pages say so; there is no cached
                 stand-in.
               </p>

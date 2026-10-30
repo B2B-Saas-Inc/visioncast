@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <meta name="referrer" content="same-origin">
-  <title>Join the studio · Webinar Studio</title>
+  <title>Join the studio · VisionCast Studio</title>
   <link rel="stylesheet" href="{% static 'studio/studio.css' %}">
+  {% include "_brand_icons.html" %}
 </head>
 <body>
 <main class="auth" id="main">
   <div class="auth-art">
-    <span class="brand"><span class="brand-mark" aria-hidden="true">W</span> Studio</span>
+    <span class="brand"><img class="brand-mark" src="{% static 'brand/visioncast-mark.svg' %}" alt="" width="28" height="28"> Studio</span>
     <blockquote>You've been invited to help run <span class="accent">great webinars</span>.</blockquote>
     <p class="small">Invitation for {{ invitation.email }} · {{ invitation.role }}</p>
   </div>

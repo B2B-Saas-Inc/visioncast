@@ -9,7 +9,7 @@ export function SiteFooter() {
             <span className="demo-flag">Demo</span>
           </p>
           <p>
-            This is a public demonstration of the Visioncast webinar platform. The events, hosts and organisations
+            This is a public demonstration of the VisionCast webinar platform. The events, hosts and organisations
             shown are fictional and were created for the demo. Event data comes live from the platform&rsquo;s public
             API; registrations made here are real submissions to the demo back end. Use fictional test details only.
             No confirmation emails or marketing messages are sent.
