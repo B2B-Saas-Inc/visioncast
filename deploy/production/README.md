@@ -1,12 +1,10 @@
 # Production deployment: events.growthcast.app
 
-Full install of the webinar platform (web + worker + PostgreSQL under Docker Compose, nginx +
-Let's Encrypt on the host, encrypted backups, retention cron) on one DigitalOcean droplet
-(Ubuntu 24.04, `s-1vcpu-2gb`, USD 12/month) behind Cloudflare (proxied DNS, Access in front of
-the studio and admin). Everything in this directory was rehearsed locally only (see
-[docs/validation.md](../../docs/validation.md), entry "Production deployment tooling"); **no
-droplet, DNS record or Cloudflare setting has been created by it**. The first real run is the
-owner's.
+Full install of VisionCast (web + worker + PostgreSQL under Docker Compose, nginx + Let's Encrypt on
+the host, encrypted backups, retention cron) on one DigitalOcean droplet (Ubuntu 24.04, 2 GB) behind
+Cloudflare (proxied DNS, Access in front of the studio and admin). This tooling installed
+events.growthcast.app on 0.3.0-pre (2026-10-28) and has upgraded it in place since; the live install
+runs 0.3.7-pre. Each run is recorded in [docs/validation.md](../../docs/validation.md).
 
 | File | Runs where | Purpose |
 |---|---|---|
