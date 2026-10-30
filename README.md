@@ -1,6 +1,59 @@
-# Webinar Platform
+# VisionCast
 
 > **Pre-release — not production-certified.** Published for evaluation and development, not as a production release. See [validation evidence](docs/validation.md) and [remaining release gates](docs/remaining-gaps.md). Publishing this repository does not deploy the application.
+
+## Why VisionCast
+
+Your webinar page should live on your website. For most teams, it lives on someone else's.
+
+Here's how a webinar usually runs. Marketing builds the page inside the webinar tool, on the vendor's subdomain, in the vendor's template. The form asks for three fields. A sync copies registrants into the CRM, often without the campaign that brought them and sometimes twice. A developer loses an afternoon to an iframe that won't resize on a phone. Then the renewal lands, priced per attendee.
+
+VisionCast is an open-source, self-hosted headless CMS for webinars. Your marketers build events in a studio. Your website pulls those events through an API and renders the page and the registration form on your domain, with your own components. VisionCast sends each registration from your server straight to the tools you already pay for. Your video stays where it is: Zoom, Riverside, StreamYard, Wistia or Sequel.
+
+You keep the page. You keep the data. Nobody can reprice either one.
+
+### Who it's for
+
+* **Marketing teams that run webinars every month.** You want event pages that look like the rest of your site, rank under your domain and convert like your best landing page.
+* **Marketing ops and RevOps.** You want one person per registrant, with the right source and consent, in HubSpot, Salesforce or PostHog. No Zapier chain in the middle.
+* **The developer who gets the ticket.** You want JSON, a form script and a component for the framework you already use. Not an iframe.
+* **Whoever signs the renewal.** You want a program that no vendor can cap, reprice or retire.
+
+### What changes
+
+| Today | With VisionCast |
+|---|---|
+| Event pages on the vendor's subdomain, in the vendor's template | Event pages at `yoursite.com/events`, built with your own components |
+| An embed that won't style, won't resize on mobile, or isn't supported any more | A JSON API, a dependency-free form script, and kits for WordPress, Next.js, Astro, SvelteKit, Nuxt, Sanity, Contentful, Payload and Prismic |
+| A three-field form, synced late, missing the UTMs, sometimes twice | Your own fields, sent server-side to 17 tools with consent rules. One person per verified email, merged with the anonymous website visitor in PostHog, Amplitude and Mixpanel |
+| Pricing per attendee or per contact, attendee caps, annual escalators | Apache-2.0. No vendor caps, no seats, no contract. You pay for a server |
+| A new video tool means rebuilding every page | You pick the video tool per session. Pages and data stay put |
+
+### What's inside
+
+* **A studio your marketers will actually use.** Templates with complete copy, a readiness check before anything goes public, a form builder, hosts and topics, and roles for editors and analysts.
+* **Registration that doesn't drop people.** A retried submit never creates a second registrant. Calendar invites update when you reschedule instead of piling up. Returning visitors only see the fields you don't have yet.
+* **A waiting room and paid seats.** A hosted lobby reveals the join link when the doors open and records who showed up. Stripe Checkout holds a seat until the payment clears.
+* **Delivery you can check.** Seventeen native destinations, including HubSpot, Salesforce, PostHog, Customer.io, Segment, Mailchimp and Amazon SES, plus signed webhooks with ready recipes for Zapier, Make and n8n. Failed sends retry with back-off, and your team can replay them from a delivery log.
+* **Attendance from the source.** Pull attendance from Zoom, or import a file from any provider, then send attended and no-show events onward.
+* **An MCP server.** Claude and other assistants can draft events, schedule sessions and pull reports with a scoped key, under the same rules as your team.
+* **One image to run.** Django, PostgreSQL and a background worker ship in a single Docker image. The deploy scripts take a 2 GB droplet behind Cloudflare to a working studio.
+
+### Why open source
+
+People pick hosted webinar platforms for good reasons: built-in video, one bill, nothing to run. The trade is that the vendor owns the page, the data path and the price. Between December 2025 and April 2026, Cvent bought both [Goldcast and ON24](https://www.forrester.com/blogs/why-cvent-acquired-on24-and-goldcast-and-what-comes-next/). If you rent your webinar program, the people merging those companies now decide your roadmap.
+
+VisionCast is Apache-2.0. There's no "powered by" badge and no paid tier holding back the useful parts. Fork it, change it, run it next to your website. Your registrants live in your PostgreSQL database.
+
+### Where it stands
+
+We run VisionCast ourselves at [growthcast.app/events](https://growthcast.app/events). It's still a pre-release. More than 2,400 automated tests and a real-browser walkthrough of the studio pass, but the native integrations have only been tested against mocked vendor APIs, not live accounts. Paid tickets and hosting providers are previews too. The [remaining gaps](docs/remaining-gaps.md) page lists every open item.
+
+It's a good fit if you have a developer and want your events on your own site. It's the wrong choice today if nobody on your team can run a Docker image, or if you want a built-in video studio. A hosted platform will serve you better there.
+
+**Start here:** [Quick start](#quick-start-local-build-docker-compose) · [Implementation guide](docs/implementation-guide.md) · [See it live](https://growthcast.app/events)
+
+## Overview
 
 A self-hosted, single-tenant webinar registration platform built with Django 5.2 LTS
 and PostgreSQL. One container image runs both the web process and a durable
@@ -13,8 +66,8 @@ It is aimed at two audiences:
   scoped registration API (directly, or from the browser via a first-party proxy),
   write events/occurrences/attendance through a scoped management API, and consume
   signed webhooks.
-* **Marketing teams** manage events in the Django admin with Administrator / Editor /
-  Analyst roles.
+* **Marketing teams** manage events, sessions, forms and integrations in the studio
+  (`/studio/`) with Administrator / Editor / Analyst roles.
 
 > **Status: preview — not production-ready.** Parts of the code have been exercised
 > by automated tests (see [docs/validation.md](docs/validation.md)), but nothing has
@@ -93,15 +146,17 @@ systems you already run. It is **not**:
 * **Hosting providers** (preview, no sandbox verification;
   [docs/hosting.md](docs/hosting.md)): Zoom Webinars create/update/attach; Wistia
   and Sequel create only; Riverside attach with per-registrant links (unverified
-  paths). No provider attendance import.
+  paths). Attendance import from Zoom (documented endpoint), Riverside (unverified)
+  and a file import for any provider; it never runs automatically.
 * **Native integrations** (disabled until vendor-verified;
   [docs/native-integrations.md](docs/native-integrations.md)): PostHog,
-  Customer.io, HubSpot, Attio, Segment, GA4, Amplitude, Mixpanel, RudderStack and
-  Brevo, implemented and tested against mocked transports only; none is live-verified
-  or production-ready (Mixpanel, RudderStack and Brevo request shapes were compared
-  with fetched vendor-doc facts, not with real accounts). Each destination may only
-  send to its own configured host. Salesforce, Pipedrive, other marketing-automation
-  and transactional tools are not built.
+  Customer.io, HubSpot, Attio, Segment, GA4, Amplitude, Mixpanel, RudderStack, Brevo,
+  Salesforce, Pipedrive, ActiveCampaign, Mailchimp, beehiiv, Resend and Amazon SES,
+  implemented and tested against mocked transports only; none is live-verified or
+  production-ready (request shapes were compared with fetched vendor docs, not with
+  real accounts). Each destination sends only to its own vendor host, pinned in code.
+  PostHog, Amplitude and Mixpanel identify people by verified email and merge the
+  visitor's captured anonymous ID.
 
 ## Identity model (read before integrating)
 
