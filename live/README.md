@@ -255,7 +255,7 @@ The script writes new secrets to `deploy/live/.env`, without printing them, down
 7. Sign in at `/admin` with `LIVE_ADMIN_EMAIL` and `LIVE_ADMIN_PASSWORD` from `.env`, change that password, and add everyone else under People.
 8. From somewhere else, run `deploy/live/verify-public.sh live.example.com rtc.example.com turn.example.com`.
 
-**Networks that only allow port 443.** Traefik takes all of port 443 and sends each hostname where it belongs. `turn.example.com` goes to LiveKit's TURN server with the TLS taken off, so media can travel as ordinary-looking HTTPS traffic. To check it for real, run `live/tests/turn/check.cjs` against your server: it forces two browsers to use nothing else.
+**Networks that only allow port 443.** Traefik takes all of port 443 and sends each hostname where it belongs. `turn.example.com` goes to LiveKit's TURN server with the TLS taken off, so media can travel as ordinary-looking HTTPS traffic. To check it for real, run `live/tests/turn/check.cjs` against your server: it forces two browsers to use nothing else. It leaves a room called "Connection test from turn/check.cjs" in `/admin`, which ends 10 minutes later and goes with the normal retention.
 
 **Optional parts.** Set `COMPOSE_PROFILES=encoder,translate` in `.env`, with the matching lines the script left commented out. Translation needs about 1 GB of disk and memory for each language.
 

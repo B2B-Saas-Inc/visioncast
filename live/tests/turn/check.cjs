@@ -78,7 +78,7 @@ const route = async (page) => page.evaluate(async () => {
     const links = await setup.evaluate(async ({ room, secret }) => {
       const v1 = async (method, path, body) => (await fetch(`/v1${path}`, { method, headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
       const now = Date.now();
-      await v1('PUT', `/rooms/${room}`, { title: 'TURN', startsAt: new Date(now + 60000).toISOString(), endsAt: new Date(now + 3600000).toISOString() });
+      await v1('PUT', `/rooms/${room}`, { title: 'Connection test from turn/check.cjs (safe to ignore)', startsAt: new Date(now + 60000).toISOString(), endsAt: new Date(now + 600000).toISOString() });
       return { host: (await v1('POST', `/rooms/${room}/crew`, { role: 'host', name: 'Host' })).url, viewer: (await v1('POST', `/rooms/${room}/tickets`, { identity: 'turn-viewer' })).joinUrl };
     }, { room, secret: LIVE_SERVICE_SECRET });
     await setup.close();
