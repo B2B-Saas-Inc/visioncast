@@ -245,6 +245,12 @@ body.program .stage { border-radius: 0; }
 body.admin { background: var(--paper); }
 .admin-main { display: block; flex: 1 1 auto; overflow-y: auto; padding: 1rem; }
 .admin-main > section, .admin-nav, .admin-main > .notice, .admin-main > .error { max-width: 48rem; margin-left: auto; margin-right: auto; }
+/* Confirmations are green, problems red. Both sit clear of the panel below them. */
+.notice.ok { background: #e7f2ec; color: var(--ok); border-left: 3px solid var(--ok); }
+body.dark .notice.ok { background: #1f3329; color: #b7e0c8; border-left-color: #6fbf93; }
+.admin-main > .notice, .admin-main > .error { margin-bottom: 1rem; padding: 0.7rem 0.9rem; font-size: 0.92rem; }
+.admin-main > .error { border-radius: 8px; background: #fbeceb; border-left: 3px solid var(--danger); }
+body.dark .admin-main > .error { background: #3a2220; border-left-color: #e0654f; }
 .admin-nav { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }
 .admin-nav .seg { white-space: nowrap; }
 .admin-form { display: flex; flex-direction: column; align-items: stretch; gap: 0.8rem; margin-top: 1.1rem; padding-top: 0.9rem; border-top: 1px solid var(--line, var(--fieldline)); }
