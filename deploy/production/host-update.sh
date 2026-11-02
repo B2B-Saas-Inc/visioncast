@@ -113,13 +113,15 @@ if (( DRY_RUN )); then
     log "Dry run complete; nothing changed."
     exit 0
 fi
-( cd "$NEW_DIR" && deploy/upgrade.sh --image "$IMAGE" --backup-dir "$BASE/backups" ${SKIP_BACKUP[@]+"${SKIP_BACKUP[@]}"} )
+# This script arrives on stdin (update.sh pipes it into `bash -s`). Anything below that reads stdin,
+# such as `docker compose run` without -T, would swallow the rest of it, so every child gets /dev/null.
+( cd "$NEW_DIR" && deploy/upgrade.sh --image "$IMAGE" --backup-dir "$BASE/backups" ${SKIP_BACKUP[@]+"${SKIP_BACKUP[@]}"} ) </dev/null
 ( cd "$NEW_DIR" && docker compose run --rm -T web manage check </dev/null )
 ln -sfn "$NEW_DIR" "$BASE/app/current"
 log "  current -> $NEW_DIR"
 # Refresh host files that live in the release tree (templates, cron paths, STATUS); no secrets touched.
 set_conf WEBINAR_IMAGE "$IMAGE"
-bash "$NEW_DIR/deploy/production/bootstrap.sh" --base "$BASE" --secrets-dir "$SECRETS_DIR" --steps "$POST_STEPS"
+bash "$NEW_DIR/deploy/production/bootstrap.sh" --base "$BASE" --secrets-dir "$SECRETS_DIR" --steps "$POST_STEPS" </dev/null
 log ""
 log "Update complete: $OLD_VERSION -> $VERSION on $IMAGE. Previous tree kept at $OLD_DIR."
 log "Rollback (no schema change): ln -sfn $OLD_DIR $BASE/app/current && cd $OLD_DIR && docker compose up -d web worker"
