@@ -201,8 +201,8 @@ img.brand-mark { display: block; background: none; flex: none; }
 .btn:hover { --btn-bg: var(--sand-100); color: var(--btn-fg); }
 .btn:active { transform: translateY(1px); }
 .btn[disabled], .btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; transform: none; }
-.btn-primary { --btn-bg: var(--coral-600); --btn-fg: var(--white); --btn-bd: var(--coral-600); }
-.btn-primary:hover { --btn-bg: var(--coral-700); --btn-bd: var(--coral-700); }
+.btn-primary { --btn-bg: var(--coral-600); --btn-fg: var(--on-accent, var(--white)); --btn-bd: var(--coral-600); }
+.btn-primary:hover { --btn-bg: var(--accent-hover, var(--coral-700)); --btn-bd: var(--accent-hover, var(--coral-700)); }
 .btn-teal { --btn-bg: var(--teal-700); --btn-fg: var(--white); --btn-bd: var(--teal-700); }
 .btn-teal:hover { --btn-bg: var(--teal-800); --btn-bd: var(--teal-800); }
 .btn-ghost { --btn-bg: transparent; --btn-bd: transparent; }

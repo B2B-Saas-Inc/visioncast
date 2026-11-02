@@ -1051,7 +1051,7 @@ class AuditLog(models.Model):
 
 
 class StudioBrand(models.Model):
-    """The one brand of this deployment: its name, colour and logo on the studio and the waiting
+    """The one brand of this deployment: its name, colour, logo and font on the studio and the waiting
     room. A single row, made the first time someone saves it (webinars/brand.py)."""
 
     name = models.CharField(max_length=80, blank=True)
@@ -1059,4 +1059,7 @@ class StudioBrand(models.Model):
     logo = models.BinaryField(null=True, blank=True)
     # Short hash of the logo: on every page, so it's read without the image itself.
     logo_version = models.CharField(max_length=16, blank=True)
+    # A font file (WOFF2, WOFF, TTF or OTF), used for all text on the studio and the waiting room.
+    font = models.BinaryField(null=True, blank=True)
+    font_version = models.CharField(max_length=16, blank=True)
     updated_at = models.DateTimeField(auto_now=True)

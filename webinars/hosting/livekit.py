@@ -256,6 +256,16 @@ class LiveKitAdapter(Adapter):
             return Outcome("failed", "brand: network")
         return Outcome("succeeded") if 200 <= status < 300 else Outcome("failed", f"brand: http {status}")
 
+    def put_brand_font(self, config, secrets, font, *, transport):
+        """Sets the font on every room, or takes it off when ``font`` is empty."""
+        path, method = ("/brand/font", "PUT") if font else ("/brand/font/remove", "POST")
+        headers = {"Authorization": f"Bearer {secrets['service_secret']}", "Content-Type": "application/octet-stream"}
+        try:
+            status, _body, _, _ = transport(method, self._url(config, path), font or b"", headers, allowed_hosts=self.hosts_for(config))
+        except Exception:
+            return Outcome("failed", "brand: network")
+        return Outcome("succeeded") if 200 <= status < 300 else Outcome("failed", f"brand: http {status}")
+
     def live_api(self, config, secrets, step, method, path, body=None, *, transport):
         """One request to the service's own API, for settings it keeps itself. ``data`` is the answer."""
         try:

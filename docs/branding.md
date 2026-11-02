@@ -37,14 +37,14 @@ The server has to be able to reach its own public address, because the studio ta
 
 | Where | What it sets | Who |
 |---|---|---|
-| Studio, Workspace, **Brand** | Name, colour and logo on the studio, developer pages and waiting room. Saving passes the colour and logo on to every connected live server | Administrators |
+| Studio, Workspace, **Brand** | Name, colour, logo and font on the studio, developer pages and waiting room. Saving passes the colour, logo and font on to every connected live server | Administrators |
 | `/admin`, **Brand**, on the live server | Logo, colour, stage background, light or dark attendee page, font, your own font file | People with an account there |
 | The room's **Look** tab | One session's own colour, background and font, plus frames, overlays and graphics | Hosts and producers |
 | `BRAND_NAME`, `BRAND_ACCENT` in `.env` | The studio's name and colour until someone saves the Brand page | Whoever installs it |
 
 Your public website is your own: it uses the API and doesn't carry any VisionCast name unless you add one ([integration.md](integration.md)).
 
-**Rules.** The colour has to be dark enough for white text on buttons, or it's refused. Logos are PNGs of at most 2 MB. The studio decodes them and rebuilds them from their pixels. The live server checks their first bytes and serves them as images, under a strict policy. Fonts are checked by their first bytes. SVG isn't accepted anywhere, because it can run script.
+**Rules.** Any colour works. On a light one, button text turns dark and links, eyebrows and badges use a deeper shade that reads on white, so a coral like `#ff6b4a` looks the way it does on a brand site. A font is one WOFF2, WOFF, TTF or OTF file of at most 2 MB, used for all text; a variable font covers every weight. Logos are PNGs of at most 2 MB. The studio decodes them and rebuilds them from their pixels. The live server checks their first bytes and serves them as images, under a strict policy. Fonts are checked by their first bytes. SVG isn't accepted anywhere, because it can run script.
 
 **What still says VisionCast.** With no name set, the studio does. So do code, documentation, image names and the `/developers` address. Nothing an attendee sees says it once you've set your logo: until then, the room's header and browser tab show the default mark.
 

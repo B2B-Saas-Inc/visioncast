@@ -48,6 +48,7 @@ class BoundedMemoryUploadHandler(MemoryFileUploadHandler):
         if self.received > MAX_UPLOAD_BYTES:
             if self.request is not None:
                 self.request.upload_too_large = True
+                self.request.upload_too_large_field = self.field_name
             raise SkipFile()
         return super().receive_data_chunk(raw_data, start)
 

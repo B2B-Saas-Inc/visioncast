@@ -172,7 +172,7 @@ def test_openapi_every_route_is_documented(spec):
 
     documented = set(spec["paths"])
     skip = {"", "studio/", "developers/", "developers/api/", "developers/mcp/", "api/v1/openapi.json",
-            "media/covers/<uuid:pk>.<str:ext>", "brand/logo.png", "brand/brand.css"}
+            "media/covers/<uuid:pk>.<str:ext>", "brand/logo.png", "brand/brand.css", "brand/font"}
     for pattern in urlpatterns:
         route = str(pattern.pattern)
         if route in skip:

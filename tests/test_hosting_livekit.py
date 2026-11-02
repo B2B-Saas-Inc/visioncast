@@ -920,11 +920,13 @@ def test_brand_refuses_what_could_harm_or_cant_be_read(admin_client, client, dja
     from django.core.files.uploadedfile import SimpleUploadedFile
 
     cache.clear()
-    too_light = admin_client.post("/studio/brand/", {"name": "A", "accent": "#fefefe"})
-    assert too_light.status_code == 400
+    not_a_colour = admin_client.post("/studio/brand/", {"name": "A", "accent": "coral"})
+    assert not_a_colour.status_code == 400
     # The person is told what's wrong, at the top and beside the field.
-    assert b'class="error-summary"' in too_light.content and b'id="brand-accent-err"' in too_light.content and b'value="#fefefe"' in too_light.content
-    assert b'aria-invalid="true"' in too_light.content
+    assert b'class="error-summary"' in not_a_colour.content and b'id="brand-accent-err"' in not_a_colour.content and b'value="coral"' in not_a_colour.content
+    assert b'aria-invalid="true"' in not_a_colour.content
+    not_a_font = admin_client.post("/studio/brand/", {"font": SimpleUploadedFile("x.woff2", b"<script>alert(1)</script>", "font/woff2")})
+    assert not_a_font.status_code == 400 and b'id="brand-font-err"' in not_a_font.content
     script = admin_client.post("/studio/brand/", {"accent": "red;}body{display:none"})
     assert script.status_code == 400 and b"body{display" not in script.content.split(b"error-summary")[0]
     svg = admin_client.post("/studio/brand/", {"logo": SimpleUploadedFile("x.svg", b"<svg onload=alert(1)>", "image/svg+xml")})

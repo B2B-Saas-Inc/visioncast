@@ -261,10 +261,11 @@ CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS") or env_list("CSRF
 
 DATA_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024  # 1 MB
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 1000
-# The only file upload is the studio event cover (webinars/covers.py): in memory only,
-# at most covers.MAX_UPLOAD_BYTES per file and one file per request.
+# File uploads are the studio event cover and the brand logo and font (webinars/covers.py,
+# webinars/brand.py): in memory only, at most covers.MAX_UPLOAD_BYTES per file, and two per
+# request so a logo and a font can be saved together.
 FILE_UPLOAD_HANDLERS = ["webinars.covers.BoundedMemoryUploadHandler"]
-DATA_UPLOAD_MAX_NUMBER_FILES = 1
+DATA_UPLOAD_MAX_NUMBER_FILES = 2
 
 
 # ---------------------------------------------------------------------------

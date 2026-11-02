@@ -1112,11 +1112,17 @@ def brand_settings(request):
     ctx = {"errors": {}, "notices": []}
     if request.method == "POST":
         upload = request.FILES.get("logo")
+        font = request.FILES.get("font")
+        too_large = getattr(request, "upload_too_large_field", "") if getattr(request, "upload_too_large", False) else ""
         try:
+            if too_large:
+                raise ValidationError({too_large if too_large in ("logo", "font") else "logo": ["That file is larger than 2 MB."]})
             ctx["notices"] = brand.save(
                 name=request.POST.get("name", ""), accent=request.POST.get("accent", ""),
                 logo=upload.read(brand.MAX_LOGO_BYTES + 1) if upload else None,
-                remove_logo=request.POST.get("remove_logo") == "1", user=request.user)
+                remove_logo=request.POST.get("remove_logo") == "1",
+                font=font.read(brand.MAX_FONT_BYTES + 1) if font else None,
+                remove_font=request.POST.get("remove_font") == "1", user=request.user)
             if not ctx["notices"]:
                 ctx["saved"] = True
         except ValidationError as exc:
@@ -1124,6 +1130,6 @@ def brand_settings(request):
     current = brand.current()
     # After a mistake, keep what was typed so it can be corrected.
     ctx["values"] = request.POST if ctx["errors"] else current
-    ctx["summary"] = _summary(ctx["errors"], {"name": "Name", "accent": "Colour", "logo": "Logo"})
+    ctx["summary"] = _summary(ctx["errors"], {"name": "Name", "accent": "Colour", "logo": "Logo", "font": "Font"})
     ctx["default_name"] = brand.DEFAULT_NAME
     return render(request, "studio/settings/brand.html", ctx, status=400 if ctx["errors"] else 200)

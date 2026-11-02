@@ -62,6 +62,7 @@ urlpatterns = urls_tickets.urlpatterns + urls_hosting.urlpatterns + [
     path("media/covers/<uuid:pk>.<str:ext>", require_safe(covers.cover_response), name="cover-image"),
     path("brand/logo.png", require_safe(brand.logo_response), name="brand-logo"),
     path("brand/brand.css", require_safe(brand.css_response), name="brand-css"),
+    path("brand/font", require_safe(brand.font_response), name="brand-font"),
     # Registration (register/proxy/trusted key) and proxy-target (proxy key)
     path("api/v1/registrations", views.api_registrations, name="api-registrations"),
     path("api/v1/profile", views.api_profile, name="api-profile"),

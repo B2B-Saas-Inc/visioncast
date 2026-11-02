@@ -5,7 +5,7 @@
   <div>
     <p class="eyebrow">Workspace</p>
     <h1>Brand</h1>
-    <p class="lede">Your name, colour and logo on the studio and the waiting room. The colour and logo go to your live rooms too.</p>
+    <p class="lede">Your name, colour, logo and font on the studio and the waiting room. The colour, logo and font go to your live rooms too.</p>
   </div>
 </div>
 
@@ -25,7 +25,7 @@
     <div class="field">
       <label class="label" for="f-accent">Colour</label>
       <input class="input" id="f-accent" name="accent" maxlength="7" value="{{ values.accent }}" placeholder="#c2462e" aria-describedby="brand-accent-help{% if errors.accent %} brand-accent-err{% endif %}"{% if errors.accent %} aria-invalid="true"{% endif %}>
-      <p class="help" id="brand-accent-help">For buttons and links. A hex colour, like #c2462e, dark enough for white text.</p>
+      <p class="help" id="brand-accent-help">For buttons and links. A hex colour, like #c2462e. On a light colour, button text turns dark and links use a deeper shade, so everything stays readable.</p>
       {% if errors.accent %}<p class="field-error" id="brand-accent-err">{{ errors.accent|join:" " }}</p>{% endif %}
     </div>
     <div class="field">
@@ -37,6 +37,16 @@
       <input class="input" id="f-logo" name="logo" type="file" accept=".png,image/png" aria-describedby="brand-logo-help{% if errors.logo %} brand-logo-err{% endif %}"{% if errors.logo %} aria-invalid="true"{% endif %}>
       <p class="help" id="brand-logo-help">A PNG of at most 2 MB.</p>
       {% if errors.logo %}<p class="field-error" id="brand-logo-err">{{ errors.logo|join:" " }}</p>{% endif %}
+    </div>
+    <div class="field">
+      <label class="label" for="f-font">Font</label>
+      {% if brand.custom_font %}
+      <p class="help">Your font is in use.</p>
+      <label class="choice"><input type="checkbox" name="remove_font" value="1"><span>Go back to the standard fonts</span></label>
+      {% endif %}
+      <input class="input" id="f-font" name="font" type="file" accept=".woff2,.woff,.ttf,.otf,font/woff2,font/woff,font/ttf,font/otf" aria-describedby="brand-font-help{% if errors.font %} brand-font-err{% endif %}"{% if errors.font %} aria-invalid="true"{% endif %}>
+      <p class="help" id="brand-font-help">One file for all text: WOFF2, WOFF, TTF or OTF, at most 2 MB. A variable font covers every weight. Check that its licence lets you use it on the web.</p>
+      {% if errors.font %}<p class="field-error" id="brand-font-err">{{ errors.font|join:" " }}</p>{% endif %}
     </div>
     <div class="form-actions"><button class="btn btn-primary" type="submit">Save</button></div>
   </div>
