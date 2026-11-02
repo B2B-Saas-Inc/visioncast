@@ -2,6 +2,12 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Live server update and backup scripts — 2026-11-02
+
+- live.growthcast.app moved to `v0.4.6-pre` with `deploy/live/update.sh`: backup first, rebuild, only the changed service recreated, `/healthz` answered within a second. (The tag was checked out by hand once beforehand, to put the script on the server, so it reported `v0.4.6-pre -> v0.4.6-pre`.)
+- `deploy/live/backup.sh` set up there (age 1.1.1, sqlite3 3.45, nightly at 02:30 UTC, the same age recipient as the studio's backups). First file 277 KB. Restore check off the server: decrypted with the owner's identity, the database passed `integrity_check` with 1 account and 3 rooms, and the brand logo and font were in it.
+- events.growthcast.app on `0.4.6-pre` through `update.sh`, ran to the end.
+
 ## GrowthCast email through PostHog, live — 2026-11-02
 
 - PostHog project 589469 (GrowthCast, US Cloud): sender `events@mail.growthcast.app` verified by the owner in the app. Two templates, made transactional with the owner's typed confirmation: *VisionCast: attendee email* (`01a19def-3d37-…`) and *VisionCast: sign-in codes and invitations* (`01a19def-7359-…`, **Protect sensitive data** on). Both: `{{ variables.subject }}`, `{{ variables.html | raw }}`, `{{ variables.text }}`, GrowthCast header, Manrope, coral links.
