@@ -428,7 +428,7 @@ def test_other_providers_keep_the_default_event_types(admin):
     assert offered == ["registration.created", "registration.updated", "attendance.recorded", "attendance.checked_in"]
     assert tuple(page.context["native_event_types"]) == ("registration.created", "registration.updated", "attendance.checked_in", "attendance.recorded")
     generic = admin.get("/studio/integrations/new/")
-    assert len(generic.context["event_type_options"]) == 9  # generic webhooks offer every outbox event
+    assert len(generic.context["event_type_options"]) == 10  # generic webhooks offer every outbox event
 
 
 def test_enable_email_destination_refuses_unsupported_event_and_bad_template(admin, settings):

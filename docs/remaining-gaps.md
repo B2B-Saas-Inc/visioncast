@@ -1,11 +1,6 @@
 # Remaining gaps
 
-Status as of 2026-10-27 (second pass: `0.3.0-pre`, tag `v0.3.0-pre`, published to GHCR as
-digest `sha256:fa723b88…`), reconciled against [validation.md](validation.md) (latest entries
-dated 2026-10-27). **Release candidate `0.2.0-pre` is tagged and published to GHCR (private package,
-digest `sha256:c81ad8b1…`, amd64 + arm64); every local gate has a recorded pass on the
-release tree; what remains needs owner-held accounts, an owner decision, or the target
-environment.** This page separates what the code implements, what blocks a release, what the
+Current release: `0.3.7-pre`, published to GHCR as a private package (see the README's Status section). The sections below were last reconciled on 2026-10-27, against `0.3.0-pre`, except the live add-on's section, which is current to 2026-11-01 and not released. **What remains needs owner-held accounts, an owner decision, or the target environment.** This page separates what the code implements, what blocks a release, what the
 owner has requested but is not built yet, and what is optional or out of scope. Test evidence
 lives only in [validation.md](validation.md); nothing on this page is a test result. The
 ordered, tickable list is [release-checklist.md](release-checklist.md). Detailed behaviour is
@@ -176,10 +171,51 @@ Committed scope for this release is closed. What the owner asked for and is **no
 
 ## 7. Out of scope by design (do not build)
 
-- Streaming, video/recording hosting, gating or view tracking. Check-in and imported
-  attendance measure admission or provider-reported presence, not viewing.
+- Streaming, video/recording hosting, gating or view tracking in the core application: the
+  optional `live/` add-on does this on its own server (section on it below). In the core app,
+  check-in and imported attendance measure admission or provider-reported presence, not viewing.
 - SMS sending (consent evidence only). Attendee email is **no longer** out of scope: it is sent
   only when a Resend or SES destination is enabled (R29); otherwise the ESP sends it from
   webhooks as before.
 - Cross-device recognition and account recovery ([security.md](security.md)).
 - Multi-tenancy.
+
+## Your own live server (LiveKit add-on)
+
+Implemented and tested locally, on a real LiveKit server in real browsers ([validation.md](validation.md)).
+
+**Needs a public server and your own accounts.** These can't be done from a laptop. Each has a script or a checklist:
+
+- Certificates, firewalls and real networks: `deploy/live/verify-public.sh`.
+- People on networks that only allow port 443. Locally, a browser got a TURN relay over TLS on port 443 through Traefik, with LiveKit's credentials. Media through that relay couldn't complete inside a virtual machine's network, so `live/tests/turn/check.cjs` needs a run against a public server.
+- The studio talking to a live server by its public name and certificate. Locally it's only been exercised over the test transport.
+- A real stream to YouTube, Meta, X and LinkedIn. So far only a local RTMP server has received one, over RTMP and RTMPS.
+- A real bucket. A local S3-compatible server that checks every signature has taken recordings and captions, but Amazon S3 and DigitalOcean Spaces haven't.
+- A load test on your own server: `live/tests/load/run.sh`. So far, on a laptop sharing its CPU with the load: 1,000 event streams and 100 simulated media viewers ([validation.md](validation.md)). No real browsers at that scale, and no recording under load.
+- Safari itself, and real phones. So far: Playwright's WebKit build, including screen sharing, and phone screens in desktop browsers. Publishing a camera or microphone from Safari, and a transparent WebM graphic on a Safari viewer's screen, haven't been checked.
+- Caption accuracy with your own speakers, names and jargon.
+
+**Built, with limits you should know:**
+
+- Slides lose animations and transitions. Notes come from PowerPoint files, not PDFs. A deck the converter never picks up shows as converting for up to 20 minutes, then fails. This happened once in testing and wasn't explained.
+- RTMP input is RTMP only, not RTMPS, and an encoder is on stage for as long as its stream runs. There's no holding it in the green room.
+- Translated captions are live only. Saved SRT and transcript files stay in the spoken language. Translation needs a language pack per language on your server.
+- Speakers' own recordings stay on the live server's disk, listed with the recordings. They aren't copied to the bucket. A browser that can't keep up loses its own copy, not the main recording.
+- `engagement.recorded` reaches webhook destinations and workflow presets. The native connectors (Salesforce, Pipedrive and the rest) don't send it yet.
+- Surveys appear to people still on the page when the session ends. Nothing emails them afterwards unless you set that up from the event.
+- Breakout rooms aren't recorded, captioned or included in attendance.
+- `--local` on the installer shows the pages, but a session's room can't be created from the studio without real certificates.
+- A personal link is in every request's address, so a proxy's logs see it and a copied download link carries it.
+- Two-factor sign-in isn't built, for the studio or `/admin`. Put a VPN or SSO proxy in front.
+- Removing someone from the studio's Team doesn't remove their host link from a session. Remove them under Crew.
+- A replaced crew link's old LiveKit credential can watch for up to 15 minutes. It can't publish unless that person is on stage.
+- A host or producer who deliberately modifies their browser could send their voice as a screen's audio.
+- Go live is one press, with no undo.
+- A poll's counts are in the event stream even with counts hidden on screen, so someone reading the stream can see them.
+- Guests, and attendees brought on stage, see attendees' names in crew chat.
+- A person can hold a breakout seat through `/act` without connecting, until the rooms close.
+- Slides waiting in the converter's queue can be read by another job inside that container.
+- iOS autoplay hasn't been checked on a real phone. If a browser blocks sound, the page offers a button to turn it on.
+- After a page redraw, keyboard focus is restored for typing but not always for buttons.
+
+**Not implemented:** captions from screen-share sound or video played on stage; pressing Go live on a platform for you; clustering across several LiveKit servers.

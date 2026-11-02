@@ -1,7 +1,8 @@
 # Threat model
 
 Scope: the single-tenant Django/PostgreSQL application, its worker, the Compose
-deployment, the GTM browser script and the example first-party proxy (`sdk/`).
+deployment, the GTM browser script and the example first-party proxy (`sdk/`). The
+optional live video service in `live/` has [its own section](#your-own-live-video-live).
 This document describes the implemented controls. Many are covered by the test
 suite, but the final PostgreSQL run and the image build are still pending (see the
 README's validation status), and no internet-facing deployment has been tested. The
@@ -76,13 +77,41 @@ platform is a preview and is **not** production-certified. Behavioural detail:
 | T24 | **Waiting-room login CSRF / code lockout** (S/D). | A magic link opened in a browser without the matching pending cookie shows the email being verified and requires an explicit "This is me" confirmation ("Not me" discards it), so there is no silent login. Code issuance and guesses are limited per email across rooms as well as per room; with proxy trust enabled the client IP is taken from the rightmost untrusted `X-Forwarded-For` hop. Check-in and End serialize on the occurrence row lock. | An attacker can still use up a victim's issuance budget for a while. Per-IP limits depend on the proxy hop count being configured correctly. |
 | T22 | **Lost recognition** (D, accepted). | Replays never issue capabilities (prevents T8 theft). | A browser whose capability response was lost, or that used "Not you?", stays unrecognised for an existing email; there is no recovery flow. |
 
+## Your own live video (`live/`)
+
+The optional service runs on its own server with LiveKit, Egress, Redis, Whisper, a slide converter and Traefik. Its own assets are: crew links and attendee links, `/admin` accounts, stream keys, the service secret shared with VisionCast, recordings, caption files, chat and questions. Trust boundaries: browser to service, browser to LiveKit, VisionCast to service (bearer secret over HTTPS), Egress to the service's program page, and the service to the bucket.
+
+Each threat below came from adversarial review of this code. The fixes have service tests or browser tests unless the row says otherwise, and `E2E_SUITE=attack live/tests/e2e/run.sh` makes most of these attacks against a running stack. None of this has been tested on a public server.
+
+| # | Threat (STRIDE) | Mitigations | Residual risk |
+|---|---|---|---|
+| L1 | **Forged or altered links** (S/E). | Links are signed tickets carrying room, role and identity, and are checked on every request. Attendee links are bound to one browser at a time: opening one elsewhere closes the first viewer. | A ticket is a bearer credential, and it appears in the first request's URL and in download links, so it can reach proxy logs and browser history. `/join/{link}` redirects to a clean address. |
+| L2 | **Publishing without permission** (E). | LiveKit tokens carry the rights for the role, so LiveKit refuses the publish itself, whatever the page does. Producers can only publish in the green room. Attendees get no LiveKit token before going live. The stage is a separate room from the green room. | None known. Tested by having an attendee, a producer and an off-stage guest really try. |
+| L3 | **Someone removed keeps watching** (E). | Crew are revoked by ID, not by role: removal disconnects their event stream and LiveKit connection, and a new link voids the old one. LiveKit tokens last 15 minutes. Webhooks from LiveKit are checked against who should be there, and anyone who shouldn't be is removed. | The old credential can still watch for up to 15 minutes after a new link is issued, if it was already connected to LiveKit. Removing someone from the Team page in the Studio doesn't remove their host link: use the session's crew panel. |
+| L4 | **Crew link sharing** (S/R). | Each crew member has their own link, named and revocable. The activity log says who did what. | Anyone holding a link is that person: there's no second factor on crew links. |
+| L5 | **Password guessing on `/admin`** (S). | Per-person accounts, Argon2. Failures are counted before the check: in 15 minutes, 8 tries at one email from one address, and 60 at one email from anywhere. Only four password checks run at once, so a flood can't use up the CPU. Traefik also rate limits `/login`. The client address comes from `X-Forwarded-For` only with `LIVE_TRUST_FORWARDED_FOR`. | No second factor. Put `/admin` behind an identity-aware proxy or VPN if you need one. |
+| L6 | **An admin locks everyone out** (D/E). | The last owner can't be removed or demoted, under a lock. `reset-admin` on the server recovers an account, and makes an owner if none is left. | Anyone with shell access to the server can do the same. |
+| L7 | **Attendees seeing crew material** (I). | Attendees get a projection of the room's state that leaves out drafts, the people list, crew chat, held messages, pending questions and unpublished results. Guests get no draft polls or unshared files. Anonymous questions drop the asker's identity for crew as well. | Poll tallies are sent even with `show_counts` off, so a viewer reading the event stream can see them. Guests and promoted attendees can see attendee names in crew chat. |
+| L8 | **Path traversal and bad uploads** (T/D). | File names come from a lookup rather than from the request, and tickets are checked for safe characters. Logos are decoded with size limits, which stops image bombs. Deck conversion runs in a container with no network and with CPU, memory and time limits, one job per folder. | A deck is readable by other queued jobs inside the converter while it waits. |
+| L9 | **Stream keys leaking** (I). | Keys are stored and sent only to Egress, never on pages, event streams or logs. They're masked in lists. The tests look for a known key in each. | Anyone with the server's database file can read them. |
+| L10 | **SSRF through broadcast or graphics URLs** (T/I). | Broadcast destinations must be `rtmp` or `rtmps` to a public address, with IPv4-mapped addresses caught as well. VisionCast's calls to the service go through its existing allowlist, with a 64 KiB response limit, and the service's host must be on `WEBHOOK_HOST_ALLOWLIST`. | Egress itself connects to whatever a destination's name resolves to at the time. |
+| L11 | **Load and abuse by a viewer** (D). | At most 20 actions a second per person, 5 event streams per attendee, capped chat and upload sizes. Local recording: 32 MB a chunk, 8 GB a file, 20 files per person, 100 GB per room, and only from people on stage while recording. Idle rooms are evicted after 10 minutes. | A person holding a breakout seat through `/act` without connecting keeps it until the breakouts close. The limits are per person, so a registration script can multiply them. |
+| L12 | **Personal data left behind** (I). | Erasing a person in VisionCast also calls the service, which deletes their chat, questions, captions, votes, survey answers and attendance, and VisionCast won't accept their engagement again. Purge deletes inputs from LiveKit Ingress as well as files, and keeps the brand. | Recordings, caption files and local recordings can contain a person's voice and name, and are not edited on erasure. Local recordings stay on the server's disk until the room is purged. |
+| L13 | **Share source trust** (S). | Screen and media sharing are limited to crew and people invited on stage. | The picture is whatever the sharer's browser sends: a person on stage can show anything until a producer removes them. |
+| L14 | **TURN abuse** (E/D). | TURN credentials are issued by LiveKit for the session, on 443 over TLS and on a UDP port. | Relay through TLS has been proved up to the point of getting a relay address, not with media crossing it, because that needs a public server. |
+
+### Live video is out of scope for
+
+* Protecting against a compromised host, or against someone holding `.env`, the database file or the bucket's keys.
+* End-to-end encryption. Media is encrypted in transit, and LiveKit, Egress and Whisper see it unencrypted on your server.
+* Moderating what's said on stage or scanning shared files for malware.
+
 ## Explicitly unsupported / out of scope
 
 * Email (or SMS) verification, and therefore account recovery and cross-device profile recognition.
 * Email correction for a recognised browser (only "Not you?" reset, which does not recover identity).
 * Built-in rate limiting, bot detection, CAPTCHA, TLS termination (all required at the edge).
 * MFA for admin users (required via an upstream identity-aware proxy, SSO or VPN).
-* Sending email or SMS (events go to external automation via webhooks); hosting media or streaming.
+* Sending SMS. Hosting media or streaming in the core application: the optional `live/` service does that, on its own server.
 * Multi-tenancy.
-* Native vendor connectors; only generic signed webhooks.
 * Guarantees about availability of third-party ad/analytics cookies in the browser.

@@ -20,8 +20,8 @@ Auth: API keys (`Authorization: Bearer wbk_...`). `tools/list` shows only tools 
 | keys_admin | list/create/revoke API keys, bounded delegation | superuser / owner shell only |
 | team_admin | list team; invite, revoke, change role/email/active for **Editors and Analysts only**, bounded by the key's own scopes (gated; see below) | superuser / owner shell only |
 | payments_admin | Stripe account (set-only secrets), event and session prices, order lists, recording refunds made in Stripe and releasing reconciling unpaid orders (gated). **No money moves through MCP or REST.** | superuser / owner shell only |
-| hosting_admin | hosting accounts: list, create, update, set-only credentials (gated) | superuser / owner shell only |
-| hosting_provision | providers, session hosting state, execute create/update/attach, reconcile unknown outcomes (sessions and Riverside registrants), manual links (gated) | superuser / owner shell only |
+| hosting_admin | hosting accounts: list, create, update, set-only credentials (gated); the live server's brand | superuser / owner shell only |
+| hosting_provision | providers, session hosting state, execute create/update/attach, reconcile unknown outcomes (sessions and Riverside registrants), manual links (gated); a live session's crew, settings, broadcast destinations and engagement | superuser / owner shell only |
 
 `create_api_key` (MCP) can grant only public_read, register, proxy, reporting, content_write, attendance_write, config_read — and only those the calling key holds. Privileged scopes (`trusted`, publication, delivery_admin, keys_admin, team_admin) are never delegable and are granted only by a superuser in the studio or `manage.py create_api_key`. The MCP `create_api_key` tool also rejects names that are blank after trimming.
 
@@ -77,8 +77,16 @@ Publishing a not-ready event (no upcoming session, Attention/summary or Action) 
 | execute_session_hosting, reconcile_session_hosting, set_session_manual_link | hosting_provision | yes |
 | list_session_registrants | hosting_provision or config_read | |
 | reconcile_session_registrant | hosting_provision | yes |
+| get_session_live_settings | hosting_provision or config_read | |
+| list_session_crew, add_session_crew, update_session_live_settings, pull_session_engagement | hosting_provision | |
+| get_session_live_destinations, get_session_engagement | hosting_provision | |
+| remove_session_crew, update_session_live_destinations | hosting_provision | yes |
+| get_live_brand | hosting_admin or config_read | |
+| update_live_brand | hosting_admin | |
 | list_hosting_accounts | hosting_admin or config_read | |
 | create_hosting_account, update_hosting_account | hosting_admin | yes |
+
+Live room tools work on sessions on a self-hosted live server ([hosting.md](hosting.md#livekit-self-hosted)). They never return a personal link: `add_session_crew` gives back the person's ID, and an Administrator copies the link from the studio. Stream keys are set-only and masked when read. `get_session_engagement` returns counts, never what anyone said.
 
 Ticket and hosting tools call the same handlers as the REST routes in [tickets.md](tickets.md) and [hosting.md](hosting.md), with the same field validation; input schemas are generated from those handlers' schemas (no free-form payload). Confirmation state: hosting accounts bind a digest of name/enabled/config and the credential ciphertext; reconcile and manual link bind the session state and schedule generation; order actions bind order status and `paidAt`. Previews never echo secrets: credentials appear only as the names being set, manual links only as hosts. `mark_order_refunded` records a refund you already made in Stripe; `release_unpaid_order` re-checks Stripe and refuses if the checkout was paid. `list_session_registrants` returns stalled Riverside registrants of one session as registration IDs and state only (no names, emails or links; no provider call). `reconcile_session_registrant` records what you verified in Riverside (`created` with that registrant's own join link, which is set-only and never echoed; or `not_created`). Its token binds the exact arguments and the registrant's state, attempt and update time. Other-session IDs are refused as not found, and non-Riverside or non-stalled registrants as conflicts. Nothing is sent to Riverside (see hosting.md).
 
@@ -97,7 +105,7 @@ Covers: `set_event_cover` accepts PNG/JPEG/WebP up to 40 KB (base64 inside the 6
 | URI | Scopes |
 |---|---|
 | webinar://playbook/implementation (checklist + full README, operations and integration guides) | any key |
-| webinar://guides/{name} (readme, implementation-guide, operations, integration, mcp, management-api, api-reference, webhooks, field-dictionary, field-mapping, waiting-room, studio, email, browser-integration, native-integrations, security, tickets, hosting, kits) | any key |
+| webinar://guides/{name} (readme, implementation-guide, operations, branding, integration, mcp, management-api, api-reference, webhooks, field-dictionary, field-mapping, waiting-room, studio, email, browser-integration, native-integrations, security, tickets, hosting, kits) | any key |
 | webinar://docs/field-dictionary (generated from code) | any key |
 | webinar://openapi (generated from `webinars/openapi.build_spec`) | any key |
 | webinar://contracts/webhooks | any key |

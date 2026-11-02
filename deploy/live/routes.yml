@@ -1,0 +1,68 @@
+# Each host must point straight at this server: DNS only, no Cloudflare proxy (it can't carry the
+# media ports or TURN). Traefik fills in the names from the environment.
+http:
+  routers:
+    live:
+      rule: Host(`{{ env "LIVE_HOST" }}`)
+      service: live
+      tls: {certResolver: {{ env "TLS_RESOLVER" }}}
+    # The recorder reaches this directly, on the server itself. Nobody needs it from outside.
+    captions-in:
+      rule: Host(`{{ env "LIVE_HOST" }}`) && PathPrefix(`/captions/in/`)
+      service: nothing
+      priority: 1000
+      middlewares: [nobody]
+      tls: {certResolver: {{ env "TLS_RESOLVER" }}}
+    # Slow down password guessing before it reaches anything.
+    live-login:
+      rule: Host(`{{ env "LIVE_HOST" }}`) && (Path(`/login`) || PathPrefix(`/login/`))
+      service: live
+      priority: 900
+      middlewares: [gentle]
+      tls: {certResolver: {{ env "TLS_RESOLVER" }}}
+    rtc:
+      rule: Host(`{{ env "RTC_HOST" }}`)
+      service: rtc
+      tls: {certResolver: {{ env "TLS_RESOLVER" }}}
+{{ if env "STUDIO_HOST" }}
+    studio:
+      rule: Host(`{{ env "STUDIO_HOST" }}`)
+      service: studio
+      tls: {certResolver: {{ env "TLS_RESOLVER" }}}
+    studio-login:
+      rule: Host(`{{ env "STUDIO_HOST" }}`) && (PathPrefix(`/studio/login`) || PathPrefix(`/admin/login`) || PathPrefix(`/mcp`))
+      service: studio
+      priority: 900
+      middlewares: [gentle]
+      tls: {certResolver: {{ env "TLS_RESOLVER" }}}
+{{ end }}
+  middlewares:
+    nobody:
+      ipAllowList:
+        sourceRange: ["192.0.2.0/32"]
+    gentle:
+      rateLimit:
+        average: 20
+        period: 1m
+        burst: 20
+  services:
+    live: {loadBalancer: {servers: [{url: "http://127.0.0.1:8080"}]}}
+    rtc: {loadBalancer: {servers: [{url: "http://127.0.0.1:7880"}]}}
+    nothing: {loadBalancer: {servers: [{url: "http://127.0.0.1:9"}]}}
+{{ if env "STUDIO_HOST" }}
+    studio: {loadBalancer: {servers: [{url: "http://127.0.0.1:8000"}]}}
+{{ end }}
+tcp:
+  routers:
+    # TURN over TLS: Traefik takes off the TLS by name and passes plain TURN to LiveKit.
+    turn:
+      rule: HostSNI(`{{ env "TURN_HOST" }}`)
+      service: turn
+      tls: {certResolver: {{ env "TLS_RESOLVER" }}}
+  services:
+    # LiveKit needs to see the real address, and with this it takes TURN only from here, so plain
+    # TURN on 5349 is refused even if the firewall leaves it open.
+    turn:
+      loadBalancer:
+        servers: [{address: "127.0.0.1:5349"}]
+        proxyProtocol: {version: 2}

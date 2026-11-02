@@ -1,0 +1,25 @@
+# Everything on 80 and 443: websites, media signalling, and TURN over TLS for people on networks
+# that allow nothing else. Certificates are issued automatically, when Traefik starts, so ports 80
+# and 443 have to be open first. If they weren't: docker compose restart traefik
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint: {to: websecure, scheme: https}
+  websecure:
+    address: ":443"
+    transport:
+      respondingTimeouts:
+        # Large uploads and long streams take as long as they take. The default cuts them at 60 seconds.
+        readTimeout: 0
+certificatesResolvers:
+  le:
+    acme:
+      storage: /data/acme.json
+      tlsChallenge: {}
+providers:
+  file:
+    filename: /etc/traefik/routes.yml
+log:
+  level: WARN

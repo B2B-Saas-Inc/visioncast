@@ -57,6 +57,7 @@ EVENT_TYPES = [
     "attendance.recorded",
     "attendance.checked_in",
     "follow_up.requested",
+    "engagement.recorded",
 ]
 
 _CUSTOM_KEY_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]{0,63}$")

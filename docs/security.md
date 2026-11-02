@@ -50,3 +50,25 @@ Only superusers can create or change users, groups and role membership. The Admi
   - Never send SMS unless the payload is verified, `consents.sms.granted` is true and the number is that payload's `profile.phone`. The consented phone snapshot is not in the payload.
   - Dedupe on `Webinar-Delivery-Id`.
 - **Deletion:** `OutboxMessage.person` is `CASCADE` (migration 0004). Deleting a Person deletes their queued and historical messages, so no personal-data payload outlives the Person row. Erasure (`erase_person`) still marks rather than deletes.
+
+## Your own live server
+
+The LiveKit add-on ([live/README.md](../live/README.md)) runs on a separate server.
+
+* **Who can see or hear what is enforced by LiveKit,** not the page. The green room is a separate room that attendees never get a credential for, and attendees get no stage credential until the session is live. A producer's stage credential can't publish a microphone or camera.
+* **Engagement is server-side.** Chat, questions and polls go through the service, and attendees are never sent crew chat, held messages, pending questions, draft polls or unpublished results.
+* **Links:** signed per person: each registrant and each crew member has their own. They reach the page in the URL fragment, which isn't sent to servers or in referrers, and are removed from the address bar. Anyone with someone's link can act as them, so a crew link can be replaced or removed, which puts that person out of the room at once.
+* **Taking access away:** credentials last 15 minutes. Removing someone or replacing their link ends their connection and event stream at once, and arrivals and publishing are checked against who's allowed now ([live/README.md](../live/README.md#the-studio)). Attendees get a smaller view of the state than the crew, and guests don't get draft polls, unshared files or moderation.
+* **`/admin`:** per-person accounts with Argon2 password hashes. Sign-ins are limited per address and per place, counted before the check so a burst gets no more guesses, with at most four being checked at once, and the same answer and the same work whether or not the account exists. There's no two-factor sign-in, so put a VPN or SSO proxy in front if you can. Sessions are random tokens, stored only as hashes, in HttpOnly, SameSite=Strict cookies for 8 hours, and removed on sign-out, password change or account removal. Links to set a password or sign in work once and expire. Owners manage people. Activity records who did what, and never a secret.
+* **Stream keys:** encrypted at rest with a key derived from `LIVE_TICKET_KEY`, and never returned by any API or sent to a browser. Changing that key means entering them again. VisionCast doesn't hold them.
+* **Broadcast addresses:** `rtmp://` or `rtmps://` only, refused if they resolve to a private address, because the recorder runs inside your network. `rtmps://` certificates are checked.
+* **Uploads:** only hosts and producers. Stage files are checked by their first bytes and never SVG or HTML. Resources always download as attachments, under a sandboxing CSP.
+* **Captions:** speech is transcribed on your server and doesn't leave it. Names and what people said are personal data, kept with the room until `LIVE_RETENTION_DAYS`. Files in your bucket are yours to manage and aren't removed for you. The green room and rehearsal are never transcribed. Check whether your jurisdiction requires telling speakers; attendees invited on stage are told.
+* **Slides:** documents are converted by LibreOffice in a container with no network, a read-only disk, no privileges and a memory limit, which only sees a shared folder. Decks waiting there can be read by that container, so a hostile deck that broke LibreOffice could read another deck in the queue, but could send it nowhere. Its output is checked to be real images before it's served. Attendees can only fetch the page on stage.
+* **Breakouts:** assignments aren't in the state everyone receives, and the server refuses a room you weren't assigned. Removing someone takes them out of breakouts too.
+* **Backgrounds:** WebAssembly and the model are served from this origin. The room's CSP allows `wasm-unsafe-eval` for it, and nothing from another origin.
+* **Fonts and logos:** checked by their first bytes. The studio's logo is rebuilt from its pixels. SVG is refused.
+* **Engagement:** what people said is personal data. It goes only to destinations that list the `engagement` group, is erased with the person, and never appears in REST or MCP, which return counts. An anonymous question isn't sent at all.
+* **Personal links in URLs:** a link is the whole credential, and every API path contains it, so a proxy's access log sees it, and copying a file's download link hands over that person's access. Keep access logs short-lived and private.
+* **Review:** see [validation.md](validation.md) for the adversarial review and what it found. It isn't a third-party audit.
+

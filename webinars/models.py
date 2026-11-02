@@ -388,6 +388,8 @@ class Registration(TimestampedModel):
     identity_verified = models.BooleanField(default=False)
     submitted_profile = models.JSONField(default=dict, blank=True)
     custom_fields = models.JSONField(default=dict, blank=True)
+    # What they did in a self-hosted live room: chat, questions, votes, survey answers. Personal data.
+    engagement = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -614,7 +616,7 @@ class Destination(TimestampedModel):
         CRM = "crm", "CRM (generic webhook)"
         GENERIC = "generic", "Generic webhook"
 
-    GROUPS = ["identity", "profile", "organization", "consents", "attribution", "registration", "event"]
+    GROUPS = ["identity", "profile", "organization", "consents", "attribution", "registration", "event", "engagement"]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
@@ -833,6 +835,7 @@ class HostingAccount(TimestampedModel):
         SEQUEL = "sequel", "Sequel (Introvoke)"
         RIVERSIDE = "riverside", "Riverside (attach existing event)"
         STREAMYARD = "streamyard", "StreamYard (manual link)"
+        LIVEKIT = "livekit", "LiveKit (self-hosted)"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     provider = models.CharField(max_length=16, choices=Provider.choices)
@@ -877,6 +880,13 @@ class HostedSession(TimestampedModel):
     synced_schedule_generation = models.PositiveIntegerField(null=True, blank=True)
     last_error = models.CharField(max_length=300, blank=True)
     last_synced_at = models.DateTimeField(null=True, blank=True)
+    # When chat, questions, votes and survey answers last came back from a self-hosted live room.
+    engagement_synced_at = models.DateTimeField(null=True, blank=True)
+    # Worker bookkeeping (webinars/hosting/engagement.py): when to ask next, failures so far,
+    # and when the live server first said the session had ended.
+    engagement_next_at = models.DateTimeField(null=True, blank=True)
+    engagement_attempts = models.PositiveIntegerField(default=0)
+    engagement_ended_at = models.DateTimeField(null=True, blank=True)
 
 
 class ProvisioningOperation(models.Model):
@@ -955,6 +965,7 @@ class AttendanceImport(models.Model):
     class Source(models.TextChoices):
         ZOOM = "zoom", "Zoom (provider pull)"
         RIVERSIDE = "riverside", "Riverside (provider pull)"
+        LIVEKIT = "livekit", "LiveKit (provider pull)"
         FILE = "file", "File / rows supplied by an operator"
 
     class State(models.TextChoices):
@@ -1037,3 +1048,15 @@ class AuditLog(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class StudioBrand(models.Model):
+    """The one brand of this deployment: its name, colour and logo on the studio and the waiting
+    room. A single row, made the first time someone saves it (webinars/brand.py)."""
+
+    name = models.CharField(max_length=80, blank=True)
+    accent = models.CharField(max_length=7, blank=True)
+    logo = models.BinaryField(null=True, blank=True)
+    # Short hash of the logo: on every page, so it's read without the image itself.
+    logo_version = models.CharField(max_length=16, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)

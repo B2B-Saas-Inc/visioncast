@@ -1,0 +1,44 @@
+{% extends "studio/base.html" %}
+{% block title %}Brand{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Workspace</p>
+    <h1>Brand</h1>
+    <p class="lede">Your name, colour and logo on the studio and the waiting room. The colour and logo go to your live rooms too.</p>
+  </div>
+</div>
+
+{% include "studio/settings/_errors.html" %}
+{% if saved %}<div class="callout callout-success" role="status"><p>Saved. Open rooms update straight away.</p></div>{% endif %}
+{% for notice in notices %}<div class="callout callout-warn" role="status"><p>{{ notice }}</p></div>{% endfor %}
+
+<form method="post" enctype="multipart/form-data" class="panel" style="max-width:640px" novalidate>
+  {% csrf_token %}
+  <div class="panel-body">
+    <div class="field">
+      <label class="label" for="f-name">Name</label>
+      <input class="input" id="f-name" name="name" maxlength="80" value="{{ values.name }}" placeholder="{{ default_name }}" aria-describedby="brand-name-help{% if errors.name %} brand-name-err{% endif %}"{% if errors.name %} aria-invalid="true"{% endif %}>
+      <p class="help" id="brand-name-help">Shown in the studio and on the waiting room.</p>
+      {% if errors.name %}<p class="field-error" id="brand-name-err">{{ errors.name|join:" " }}</p>{% endif %}
+    </div>
+    <div class="field">
+      <label class="label" for="f-accent">Colour</label>
+      <input class="input" id="f-accent" name="accent" maxlength="7" value="{{ values.accent }}" placeholder="#c2462e" aria-describedby="brand-accent-help{% if errors.accent %} brand-accent-err{% endif %}"{% if errors.accent %} aria-invalid="true"{% endif %}>
+      <p class="help" id="brand-accent-help">For buttons and links. A hex colour, like #c2462e, dark enough for white text.</p>
+      {% if errors.accent %}<p class="field-error" id="brand-accent-err">{{ errors.accent|join:" " }}</p>{% endif %}
+    </div>
+    <div class="field">
+      <label class="label" for="f-logo">Logo</label>
+      {% if brand.custom_logo %}
+      <img src="{{ brand.logo }}" alt="Your current logo" height="48" style="width:auto;justify-self:start">
+      <label class="choice"><input type="checkbox" name="remove_logo" value="1"><span>Remove the logo</span></label>
+      {% endif %}
+      <input class="input" id="f-logo" name="logo" type="file" accept=".png,image/png" aria-describedby="brand-logo-help{% if errors.logo %} brand-logo-err{% endif %}"{% if errors.logo %} aria-invalid="true"{% endif %}>
+      <p class="help" id="brand-logo-help">A PNG of at most 2 MB.</p>
+      {% if errors.logo %}<p class="field-error" id="brand-logo-err">{{ errors.logo|join:" " }}</p>{% endif %}
+    </div>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Save</button></div>
+  </div>
+</form>
+{% endblock %}

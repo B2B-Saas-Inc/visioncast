@@ -1,8 +1,6 @@
-# Release image build and push to GitHub Container Registry.
-#
-# PREPARED, NOT YET USED: no image has been published. Pushing a tag `v*` runs this
-# workflow and publishes ghcr.io/<owner>/<repo>; do that only with the owner's
-# approval. Until then, deploy from a local build (deploy/build-image.sh).
+# Release image build and push to GitHub Container Registry. Pushing a tag `v*` runs this
+# workflow and publishes ghcr.io/<owner>/<repo>, ghcr.io/<owner>/<repo>-live and
+# ghcr.io/<owner>/<repo>-captions.
 #
 # On a tag v<VERSION> (which must equal the VERSION file):
 #   * builds the `production` target for linux/amd64 and linux/arm64 from the
@@ -12,6 +10,11 @@
 #   * stamps the OCI labels (version, revision, created, source) and attaches a
 #     BuildKit SBOM and SLSA provenance attestation to the pushed manifest;
 #   * writes the pushed digest to the job summary so docs/validation.md can record it.
+#
+# The optional visioncast-live, visioncast-captions and visioncast-slides images (live/Dockerfile,
+# live/captions/Dockerfile) are built the same way for linux/amd64 only: compiling Rust and
+# Whisper under arm64 emulation is too slow here. On arm64, `docker compose build` in deploy/live
+# builds them locally. Their Dockerfiles pin their own base images.
 #
 # Required: GitHub-provided GITHUB_TOKEN with packages:write (set below). Nothing
 # else: no third-party registries, no deploy step.
@@ -103,3 +106,140 @@ jobs:
             echo "Deploy: \`docker pull ${{ steps.meta.outputs.image }}@${{ steps.push.outputs.digest }}\` then"
             echo "\`WEBINAR_IMAGE=${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }} WEBINAR_PULL_POLICY=never deploy/upgrade.sh --image ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  live-image:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the tagged tree
+        uses: actions/checkout@v4
+
+      - name: Derive version
+        id: meta
+        run: |
+          set -euo pipefail
+          repo=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          {
+            echo "version=${GITHUB_REF_NAME#v}"
+            echo "image=${REGISTRY}/${repo}-live"
+            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: live
+          target: production
+          platforms: linux/amd64,linux/arm64
+          push: true
+          sbom: true
+          provenance: mode=max
+          tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.meta.outputs.created }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+  captions-image:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the tagged tree
+        uses: actions/checkout@v4
+
+      - name: Derive version
+        id: meta
+        run: |
+          set -euo pipefail
+          repo=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          {
+            echo "version=${GITHUB_REF_NAME#v}"
+            echo "image=${REGISTRY}/${repo}-captions"
+            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: live/captions
+          target: production
+          platforms: linux/amd64,linux/arm64
+          push: true
+          sbom: true
+          provenance: mode=max
+          tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.meta.outputs.created }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+  slides-image:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the tagged tree
+        uses: actions/checkout@v4
+
+      - name: Derive version
+        id: meta
+        run: |
+          set -euo pipefail
+          repo=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          {
+            echo "version=${GITHUB_REF_NAME#v}"
+            echo "image=${REGISTRY}/${repo}-slides"
+            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: live/slides
+          platforms: linux/amd64,linux/arm64
+          push: true
+          sbom: true
+          provenance: mode=max
+          tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.meta.outputs.created }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

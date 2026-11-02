@@ -13,7 +13,10 @@ Deliveries come from a PostgreSQL transactional outbox processed by the
 
 `registration.created`, `registration.updated`, `occurrence.cancelled`,
 `occurrence.rescheduled`, `reminder.due`, `recording.published`,
-`attendance.recorded`, `attendance.checked_in`, `follow_up.requested`.
+`attendance.recorded`, `attendance.checked_in`, `follow_up.requested`,
+`engagement.recorded`.
+
+`engagement.recorded` comes from a self-hosted live room ([hosting.md](hosting.md#livekit-self-hosted)), once per registrant, from about 10 minutes after the session's scheduled end, and again if something changes in the day after it ends, as survey answers come in. Its `engagement` group has `chatMessages`, `chat` (the first 20, each with `at` and `text`), `questions` (`at`, `text`, `answered`, `answer`), `polls` (`question`, `answer`) and `survey` (question to answer). Long text is shortened. It's personal, so it's sent only to destinations that list `engagement` in their allowed groups. Others get the event without it. Set `required_consents` on the destination if your own rules call for consent first. Native integrations don't receive it yet: use a webhook destination, or a workflow preset.
 
 Occurrence-level events (cancel, reschedule, recording) are fanned out **per
 registration**, so each delivery describes one registrant.

@@ -6,6 +6,7 @@ contract (``contract``):
 * ``documented-unverified``: built from the vendor's public documentation, not yet run
   against a sandbox account (needs sandbox verification);
 * ``unverified``: endpoint paths/fields are our best reading and are marked UNVERIFIED;
+* ``self-hosted``: our own service in front of software the operator runs, tested end to end;
 * ``none``: no API at all (manual links only, no outbound calls).
 
 Unsupported actions are never simulated: the capability is ``False`` and the service
@@ -38,6 +39,7 @@ class Field:
     secret: bool = False
     required: bool = True
     pattern: object = None
+    choices: tuple = ()  # (value, label) pairs: the studio shows a select
 
 
 @dataclass(frozen=True)
@@ -48,6 +50,9 @@ class Capabilities:
     register_attendees: bool = False
     attendance_import: bool = False  # Adapter.fetch_attendance (read-only pull)
     manual_link: bool = False
+    host_room: bool = False  # a stored host link a person can open or share from the studio
+    live_settings: bool = False  # brand, stream keys and the like are on the provider's own /admin
+    recordings: bool = False  # Adapter.fetch_recordings (read-only)
 
     def as_dict(self):
         return {
@@ -57,6 +62,9 @@ class Capabilities:
             "registerAttendees": self.register_attendees,
             "attendanceImport": self.attendance_import,
             "manualLink": self.manual_link,
+            "hostRoom": self.host_room,
+            "liveSettings": self.live_settings,
+            "recordings": self.recordings,
         }
 
     @property
@@ -284,6 +292,9 @@ class Adapter:
     config_fields = ()
     notes = ()  # human-readable caveats (sandbox verification etc.)
     link_hosts = ()  # host suffixes accepted for attendee/host links in responses
+    # Registering an attendee can be repeated safely, so failures retry by themselves and never
+    # wait for a person to check the provider and reconcile.
+    register_idempotent = False
 
     # ---- description / validation (no network)
 
@@ -348,6 +359,14 @@ class Adapter:
             return [f"Ask your operator to add {', '.join(missing)} to WEBHOOK_HOST_ALLOWLIST before using {self.label}."]
         return []
 
+    def config_problems(self, config):
+        """Why this account's settings can't be used right now. No network."""
+        return []
+
+    def join_link_hosts(self, config):
+        """Hosts a stored attendee link may point at, for this account."""
+        return self.link_hosts
+
     def occurrence_problems(self, occ, action):
         """Provider-specific checks on the occurrence (e.g. minimum duration)."""
         return []
@@ -370,6 +389,14 @@ class Adapter:
         Nothing is ever simulated: adapters without ``capabilities.attendance_import``
         raise ``Unsupported``."""
         raise Unsupported("attendance")
+
+    def fetch_settings_link(self, config, secrets, room, *, email, name="", transport):
+        """A short-lived link into the provider's own settings. ``data`` is ``{"url": ...}``."""
+        raise Unsupported("settings_link")
+
+    def fetch_recordings(self, config, secrets, external_id, *, transport):
+        """Read-only: what was recorded. ``data`` is ``{"recordings": [...]}``."""
+        raise Unsupported("recordings")
 
     def _send(self, transport, step, method, url, **kw):
         return send(transport, self.allowed_hosts, step, method, url, **kw)

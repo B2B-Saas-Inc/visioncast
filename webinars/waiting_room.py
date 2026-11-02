@@ -568,6 +568,7 @@ def admit(occ, capability, now=None):
     registration = viewer_registration(occ, capability)
     if registration is None:
         return Admission(False, rs.state, reason="not_registered")
+    _prepare_attendee_link(occ, registration)  # may call the provider, so before any row lock
     created = False
     try:
         with transaction.atomic():
@@ -618,7 +619,7 @@ def admit(occ, capability, now=None):
 
 
 def _has_join_destination(occ):
-    """Doors may open: the shared link, or (linked Riverside) an enabled account whose
+    """Doors may open: the shared link, or (personal links) an enabled account whose
     per-registrant links are checked at admission. Fails closed (``preparing``)."""
     try:
         from webinars.hosting import service
@@ -626,6 +627,17 @@ def _has_join_destination(occ):
         return service.has_join_destination(occ)
     except Exception:
         return False
+
+
+def _prepare_attendee_link(occ, registration):
+    """Ask now for a personal link the worker hasn't got yet. Failing here changes nothing:
+    the lookup under the lock still decides."""
+    try:
+        from webinars.hosting import service
+
+        service.prepare_attendee_link(occ, registration)
+    except Exception:
+        pass
 
 
 def _attendee_join_url(occ, registration):

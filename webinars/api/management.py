@@ -132,7 +132,7 @@ def _require_publication(request, key, action, material, preview, state=None):
 # Input parsing
 # ---------------------------------------------------------------------------
 
-# Type tags: "str", "bool", "int", "strlist", "fold", "dict".
+# Type tags: "str", "bool", "int", "strlist", "fold", "dict", "object", "object_or_null", "objectlist".
 EVENT_FIELDS = {
     "internalName": ("internal_name", "str"),
     "slug": ("slug", "str"),
@@ -324,6 +324,12 @@ def _check_type(key, value, kind):
         ok = isinstance(value, list) and all(isinstance(v, str) for v in value)
     elif kind == "dict":
         ok = isinstance(value, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in value.items())
+    elif kind == "object":
+        ok = isinstance(value, dict)
+    elif kind == "object_or_null":
+        ok = value is None or isinstance(value, dict)
+    elif kind == "objectlist":
+        ok = isinstance(value, list) and all(isinstance(v, dict) for v in value)
     else:  # pragma: no cover - programming error
         ok = False
     if not ok:

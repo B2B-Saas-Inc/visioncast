@@ -29,6 +29,7 @@
         <option value="sequel"{% if provider == "sequel" %} selected{% endif %}>Sequel (Introvoke)</option>
         <option value="riverside"{% if provider == "riverside" %} selected{% endif %}>Riverside (attach existing event)</option>
         <option value="streamyard"{% if provider == "streamyard" %} selected{% endif %}>StreamYard (manual link)</option>
+        <option value="livekit"{% if provider == "livekit" %} selected{% endif %}>LiveKit (self-hosted)</option>
       </select>
     </div>
     <div class="form-actions"><button class="btn btn-sm" type="submit">Show settings</button></div>
@@ -52,8 +53,14 @@
       </div>
       {% for f in config_fields %}
       <div class="field">
-        <label class="label" for="config-{{ f.name }}">{{ f.label }}{% if not f.required %} <span class="small">(optional)</span>{% endif %}</label>
+        <label class="label" for="config-{{ f.name }}">{{ f.label }}{% if not f.required %} <span class="optional">(optional)</span>{% endif %}</label>
+        {% if f.choices %}
+        <select class="select" id="config-{{ f.name }}" name="config-{{ f.name }}" aria-describedby="config-{{ f.name }}-help">
+          {% for value, label in f.choices %}<option value="{{ value }}"{% if value == f.value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        {% else %}
         <input class="input" id="config-{{ f.name }}" name="config-{{ f.name }}" value="{{ f.value }}" maxlength="200" spellcheck="false" aria-describedby="config-{{ f.name }}-help">
+        {% endif %}
         <p class="help" id="config-{{ f.name }}-help">{{ f.help }}</p>
         {% for k, msgs in errors.items %}{% if k == f.name %}<p class="field-error">{{ msgs|join:" " }}</p>{% endif %}{% endfor %}
       </div>
@@ -69,7 +76,7 @@
   <section class="panel">
     <div class="panel-head"><h2>Credentials</h2></div>
     <div class="panel-body">
-      <p class="help" id="secret-help">Values are encrypted, used only by the server to call the provider's official API host, and never shown again. Leave a box empty to keep the stored value.</p>
+      <p class="help" id="secret-help">Values are encrypted, used only by the server to call the provider's API host, and never shown again. Leave a box empty to keep the stored value.</p>
       {% for f in secret_fields %}
       <div class="field">
         <label class="label" for="secret-{{ f.name }}">{{ f.label }} {% if f.is_set %}<span class="badge badge-success">Set</span>{% else %}<span class="badge badge-warn">Not set</span>{% endif %}</label>
@@ -87,6 +94,18 @@
     <a class="btn btn-ghost" href="{% url 'studio:hosting-accounts' %}">Cancel</a>
   </div>
 </form>
+{% if live_settings and account %}
+<section class="panel" id="live-settings">
+  <div class="panel-head"><h2>Brand and stream keys</h2></div>
+  <div class="panel-body">
+    <p class="help">Your logo, colours and fonts, and stream keys for YouTube, Meta, X and LinkedIn, are kept on your live server, in one place. This signs you in there.</p>
+    <form method="post" action="{% url 'studio:hosting-account-edit' pk=account.pk %}" target="_blank">
+      {% csrf_token %}<input type="hidden" name="step" value="live_settings">
+      <div class="form-actions" style="margin-top:var(--s-3)"><button class="btn" type="submit">Open live settings</button></div>
+    </form>
+  </div>
+</section>
+{% endif %}
 </div>
 
 <aside>

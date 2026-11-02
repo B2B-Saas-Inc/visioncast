@@ -812,6 +812,32 @@ def execute_session_hosting(args, key):
     return management._run(hosting.occurrence_hosting_execute.logic, request, key, body, (), {"pk": args["occurrenceId"]})
 
 
+def add_session_crew(args, key):
+    body = {f: args[f] for f in ("role", "name", "title") if f in args}
+    status, data = _mgmt(_hosting_api().occurrence_crew, "POST", key, body, pk=args["occurrenceId"])
+    if status != 201:
+        return status, data
+    return 201, {"id": data["id"], "note": "Their link is on the session's hosting page in the studio."}
+
+
+def remove_session_crew(args, key):
+    preview = {"action": "remove_crew_member", "occurrenceId": args["occurrenceId"], "memberId": args["memberId"]}
+    gated = _gate("remove_session_crew", key, args, preview)
+    if gated is not None:
+        return gated
+    return _mgmt(_hosting_api().occurrence_crew_member, "DELETE", key, pk=args["occurrenceId"], member=args["memberId"])
+
+
+def update_session_live_destinations(args, key):
+    rows = args["destinations"]
+    preview = {"action": "set_destinations", "occurrenceId": args["occurrenceId"],
+               "destinations": [{"platform": d.get("platform"), "armed": bool(d.get("armed")), "keySet": bool(d.get("key"))} for d in rows if isinstance(d, dict)]}
+    gated = _gate("update_session_live_destinations", key, args, preview)
+    if gated is not None:
+        return gated
+    return _mgmt(_hosting_api().occurrence_live_destinations, "PATCH", key, {"destinations": rows}, pk=args["occurrenceId"])
+
+
 def _account_state(account):
     """Gate state for a hosting account: any save (name, flags, config or secrets) invalidates tokens.
     Only a digest of the ciphertext is used; secrets are never decrypted here."""
@@ -1086,6 +1112,45 @@ def _ticket_tools():
          "handler": lambda a, k: _mgmt(h.hosting_providers, "GET", k),
          "description": "Hosting adapters, their capabilities (provisioning vs manual link) and contract status.",
          "inputSchema": _schema({})},
+        {"name": "list_session_crew", "scopes": provision, "readOnly": True,
+         "handler": lambda a, k: _mgmt(h.occurrence_crew, "GET", k, pk=a["occurrenceId"]),
+         "description": "Hosts, producers and guests on a self-hosted live session. Never returns their links.",
+         "inputSchema": _schema({"occurrenceId": _UUID}, ["occurrenceId"])},
+        {"name": "add_session_crew", "scopes": provision, "handler": add_session_crew,
+         "description": "Adds a host, producer or guest to a live session. Their personal link isn't returned here: an "
+                        "Administrator copies it from the session's hosting page, or REST returns it once.",
+         "inputSchema": _schema({"occurrenceId": _UUID, "role": {"type": "string", "enum": ["host", "producer", "guest"]},
+                                 "name": {"type": "string", "maxLength": 80}, "title": {"type": "string", "maxLength": 80}},
+                                ["occurrenceId", "role", "name"])},
+        {"name": "remove_session_crew", "scopes": provision, "gated": True, "handler": remove_session_crew,
+         "description": "Removes someone from a live session's crew. Their link stops working and they're put out of the room at once. Gated.",
+         "inputSchema": _schema({"occurrenceId": _UUID, "memberId": {"type": "string", "maxLength": 128},
+                                 "dryRun": {"type": "boolean"}, "confirmToken": {"type": "string", "maxLength": 512}},
+                                ["occurrenceId", "memberId"])},
+        {"name": "get_session_live_settings", "scopes": provision + (S.CONFIG_READ,), "readOnly": True,
+         "handler": lambda a, k: _mgmt(h.occurrence_live_settings, "GET", k, pk=a["occurrenceId"]),
+         "description": "A live session's room settings (chat, Q&A, polls, captions, recording options), its own look, its survey and saved layouts.",
+         "inputSchema": _schema({"occurrenceId": _UUID}, ["occurrenceId"])},
+        {"name": "update_session_live_settings", "scopes": provision, "handler": lambda a, k: _mgmt(h.occurrence_live_settings, "PATCH", k, {f: a[f] for f in ("settings", "theme", "survey") if f in a}, pk=a["occurrenceId"]),
+         "description": "Changes a live session's room settings, look or post-event survey. Open rooms update straight away. Send the whole settings object, as read from get_session_live_settings.",
+         "inputSchema": _schema({"occurrenceId": _UUID, "settings": {"type": "object"}, "theme": {"type": "object"}, "survey": {"type": ["object", "null"]}}, ["occurrenceId"])},
+        {"name": "get_session_live_destinations", "scopes": provision, "readOnly": True,
+         "handler": lambda a, k: _mgmt(h.occurrence_live_destinations, "GET", k, pk=a["occurrenceId"]),
+         "description": "Where a live session broadcasts (YouTube, Meta, X, LinkedIn). Stream keys are masked.",
+         "inputSchema": _schema({"occurrenceId": _UUID}, ["occurrenceId"])},
+        {"name": "update_session_live_destinations", "scopes": provision, "gated": True, "handler": update_session_live_destinations,
+         "description": "Sets where a live session broadcasts. Keys are set-only: a blank key keeps the one stored. Gated.",
+         "inputSchema": _schema({"occurrenceId": _UUID, "destinations": {"type": "array", "items": {"type": "object"}, "maxItems": 8},
+                                 "dryRun": {"type": "boolean"}, "confirmToken": {"type": "string", "maxLength": 512}},
+                                ["occurrenceId", "destinations"])},
+        {"name": "get_session_engagement", "scopes": provision, "readOnly": True,
+         "handler": lambda a, k: _mgmt(h.occurrence_engagement, "GET", k, pk=a["occurrenceId"]),
+         "description": "Counts of chat messages, questions, poll votes and survey answers brought back from a live session. Never what anyone said.",
+         "inputSchema": _schema({"occurrenceId": _UUID}, ["occurrenceId"])},
+        {"name": "pull_session_engagement", "scopes": provision,
+         "handler": lambda a, k: _mgmt(h.occurrence_engagement, "POST", k, {}, pk=a["occurrenceId"]),
+         "description": "Brings engagement back from the live server now, rather than waiting for the worker. Sends engagement.recorded for what changed.",
+         "inputSchema": _schema({"occurrenceId": _UUID}, ["occurrenceId"])},
         {"name": "get_session_hosting", "scopes": provision + (S.CONFIG_READ,), "readOnly": True,
          "handler": lambda a, k: _mgmt(h.occurrence_hosting, "GET", k, pk=a["occurrenceId"]),
          "description": "Provider link state for a session. Never returns join or host links.",
@@ -1117,6 +1182,13 @@ def _ticket_tools():
                         "preview shows hosts only and responses carry hasJoinUrl flags. Gated.",
          "inputSchema": _schema({"occurrenceId": _UUID, **h.MANUAL_LINK_INPUT_SCHEMA["properties"]},
                                 ["occurrenceId", "accountId", "joinUrl"], gated=True)},
+        {"name": "get_live_brand", "scopes": admin + (S.CONFIG_READ,), "readOnly": True,
+         "handler": lambda a, k: _mgmt(h.hosting_account_live_brand, "GET", k, pk=a["accountId"]),
+         "description": "The brand every room on a live server uses: colours, page mode, font.",
+         "inputSchema": _schema({"accountId": _UUID}, ["accountId"])},
+        {"name": "update_live_brand", "scopes": admin, "handler": lambda a, k: _mgmt(h.hosting_account_live_brand, "PATCH", k, {f: a[f] for f in ("accent", "stage", "mode", "font") if f in a}, pk=a["accountId"]),
+         "description": "Changes the brand of every room on a live server. Colours are #rrggbb; mode is light or dark; font is system, serif, rounded, mono or custom.",
+         "inputSchema": _schema({"accountId": _UUID, "accent": {"type": "string", "maxLength": 7}, "stage": {"type": "string", "maxLength": 7}, "mode": {"type": "string", "enum": ["", "light", "dark"]}, "font": {"type": "string", "enum": ["", "system", "serif", "rounded", "mono", "custom"]}}, ["accountId"])},
         {"name": "list_hosting_accounts", "scopes": admin + (S.CONFIG_READ,), "readOnly": True,
          "handler": lambda a, k: _mgmt(h.hosting_accounts, "GET", k),
          "description": "Hosting accounts: provider, config, secretsSet flags (never values), capabilities, warnings.",

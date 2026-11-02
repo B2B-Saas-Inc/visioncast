@@ -43,3 +43,8 @@ Anyone can register on the public form with an unverified email, receive an iden
 
 ## Email
 Verification needs outgoing email (docs/email.md). With delivery disabled, unknown browsers cannot verify; the room says so.
+
+## With your own live server
+
+For a session on the LiveKit add-on ([live/README.md](../live/README.md)), admission asks the service for that registrant's personal link if the worker hasn't yet, before taking any row lock. The redirect lands on `/{slug}/lobby` on your live server, which shows a countdown, chat, Q&A and polls until someone goes live. The two pages work together: this one decides who gets in, and that one is the session.
+

@@ -77,7 +77,7 @@ COPY --chown=root:root LICENSE ./
 # Guides served read-only as MCP resources (webinars/mcp_resources.GUIDES; keep in sync
 # with the .dockerignore allowlist). Public documentation only, no secrets.
 COPY --chown=root:root README.md ./
-COPY --chown=root:root docs/implementation-guide.md docs/operations.md docs/integration.md docs/mcp.md docs/management-api.md \
+COPY --chown=root:root docs/implementation-guide.md docs/operations.md docs/branding.md docs/integration.md docs/mcp.md docs/management-api.md \
      docs/api-reference.md docs/webhooks.md docs/field-dictionary.md docs/field-mapping.md \
      docs/waiting-room.md docs/studio.md docs/email.md docs/browser-integration.md \
      docs/native-integrations.md docs/security.md docs/tickets.md docs/hosting.md docs/kits.md ./docs/

@@ -78,6 +78,7 @@ GUIDES = {
     "readme": "README.md",
     "implementation-guide": "docs/implementation-guide.md",
     "operations": "docs/operations.md",
+    "branding": "docs/branding.md",
     "integration": "docs/integration.md",
     "mcp": "docs/mcp.md",
     "management-api": "docs/management-api.md",

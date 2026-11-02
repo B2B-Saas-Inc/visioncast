@@ -17,20 +17,24 @@ Code: `webinars/hosting/` (adapters + `service.py`), REST `webinars/api/hosting.
 | Sequel (Introvoke) | yes | no | no | no | no | no (file import) | documented, **not sandbox-verified** |
 | Riverside | no (not documented) | no | yes | yes (registrant join links) | no | yes (**UNVERIFIED** registrant list) | **unverified** paths/fields |
 | StreamYard | no | no | no | no | yes | no (file import) | no public API; zero outbound calls |
+| LiveKit (self-hosted) | yes | yes | no | yes (personal links) | no | yes (from LiveKit's webhooks) | our own service, [live/README.md](../live/README.md); tested against a real LiveKit server |
 
 Attendance for providers without `attendanceImport` arrives through the file import
 (see [Attendance import](#attendance-import)); it is never simulated. Teams and Google Meet
 are not supported. "No" means the action is refused with a clear message, never simulated.
 
-Every vendor contract here needs verification against a real sandbox account before
-production use. Riverside endpoint paths (`platform.riverside.fm/api/v1/events/{id}` and
+Every vendor contract here (LiveKit aside, which you run yourself) needs verification against a
+real sandbox account before production use. Riverside endpoint paths (`platform.riverside.fm/api/v1/events/{id}` and
 `.../registrants`) are our best reading and are constants in `webinars/hosting/riverside.py`.
 
 ## Setup (owner / Administrator)
 
-1. The operator adds the provider's API hosts to `WEBHOOK_HOST_ALLOWLIST`
-   (Zoom: `zoom.us`, `api.zoom.us`; Wistia: `api.wistia.com`; Sequel: `api.introvoke.com`;
-   Riverside: `platform.riverside.fm`). Credentials are only ever sent to these pinned hosts.
+1. Nothing to allowlist for vendors: their API hosts (Zoom: `zoom.us`, `api.zoom.us`; Wistia:
+   `api.wistia.com`; Sequel: `api.introvoke.com`; Riverside: `platform.riverside.fm`) are pinned in
+   the code, and credentials are only ever sent to them. An operator who set
+   `NATIVE_VENDOR_HOSTS_IMPLICIT=0` adds them to `WEBHOOK_HOST_ALLOWLIST` by hand. LiveKit is the
+   exception: an Administrator types its service host, so that exact host must be in
+   `WEBHOOK_HOST_ALLOWLIST`, and saving is refused until it is.
 2. Studio → Hosting providers → Connect a provider. Credentials are set-only, encrypted with
    `INTEGRATION_MASTER_KEY` and never shown again (blank keeps the stored value).
    - Zoom: Server-to-Server OAuth app (account ID, client ID, client secret) and the licensed
@@ -38,6 +42,7 @@ production use. Riverside endpoint paths (`platform.riverside.fm/api/v1/events/{
    - Wistia: API token. Sessions must be at least 15 minutes.
    - Sequel: client ID/secret and company ID.
    - Riverside: API key; create the event in Riverside first, then attach its ID.
+   - LiveKit: the service host and `LIVE_SERVICE_SECRET` from [your install](../live/README.md).
    - StreamYard: no credentials. Optional `HOSTING_MANUAL_LINK_HOSTS` (comma list) allows
      extra embed hosts besides `streamyard.com`.
 
@@ -222,3 +227,18 @@ apply or outcome in between invalidates them. A provider pull additionally requi
 enabled hosting account linked to the session; credentials are never returned or rendered.
 Other-occurrence import or row ids get 404; state conflicts get 409 and consume no token.
 Responses and pages never contain full email addresses, join links or provider payloads.
+
+## LiveKit (self-hosted)
+
+Install and service details: [live/README.md](../live/README.md). How it differs in VisionCast:
+
+* **Create and update** both send one repeatable request, so a timeout is a plain failure to retry, with no reconciliation.
+* **Personal links.** Linked sessions hand out one link per registrant, as Riverside does, and the shared join link is never used. The worker asks for links ahead of time. If it hasn't got to someone, the waiting room asks when they enter, before taking any row lock. During an outage those retries are spaced 30 seconds apart per attendee, and they continue past the worker's five-attempt limit.
+* **No hand reconciliation.** A lost attempt, or a link made for another room, goes back to `failed` and is asked for again, so these registrants never appear on the Registrants page.
+* **Your room and crew.** On the session's Hosting page, Editors can open the studio as a host, with a link that's theirs alone. Administrators manage the crew person by person: add a host, producer or guest, show or replace their link, or remove them. Links are asked of the service each time and never stored here. Each use is audited (`hosting.host_link_used`, `hosting.crew_added`, `hosting.crew_link_used`, `hosting.crew_new_link`, `hosting.crew_removed`).
+* **Address.** The room's address comes from the event's slug: `https://live.example.com/{slug}`, with the date and time added when an event has several sessions. The waiting room's address goes along, so a visitor with no link knows where to go. A registrant still enters through `/w/{code}/`, then lands on `/{slug}/lobby`.
+* **Brand, broadcasting and stream keys** are on the live server's own settings page, `/admin`, so there's one copy of each stream key. Administrators get there from Open live settings on the account, or Broadcast and brand settings on a session, which sign them in with a one-time link (audited as `hosting.live_settings_opened`). VisionCast keeps none of this.
+* **Recordings.** "Check for recordings" lists what the service holds, with each one's SRT and transcript files, for everyone and per speaker. To send a recording to registrants, copy its link into Recording on the session page.
+* **Over the API.** `/api/v1/manage/occurrences/{id}/live/crew`, `/live/settings`, `/live/destinations`, `/engagement` and `/api/v1/manage/hosting/accounts/{id}/live/brand` ([management-api.md](management-api.md)), and MCP tools for each ([mcp.md](mcp.md)). A crew member's link is returned by REST once, when it's made, and never over MCP. Crew names need `hosting_provision`, not `config_read`. Stream keys are set-only. A former teammate's host link keeps working until it's removed under Crew: removing someone from the Team doesn't reach the live server.
+* **Engagement.** The worker brings back each attendee's chat, questions, poll votes and survey answers from about 10 minutes after the scheduled end, and hourly for a day after the session ends, because surveys come in then. An Administrator can press Bring it back now. A live server that doesn't answer is asked less often, then given up on after 10 tries. It's stored on the registration, and `engagement.recorded` goes to destinations subscribed to it, for what changed. The `engagement` group is sent only to destinations that list it. Erasing a person erases it, here and, if the live server can be reached, there too; otherwise it goes when the room's retention ends. Anonymous questions aren't tied to anyone, so they don't come back.
+* **Attendance** matches on the registration ID alone, so the import holds no email address for these rows. A pull taken while someone is still in the room is marked partial.

@@ -4,7 +4,8 @@
 business change so that a webhook exists if and only if the change committed.
 
 Payload (schemaVersion "1") is grouped into ``identity``, ``profile``,
-``organization``, ``consents``, ``attribution``, ``registration``, ``event`` and
+``organization``, ``consents``, ``attribution``, ``registration``, ``event``,
+``engagement`` (only on ``engagement.recorded``, and only to destinations that list it) and
 ``delivery_metadata``. Each destination receives only the groups listed in
 ``Destination.allowed_groups`` (``event`` and ``delivery_metadata`` always; when
 ``allowed_groups`` is empty: ``event``, ``registration`` and ``delivery_metadata``).
@@ -55,11 +56,13 @@ EVENT_TYPES = (
     # Waiting-room admission (webinars/waiting_room.py): exactly one per registration.
     "attendance.checked_in",
     "follow_up.requested",
+    # What someone did in a self-hosted live room (webinars/hosting/engagement.py).
+    "engagement.recorded",
 )
 
 ALWAYS_GROUPS = ("event", "delivery_metadata")
 DEFAULT_GROUPS = ("event", "registration", "delivery_metadata")
-PERSON_GROUPS = ("identity", "profile", "organization", "consents", "attribution")
+PERSON_GROUPS = ("identity", "profile", "organization", "consents", "attribution", "engagement")
 TOP_LEVEL_KEYS = ("schemaVersion", "eventType", "occurredAt")
 MAPPED_KEY = "mapped"
 
@@ -340,6 +343,8 @@ def build_full_payload(event_type, *, registration, occurrence, destination, del
             payload["consents"] = _consent_group(registration_consents(registration))
         payload["attribution"] = _attribution(person, registration, include_first_touch=verified)
         payload["registration"] = _registration_group(registration)
+        if event_type == "engagement.recorded":
+            payload["engagement"] = copy.deepcopy(registration.engagement or {})
     payload["event"] = _event_group(occurrence, bool(destination.include_private_links))
     payload["delivery_metadata"] = {
         "deliveryId": str(delivery_id),

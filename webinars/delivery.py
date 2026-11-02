@@ -206,7 +206,7 @@ def serialize_body(message, destination=None):
 
 PURGED = {"purged": True}
 # Payload groups that only exist for person-linked events (see outbox.build_full_payload).
-PERSON_LINKED_KEYS = ("identity", "profile", "organization", "consents", "attribution", "registration", "mapped")
+PERSON_LINKED_KEYS = ("identity", "profile", "organization", "consents", "attribution", "registration", "mapped", "engagement")
 
 
 def _is_person_linked(payload):

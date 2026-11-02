@@ -28,7 +28,7 @@ from webinars.audit import audit
 from webinars.delivery import requeue_message
 from webinars.models import ApiKey, ConsentRecord, Destination, Invitation, OutboxMessage, PreviewMessage
 from webinars.normalization import FieldError, normalize_email
-from webinars.studio.access import forbidden, no_store, render, studio_view, superuser_only
+from webinars.studio.access import forbidden, is_hosting_admin, no_store, render, studio_view, superuser_only
 
 T = "studio/settings/"
 
@@ -80,6 +80,7 @@ EVENT_TYPE_HELP = {
     "attendance.recorded": ("Attendance recorded", "Someone is marked attended or no-show."),
     "attendance.checked_in": ("Checked in", "Someone enters the waiting room and is admitted."),
     "follow_up.requested": ("Follow-up requested", "A teammate flags a registrant for follow-up."),
+    "engagement.recorded": ("Live room engagement", "What someone said and voted in your own live room, after it ends."),
 }
 
 GROUP_HELP = {
@@ -1095,3 +1096,34 @@ def account(request):
         },
         status=status,
     )
+
+
+# ---------------------------------------------------------------------------
+# Brand
+# ---------------------------------------------------------------------------
+
+
+@studio_view(methods=("GET", "POST"))
+def brand_settings(request):
+    from webinars import brand
+
+    if not is_hosting_admin(request.user):
+        return forbidden(request, "Only Administrators can change the brand.")
+    ctx = {"errors": {}, "notices": []}
+    if request.method == "POST":
+        upload = request.FILES.get("logo")
+        try:
+            ctx["notices"] = brand.save(
+                name=request.POST.get("name", ""), accent=request.POST.get("accent", ""),
+                logo=upload.read(brand.MAX_LOGO_BYTES + 1) if upload else None,
+                remove_logo=request.POST.get("remove_logo") == "1", user=request.user)
+            if not ctx["notices"]:
+                ctx["saved"] = True
+        except ValidationError as exc:
+            ctx["errors"] = _error_dict(exc)
+    current = brand.current()
+    # After a mistake, keep what was typed so it can be corrected.
+    ctx["values"] = request.POST if ctx["errors"] else current
+    ctx["summary"] = _summary(ctx["errors"], {"name": "Name", "accent": "Colour", "logo": "Logo"})
+    ctx["default_name"] = brand.DEFAULT_NAME
+    return render(request, "studio/settings/brand.html", ctx, status=400 if ctx["errors"] else 200)

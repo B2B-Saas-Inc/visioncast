@@ -7,9 +7,11 @@
   <meta name="referrer" content="same-origin">
   <title>{% block title %}{{ event.public_title|default:"Waiting room" }}{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'waiting_room/room.css' %}">
+  {% if brand.css %}<link rel="stylesheet" href="{{ brand.css }}">{% endif %}
 </head>
 <body>
 <main class="room" id="main">
+  {% if brand.custom_logo %}<p class="room-logo"><img src="{{ brand.logo }}" alt="{{ brand.name }}" height="40"></p>{% endif %}
   <div class="room-card">
     {% block content %}{% endblock %}
   </div>

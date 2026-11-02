@@ -38,3 +38,6 @@ node_modules/
 
 # Agent worktrees
 .claude/worktrees/
+deploy/quickstart/.first-admin
+deploy/live/.env
+deploy/live/models/

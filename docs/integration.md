@@ -81,3 +81,10 @@ The SDK no longer collects `gad_source`, `utm_source_platform`, `utm_creative_fo
 - **No email verification:** there is no email-verified identity. Recognition relies only on the HttpOnly capability cookie issued to the browser that created the person.
 - **Same email from another browser:** an existing email submitted from a different browser or device is accepted as an *unverified* submission. It is not linked, it does not reveal or update the stored profile, and that browser is not recognised later. Cross-device linking is not supported until verification exists.
 - **No email correction:** a recognised browser cannot correct its email address. Submitting a different email is treated as registering someone else, and the capability is not rebound. The only correction path is **"Not you? Start over"** (reset), which revokes the capability and shows the full form.
+
+## Sending registrants to your own live server
+
+With the LiveKit add-on ([implementation guide](implementation-guide.md), section 9.2), nothing changes on your website: keep linking to the waiting room, `/w/<code>/`. At admission it redirects each registrant to their personal link, which lands on `https://live.example.com/{slug}/lobby` and then `/{slug}`. Don't link to the live address directly: without a personal link, it sends people back to the waiting room.
+
+To build on it without VisionCast's studio, the service has a small API under `/v1`, documented in [live/README.md](../live/README.md#service-api).
+
