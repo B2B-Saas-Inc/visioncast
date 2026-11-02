@@ -2,6 +2,13 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## GrowthCast email through PostHog, live — 2026-11-02
+
+- PostHog project 589469 (GrowthCast, US Cloud): sender `events@mail.growthcast.app` verified by the owner in the app. Two templates, made transactional with the owner's typed confirmation: *VisionCast: attendee email* (`01a19def-3d37-…`) and *VisionCast: sign-in codes and invitations* (`01a19def-7359-…`, **Protect sensitive data** on). Both: `{{ variables.subject }}`, `{{ variables.html | raw }}`, `{{ variables.text }}`, GrowthCast header, Manrope, coral links.
+- Production 0.4.4-pre: `EMAIL_DELIVERY=posthog` with a `phs_` key (Workflow: Write) kept in `/root/visioncast-secrets/posthog-email-key` and `.env`; destination *PostHog: attendee email* enabled for all seven attendee event types, send policy clear.
+- **Real sends, both `delivered`** per PostHog's status API within about 5 seconds: a platform message through `webinars.mail.posthog_send` and a Live Test confirmation through the attendee template with the destination's credentials. Not yet seen: a confirmation produced by a real registration through the outbox.
+- Found while testing: production first ran 0.4.3-pre, without the paragraph-spacing fix, so the first platform test arrived with its paragraphs run together; 0.4.4-pre fixed it.
+
 ## GrowthCast moves from Amazon SES to PostHog transactional email — 2026-11-02
 
 - At the owner's request, GrowthCast's own deployment no longer uses SES. Removed: the SES domain and recipient identities, the IAM user `visioncast-events-ses-smtp` with its key and policy, the five DKIM and MAIL FROM records in Cloudflare, the SMTP settings in every release's `.env` and in `bootstrap.conf`, and the SMTP secret files (shredded). Production runs `EMAIL_DELIVERY=disabled` until PostHog is set up. The pending SES production-access request can't be withdrawn and is harmless.
