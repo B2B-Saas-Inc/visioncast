@@ -146,12 +146,12 @@ Add sample events with `docker compose run --rm web manage seed_public_demo`. Th
 
 ### Use the published image
 
-Every `v<VERSION>` tag builds linux/amd64 and linux/arm64 images with an SBOM and provenance. The current release is **`ghcr.io/b2b-saas-inc/visioncast:0.3.7-pre`** (digest `sha256:4eab0002d4f5c31702a6f6a4a29ba8bb03a0f02124bafe9836c590fc4fd5a368`). The package is private for now, so pulling needs a GitHub token with `read:packages`.
+Every `v<VERSION>` tag builds linux/amd64 and linux/arm64 images with an SBOM and provenance: the studio, and the live service, captions and slides images. The current release is **`0.4.6-pre`**; its digests are on the tag's release run in GitHub Actions. The packages are private for now, so pulling needs a GitHub token with `read:packages`.
 
 ```sh
-docker pull ghcr.io/b2b-saas-inc/visioncast:0.3.7-pre
-# in .env:  WEBINAR_IMAGE=ghcr.io/b2b-saas-inc/visioncast:0.3.7-pre  and  WEBINAR_PULL_POLICY=never
-deploy/upgrade.sh --image ghcr.io/b2b-saas-inc/visioncast:0.3.7-pre   # first run: docker compose run --rm migrate && docker compose up -d
+docker pull ghcr.io/b2b-saas-inc/visioncast:0.4.6-pre
+# in .env:  WEBINAR_IMAGE=ghcr.io/b2b-saas-inc/visioncast:0.4.6-pre  and  WEBINAR_PULL_POLICY=never
+deploy/upgrade.sh --image ghcr.io/b2b-saas-inc/visioncast:0.4.6-pre   # first run: docker compose run --rm migrate && docker compose up -d
 ```
 
 ## Deploy to production
@@ -160,8 +160,8 @@ On any provider, the simplest route is [`deploy/quickstart/install.sh`](deploy/q
 
 ```sh
 deploy/production/provision.sh --apply                      # creates the droplet (dry run without --apply)
-deploy/production/package-release.sh v0.3.7-pre             # source tarball from a tag
-deploy/production/update.sh --host <ip> --tarball dist/visioncast-0.3.7-pre.tar --upload-only
+deploy/production/package-release.sh v0.4.6-pre             # source tarball from a tag
+deploy/production/update.sh --host <ip> --tarball dist/visioncast-0.4.6-pre.tar --upload-only
 # on the droplet: bootstrap.sh (see deploy/production/README.md)
 deploy/production/verify.sh --domain events.example.com --expect-access
 ```
@@ -246,17 +246,17 @@ No scope implies another. VisionCast stores keys hashed and shows each one once.
 
 ## Status
 
-VisionCast is a pre-release. Here is exactly where it stands on **0.3.7-pre** (2026-10-29). [docs/validation.md](docs/validation.md) records every run with its date; [docs/remaining-gaps.md](docs/remaining-gaps.md) and [docs/release-checklist.md](docs/release-checklist.md) list what's left.
+VisionCast is a pre-release. Here is exactly where it stands on **0.4.6-pre** (2026-11-02). [docs/validation.md](docs/validation.md) records every run with its date; [docs/remaining-gaps.md](docs/remaining-gaps.md) and [docs/release-checklist.md](docs/release-checklist.md) list what's left.
 
 **Proven**
 
-* 2,453 automated tests passed on Python 3.12 and PostgreSQL 16 at this release, with lint, system and migration checks clean. The unreleased live add-on work brings that to 2,510.
+* 2,542 automated tests pass on Python 3.12 and PostgreSQL 16 at this release, with lint, system and migration checks clean, plus 90 for the live service.
 * A real-browser walkthrough of the studio passes 13 of 13 steps, plus browser suites for the form script, Google Tag Manager tag and Riverside flow.
 * An end-to-end acceptance test covers create, provision, register, pay, check in, record attendance and deliver.
 * Images build for amd64 and arm64 and publish to GHCR on every tag; backup, restore, in-place upgrade and rollback have been rehearsed.
-* VisionCast runs in production at [events.growthcast.app](https://events.growthcast.app/healthz) behind Cloudflare, serving [growthcast.app/events](https://growthcast.app/events), upgraded in place since its first install on 0.3.0-pre.
+* VisionCast runs in production at [events.growthcast.app](https://events.growthcast.app/healthz) behind Cloudflare, serving [growthcast.app/events](https://growthcast.app/events), upgraded in place since its first install on 0.3.0-pre. Its email goes through PostHog transactional email, and real sends were delivered.
 
-**The live add-on, not yet released** (branch `livekit-rust`), on a real stack on one machine:
+**The live add-on** (released in 0.4.0-pre), on a real stack on one machine:
 
 * Every role in real browsers, 36 of 36 steps, and every newer feature, 24 of 24.
 * Chromium, Firefox, WebKit and phone-sized screens, 8 of 8, including screen sharing in WebKit.
@@ -266,7 +266,7 @@ VisionCast is a pre-release. Here is exactly where it stands on **0.3.7-pre** (2
 
 **Not yet proven**
 
-* Native integrations, Stripe and hosting providers have only been tested against mocked vendor APIs. Each needs a live sandbox run before you rely on it. LiveKit is the exception: it runs against a real server, but only on one machine so far. It hasn't run on a public server, through TURN with real media, on Safari with a camera, or to a real streaming platform.
+* Native integrations, Stripe and hosting providers have only been tested against mocked vendor APIs. Each needs a live sandbox run before you rely on it. LiveKit is the exception: it runs on a public server at live.growthcast.app, where video went through TURN over TLS on port 443 with nothing else allowed. It hasn't yet run a real session with people on phones, on Safari with a camera, or to a real streaming platform.
 * Website kits were installed fresh in Docker but not on a real production site.
 * Nobody independent has run a security audit. The core app has had no load test. The live add-on has had an adversarial code review, a repeatable attack suite and a load test, all on one machine ([docs/validation.md](docs/validation.md)).
 

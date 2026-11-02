@@ -259,6 +259,20 @@ The script writes new secrets to `deploy/live/.env`, without printing them, down
 
 **Optional parts.** Set `COMPOSE_PROFILES=encoder,translate` in `.env`, with the matching lines the script left commented out. Translation needs about 1 GB of disk and memory for each language.
 
+## Updating and backups
+
+**Updating.** On the server, from the checkout: `deploy/live/update.sh v0.4.6-pre` (any release tag). It refuses to run over local code changes, takes a backup first when backups are set up, checks out the tag, rebuilds the images, restarts what changed and waits for `/healthz`. `.env`, the data volumes and the captions model are kept. It ends by printing the command that goes back to the previous tag. Rooms in progress drop for the restart, so update between sessions.
+
+**Backups.** `deploy/live/backup.sh` makes one encrypted file of the database (rooms, crew, accounts, settings, engagement), uploads (slides, graphics, the brand) and speakers' local recordings, using a consistent copy of the database while the service runs. Recordings already sent to a bucket aren't included. Set it up once, as root:
+
+```bash
+apt-get install -y age sqlite3
+echo 'LIVE_BACKUP_AGE_RECIPIENT=age1...' >> deploy/live/.env   # a public key; keep the private key off this server
+echo '30 2 * * * root /opt/visioncast/deploy/live/backup.sh >> /var/log/visioncast-live-backup.log 2>&1' > /etc/cron.d/visioncast-live
+```
+
+Files go to `/var/backups/visioncast-live` (`LIVE_BACKUP_DIR`) and are kept 14 days (`LIVE_BACKUP_KEEP_DAYS`). They're on the same server, so copy them somewhere else, or use your provider's server backups as well. To restore, stop the stack, then `age -d -i <identity> live-<time>.tar.age | tar -x -C <the live-data volume>`, and start it again.
+
 ## Service API
 
 Everything under `/v1` needs `Authorization: Bearer <LIVE_SERVICE_SECRET>`. All of it is safe to repeat.
