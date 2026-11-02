@@ -19,7 +19,7 @@ PostHog can send both kinds of email: the platform's own (`EMAIL_DELIVERY=postho
 One-time setup in PostHog ([their guide](https://posthog.com/docs/workflows/transactional-emails)):
 
 1. **Sender.** In Workflows, add an email channel for an address on your domain and add the DNS records it shows (SPF, DKIM, DMARC alignment).
-2. **Templates.** Create two templates with the sender. Each has the subject `{{ variables.subject }}` and a body whose content block outputs `{{ variables.html }}` (paragraphs of escaped text with links; the plain text is in `{{ variables.text }}`). Use your logo, colours and footer around it. Then **Make transactional**, with no marketing category.
+2. **Templates.** Create two templates with the sender. Each has the subject `{{ variables.subject }}` and a body whose content block outputs `{{ variables.html | raw }}` (PostHog escapes output unless told otherwise; VisionCast has already escaped every value in it) (paragraphs of escaped text with links; the plain text is in `{{ variables.text }}`). Use your logo, colours and footer around it. Then **Make transactional**, with no marketing category.
    - *Platform email*: turn on **Protect sensitive data**, because it carries sign-in codes and invitation links. Its ID is `POSTHOG_EMAIL_TEMPLATE_ID`.
    - *Attendee email*: confirmations, reminders and the rest. Its ID goes in the destination.
 3. **Key.** Create a project secret API key with **Workflow: Write**. It can only send these emails and read their status. Put it in `POSTHOG_EMAIL_API_KEY` on the server, and in the destination's set-only key field. Never in a browser.

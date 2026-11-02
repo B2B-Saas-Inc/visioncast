@@ -98,7 +98,7 @@ def test_exact_request():
     assert data["subject"] == "[Example] You're registered: Sample webinar"
     assert data["text"].startswith("Hi Sample,\n\nYou're registered for Sample webinar.")
     # Paragraphs only: the template supplies the page.
-    assert data["html"].startswith("<p>") and "<html" not in data["html"] and "<!DOCTYPE" not in data["html"]
+    assert data["html"].startswith('<p style="margin:0 0 16px 0">') and "<html" not in data["html"] and "<!DOCTYPE" not in data["html"]
     assert (data["event_type"], data["message"], data["delivery_id"]) == ("registration.created", "registration_created", DELIVERY_ID)
     assert KEY not in json.dumps(body)
 

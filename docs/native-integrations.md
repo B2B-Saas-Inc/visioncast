@@ -474,7 +474,7 @@ References fetched 2026-11-02: https://posthog.com/docs/workflows/transactional-
 
 **Settings.** *PostHog host* (US or EU Cloud), *Template ID* (UUID), the shared subject prefix, per-message overrides and send confirmation, the set-only *Project secret API key* (`^phs_[A-Za-z0-9_-]{16,200}$`; a public `phc_` token or a personal `phx_` key is refused) and the processing acknowledgement. No from or reply-to settings: the sender is the template's. Self-hosted PostHog isn't offered here yet.
 
-**Open points.** Whether a template outputs `{{ variables.html }}` unescaped depends on how it's built in PostHog's editor (UNVERIFIED); the plain text is always in `{{ variables.text }}`. Retries after 24 hours can send twice, like Resend.
+**Open points.** PostHog escapes Liquid output by default, so the template must use `{{ variables.html | raw }}`; every value in it was escaped by VisionCast. Its layout zeroes paragraph margins, so each paragraph carries `margin:0 0 16px 0`. The plain text is in `{{ variables.text }}`. Retries after 24 hours can send twice, like Resend.
 
 ## Marketer setup
 

@@ -47,7 +47,7 @@ class PostHogBackend(BaseEmailBackend):
     """Sends through PostHog transactional email: one API call per recipient.
 
     The template (``POSTHOG_EMAIL_TEMPLATE_ID``) owns the sender, the page and the footer; it shows
-    ``{{ variables.subject }}`` and ``{{ variables.html }}``. Turn on *Protect sensitive data* on
+    ``{{ variables.subject }}`` and ``{{ variables.html | raw }}``. Turn on *Protect sensitive data* on
     it, because these messages carry sign-in codes and invitation links."""
 
     def send_messages(self, email_messages):
@@ -66,13 +66,13 @@ class PostHogBackend(BaseEmailBackend):
 
 def posthog_send(to, subject, text):
     """One send. Returns PostHog's message id; raises ``PostHogEmailError`` otherwise."""
-    from webinars.email_html import to_html_fragment
+    from webinars.email_html import SPACED_PARAGRAPH, to_html_fragment
 
     payload = {
         "template_id": settings.POSTHOG_EMAIL_TEMPLATE_ID,
         "to": to,
         "distinct_id": to,
-        "message_data": {"subject": subject, "text": text, "html": to_html_fragment(text)},
+        "message_data": {"subject": subject, "text": text, "html": to_html_fragment(text, SPACED_PARAGRAPH)},
     }
     request = urllib.request.Request(
         f"https://{settings.POSTHOG_EMAIL_HOST}{POSTHOG_SEND_PATH}",

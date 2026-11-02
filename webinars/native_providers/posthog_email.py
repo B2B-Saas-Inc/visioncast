@@ -13,7 +13,7 @@ Contract (official references fetched 2026-11-02, see docs/native-integrations.m
   properties, so everything it shows comes from ``message_data``. VisionCast renders the message
   exactly as it does for Resend and Amazon SES and sends it as ``subject``, ``text`` and ``html``,
   so one template serves every message: subject ``{{ variables.subject }}`` and a body that outputs
-  ``{{ variables.html }}`` (docs/email.md). The sender and its verified domain live on the template,
+  ``{{ variables.html | raw }}`` (docs/email.md). The sender and its verified domain live on the template,
   so there are no from or reply-to settings here.
 * Refusals with a ``code``: ``recipient_suppressed`` and ``recipient_unreachable`` (422) are final;
   ``throttled`` (429, ``Retry-After``) and ``delivery_unavailable`` (503) are retried with the same
@@ -25,6 +25,7 @@ Rendering, placeholders, link rules and the operator overrides are shared with R
 import re
 
 from webinars import native_integrations as ni
+from webinars.email_html import SPACED_PARAGRAPH
 from webinars.native_providers import _transactional_email as tx
 
 PROVIDER = "posthog_email"
@@ -43,7 +44,7 @@ _NOT_HERE = {"from_address", "from_name", "reply_to"}
 
 FIELDS = (
     ni.Field("region", "PostHog host", "Where you sign in to PostHog: US or EU Cloud.", choices=(("us", "us.posthog.com"), ("eu", "eu.posthog.com"))),
-    ni.Field("template_id", "Template ID", "The transactional email's ID, from its API tab in PostHog. Its subject is {{ variables.subject }} and its body shows {{ variables.html }}.", pattern=TEMPLATE_ID),
+    ni.Field("template_id", "Template ID", "The transactional email's ID, from its API tab in PostHog. Its subject is {{ variables.subject }} and its body shows {{ variables.html | raw }}.", pattern=TEMPLATE_ID),
     *(f for f in tx.FIELDS if f.name not in _NOT_HERE),
     ni.Field("api_key", "Project secret API key", "A phs_ key with Workflow set to Write, sent only as a Bearer token to the PostHog host.", secret=True, pattern=API_KEY),
     ni.PROCESSING_ACK,
@@ -70,7 +71,7 @@ def plan(cfg, secrets, facts, event_type, body):
             "subject": message["subject"],
             "text": message["text"],
             # Paragraphs only: the PostHog template supplies the page, the brand and the footer.
-            "html": tx.to_html_fragment(message["text"]),
+            "html": tx.to_html_fragment(message["text"], SPACED_PARAGRAPH),
             "event_type": event_type,
             "message": message["key"],
             "delivery_id": delivery_id,

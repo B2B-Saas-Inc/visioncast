@@ -59,7 +59,7 @@ def test_send_shape(posthog, monkeypatch):
     body = call["json"]
     assert body["template_id"] == TEMPLATE and body["to"] == "grace@example.com" and body["distinct_id"] == "grace@example.com"
     assert body["message_data"]["subject"] == "Your waiting room code: 123456"
-    assert body["message_data"]["html"].startswith("<p>Hi,</p>") and '<a href="https://events.example.com/w/x/">' in body["message_data"]["html"]
+    assert body["message_data"]["html"].startswith('<p style="margin:0 0 16px 0">Hi,</p>') and '<a href="https://events.example.com/w/x/">' in body["message_data"]["html"]
 
 
 @pytest.mark.parametrize("status,body,code", [(422, {"code": "recipient_suppressed"}, "recipient_suppressed"), (401, {}, "http_401"), (500, {"code": "bad code!"}, "http_500")])
