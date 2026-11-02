@@ -50,7 +50,13 @@ else
 fi
 CONF=$BASE/bootstrap.conf
 [[ -r $CONF ]] || die "$CONF missing: this host was not bootstrapped"
-if [[ -z $IMAGE ]]; then IMAGE=$(sed -n 's/^WEBINAR_IMAGE=//p' "$CONF" | tail -n 1); fi
+if [[ -z $IMAGE ]]; then
+    IMAGE=$(sed -n 's/^WEBINAR_IMAGE=//p' "$CONF" | tail -n 1)
+    # Each update records its image here. A registry image (ghcr.io/...) is a choice to keep, but a
+    # locally built webinar-platform:<version> belongs to that version only: reusing it would run
+    # the previous release's code from the new tree. Leave it empty so this version is built.
+    [[ $IMAGE != webinar-platform:* ]] || IMAGE=""
+fi
 [[ -L $BASE/app/current ]] || die "$BASE/app/current missing"
 OLD_DIR=$(cd "$BASE/app/current" && pwd -P)
 OLD_VERSION=$(tr -d '[:space:]' < "$OLD_DIR/VERSION")

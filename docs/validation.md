@@ -2,6 +2,13 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## GrowthCast production: 0.4.2-pre, brand colour and font — 2026-11-02
+
+- `update.sh` ran end to end for the first time since 0.3.0-pre (the stdin fix): backup, migration `0014_studio_brand_font`, restart, `current` switched, host files refreshed. `verify.sh --expect-access` 0 failures.
+- Found: every update records its image in `bootstrap.conf`, and the next update reused it, so a new tree ran the previous release's locally built image (first attempt reported 0.4.0-pre). `host-update.sh` now ignores a recorded `webinar-platform:*` image and builds the new version; registry images are still kept.
+- Brand saved as `#ff6b4a` with variable Manrope (OFL, 164,700 bytes). `brand.css` sets `--on-accent:#1f1d1a`, a text shade `#ba4d36` (4.5:1 on white) and the font. The same font file is served by the live server. In Chromium the waiting room renders in Manrope, with charcoal text on coral buttons.
+- `/` redirects to `/studio/`; a draft event's room link shows the branded "This session isn't available" page.
+
 ## GrowthCast production: 0.4.0-pre, SES email, and a public live server — 2026-11-02
 
 - **Studio.** events.growthcast.app updated to `0.4.0-pre` (the live studio). `verify.sh --expect-access` 0 failures. Found while doing it: every update since 0.3.0-pre had stopped after `deploy/upgrade.sh`, because `docker compose run --rm migrate` read the rest of `host-update.sh` from stdin, so `current` still pointed at 0.3.0-pre and the post-update steps never ran. Restarting from `current` brought 0.3.0-pre back for about 10 minutes. Fixed in `e3efd64`, `current` repointed, post-update steps run by hand.
