@@ -20,6 +20,10 @@ ROLE_NAMES = (ADMINISTRATOR, EDITOR, ANALYST)
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 
 
+def is_hosting_admin(user):
+    return bool(user.is_superuser or user.groups.filter(name=ADMINISTRATOR).exists())
+
+
 def is_studio_user(user):
     if not getattr(user, "is_authenticated", False) or not user.is_active:
         return False
@@ -143,6 +147,7 @@ def nav_items(request):
                 item
                 for item, ok in (
                     (("Team", "studio:team", "users", "/studio/team"), user.is_superuser or user.has_perm("auth.view_user")),
+                    (("Brand", "studio:brand", "user", "/studio/brand/"), is_hosting_admin(user)),
                     (
                         ("Preview mailbox", "studio:mailbox", "inbox", "/studio/mailbox"),
                         preview_mailbox_enabled() and user.is_superuser,

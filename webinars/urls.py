@@ -2,7 +2,7 @@ from django.urls import include, path
 
 from django.views.decorators.http import require_safe
 
-from webinars import covers, developers, mcp, waiting_room_views
+from webinars import brand, covers, developers, mcp, waiting_room_views
 from webinars.api import management, urls_hosting, urls_tickets, views
 
 urlpatterns = urls_tickets.urlpatterns + urls_hosting.urlpatterns + [
@@ -57,6 +57,8 @@ urlpatterns = urls_tickets.urlpatterns + urls_hosting.urlpatterns + [
     path("api/v1/occurrences/<uuid:pk>/calendar.ics", views.occurrence_ics, name="occurrence-ics"),
     # Uploaded event covers (database-stored, immutable; webinars/covers.py)
     path("media/covers/<uuid:pk>.<str:ext>", require_safe(covers.cover_response), name="cover-image"),
+    path("brand/logo.png", require_safe(brand.logo_response), name="brand-logo"),
+    path("brand/brand.css", require_safe(brand.css_response), name="brand-css"),
     # Registration (register/proxy/trusted key) and proxy-target (proxy key)
     path("api/v1/registrations", views.api_registrations, name="api-registrations"),
     path("api/v1/profile", views.api_profile, name="api-profile"),

@@ -37,6 +37,10 @@ www.example.com (your site)                 webinars.example.com (this platform)
                   ── OR edge pass-through ─>   /webinar-api/{profile,registrations,reset,my-registration,calendar.ics} (Origin/CSRF, no key)
   /w/<code>/ (optional edge pass-through) ─>   /w/<code>/...  hosted waiting room
                                                worker ── signed HTTPS webhooks ──> your ESP/CRM/CDP
+
+Optional, on its own server (section 9.2):
+live.example.com    /{slug}, /{slug}/lobby, /{slug}/green-room, /login, /admin
+rtc.example.com     LiveKit media; recorder ──> your bucket, and RTMP to YouTube, Meta, X, LinkedIn
 ```
 
 The platform stores events, occurrences, people, registrations and consents, and emits
@@ -51,12 +55,13 @@ sends those, driven by webhooks.
 
 ### 1.1 Build and configure
 
-No image is published, so build it locally (see `compose.yaml`):
+Build it locally, as below (see `compose.yaml`). To use a release image instead, see [Use the published image](../README.md#use-the-published-image) in the README: the package is private, so you need `docker login ghcr.io` with a token that has `read:packages`, or your own fork's images.
 
 ```sh
 cp .env.example .env && chmod 600 .env     # fill every REQUIRED value
 docker compose build
 docker compose run --rm migrate            # explicit; never automatic
+docker compose run --rm web manage sync_roles             # the Administrator, Editor and Analyst roles
 docker compose run --rm web manage bootstrap_admin --username admin --email you@example.com
 docker compose up -d                       # db, web (gunicorn :8000 on 127.0.0.1), worker
 ```
@@ -110,8 +115,10 @@ default, and contains no secrets.
     `delivery_admin`, `keys_admin` and `team_admin`. [mcp.md](mcp.md) is authoritative
     for MCP scopes.
   - Privileged scopes (`trusted`, `publication`, `delivery_admin`, `keys_admin`,
-    `team_admin`) are granted only by a superuser in the studio or by
-    `manage.py create_api_key`.
+    `team_admin`, `payments_admin`, `hosting_admin`, `hosting_provision`) are granted only
+    by a superuser in the studio or by `manage.py create_api_key`. `hosting_admin` and
+    `hosting_provision` work over REST and MCP; see [management-api.md](management-api.md)
+    and [hosting.md](hosting.md).
 - Webhook signing secrets: `manage set_destination_secret --destination <uuid> --generate`.
 
 ### 1.3 TLS, edge, readiness
@@ -458,7 +465,8 @@ Top level: `schemaVersion`, `eventType`, `occurredAt`, then each allowed group, 
 
 Event types: `registration.created`, `registration.updated`, `occurrence.cancelled`,
 `occurrence.rescheduled`, `reminder.due`, `recording.published`,
-`attendance.recorded`, `attendance.checked_in`, `follow_up.requested`. Occurrence-level
+`attendance.recorded`, `attendance.checked_in`, `follow_up.requested`,
+`engagement.recorded`. Occurrence-level
 events fan out **one delivery per registrant**. A full sample payload is in
 [webhooks.md](webhooks.md#example-payload-fake-data).
 
@@ -585,7 +593,7 @@ this table. Example destination mapping:
   (CSV, or JSON rows). Rows are matched to registrations (provider id, then email), reviewed,
   then **applied** after a confirmed preview: `attended` is recorded through the same path
   as above, once per registration, so `attendance.recorded` (`source` on the attendance
-  event is `import:<zoom|riverside|file>`) fires once however often you import. No-shows are
+  event is `import:<zoom|riverside|livekit|file>`) fires once however often you import. No-shows are
   a separate confirmed step after the session ended; waiting-room check-ins are never
   marked no-show. Nothing is pulled on a schedule, and providers without
   `attendanceImport` (Wistia, Sequel, StreamYard) always go through the file import.
@@ -601,6 +609,70 @@ Run one `worker` service. Claims use `SKIP LOCKED` leases, so extra workers are 
 for the outbox, but one worker keeps reminder and finalization timing simple to reason
 about. If the worker is down, reminders past their grace period are skipped, not sent
 late.
+
+### 9.2 Your own live video: LiveKit add-on [Supported] [Preview]
+
+Optional. Zoom and the other hosting providers keep working without it. It runs live sessions on a separate server of yours: a studio with a green room, hosts, producers and guests, screen sharing, frames and on-screen graphics, polls, moderated chat and Q&A, live captions, recording, and broadcasting to YouTube, Meta, X and LinkedIn. Full reference: [live/README.md](../live/README.md).
+
+**Starting from nothing?** [deploy/quickstart/install.sh](../deploy/quickstart/install.sh) puts the studio and live rooms on one server with your brand. See [branding.md](branding.md). The rest of this section adds live rooms to a VisionCast you already run.
+
+**Pick three hostnames**, all DNS-only, because Cloudflare's proxy can't carry the media ports or TURN:
+
+| Purpose | Example |
+|---|---|
+| Service: pages, settings, API | `live.example.com` |
+| Media | `rtc.example.com` |
+| TURN over TLS, for networks that only allow port 443 | `turn.example.com` |
+
+**Install** on a server with a public IP and Docker. Plan on 16 vCPUs and 32 GB to record, broadcast and caption at once, or 8 vCPUs and 16 GB for one of recording or broadcasting with a small audience. [live/README.md](../live/README.md#capacity) has sizes by attendance, [what a provider has to offer](../live/README.md#choosing-a-provider), and how to [run a small server between events](../live/README.md#between-sessions).
+
+```bash
+git clone https://github.com/B2B-Saas-Inc/visioncast.git && cd visioncast
+deploy/live/setup.sh live.example.com rtc.example.com turn.example.com you@example.com   # new secrets in deploy/live/.env, and Whisper's model
+# Open 80/tcp, 443/tcp, 7881/tcp, 3478/udp, 30000-40000/udp and 50000-60000/udp
+# For recording, fill in the RECORDING_S3_* lines in deploy/live/.env
+# Optional: RTMP input and translated captions, with COMPOSE_PROFILES=encoder,translate
+cd deploy/live && docker compose up -d --build
+cd ../..
+deploy/live/verify-public.sh live.example.com rtc.example.com turn.example.com   # from the repo root, on another machine
+```
+
+**Connect it to VisionCast:**
+
+1. On your VisionCast server, add the service host to `WEBHOOK_HOST_ALLOWLIST` and restart. It's the one provider that needs this, because an Administrator types its host and it receives a secret.
+2. In the studio: Hosting providers, Connect a provider, LiveKit. Enter the service host and `LIVE_SERVICE_SECRET` from `deploy/live/.env`, and enable it.
+3. Press **Open live settings**, which signs you in as yourself, and set your brand. Save any stream keys you reuse. Add anyone else under People, or use `LIVE_ADMIN_EMAIL` and `LIVE_ADMIN_PASSWORD` from `.env`.
+
+**For each session:**
+
+1. In the studio, on the session's Hosting page, preview and confirm **Create** to make its room.
+2. Turn on its waiting room. Share `/w/<code>/` as usual, never the live address: the waiting room is what gives each registrant their personal link.
+3. Under **Crew**, add each host, producer and guest, and send each their own link. Press **Open the studio as a host** for your own. A link that goes astray can be replaced without touching anyone else's.
+4. For broadcasting, press **Broadcast and brand settings** and turn platforms on. Have the platform's event ready first. LinkedIn only gives out its server and key one or two hours before the scheduled start.
+5. On the day, the crew meet in the green room. Put speakers on stage, then **Go live**. Then press Go live on each platform that needs it.
+
+**Addresses people see:**
+
+| Address | Who |
+|---|---|
+| `live.example.com/{slug}/lobby`, then `/{slug}` | Attendees, before and after going live |
+| `live.example.com/{slug}/green-room` | Hosts, producers and guests |
+| `live.example.com/login`, `/admin` | Whoever runs it. Each person has their own account, and there's no sign-up |
+
+The address alone gets nobody in, so it's safe if someone shares it: a visitor with no link gets sent to the waiting room.
+
+**After the session:** recordings, with SRT and transcript files for everyone and per speaker, are in your bucket and listed on the Hosting page, `/admin` and the room's Files tab. To send one to registrants, publish its link as in the Recordings section above. Pull attendance from the Attendance page as with any provider; it matches on the registration ID.
+
+**Sending what people did to your CRM:** subscribe a webhook destination to `engagement.recorded`, and add `engagement` to its allowed groups. It arrives from about 10 minutes after the scheduled end, and again if something changes during the next day (a late survey answer, say), per registrant, with their chat, questions, poll votes and survey answers ([webhooks.md](webhooks.md)).
+
+**Check before a real audience:**
+
+- [ ] Run a rehearsal with real speakers on real networks, including a phone.
+- [ ] Send a test stream to each platform you'll use. LinkedIn's preview lets you do this without going live.
+- [ ] Record one, and check its video, SRT and transcript in the bucket.
+- [ ] Check the captions with your speakers' real names and jargon.
+- [ ] Run `deploy/live/verify-public.sh` and `live/tests/turn/check.cjs` against your server.
+- [ ] Load test it on your server with `live/tests/load/run.sh`. The numbers in [validation.md](validation.md) come from a laptop.
 
 ---
 
@@ -650,8 +722,8 @@ tool moves money. Guides: `webinar://guides/tickets`, `webinar://guides/hosting`
 - Refunds are never automated: refund in Stripe, then record it. A Stripe refund or
   dispute blocks admission.
 - Hosting ([hosting.md](hosting.md)): Zoom Webinars create/update/attach; Wistia and Sequel
-  create only; Riverside attach with per-registrant links (paths unverified). No adapter is
-  sandbox-verified, and none imports attendance.
+  create only; Riverside attach with per-registrant links (paths unverified). No vendor adapter
+  is sandbox-verified. Your own LiveKit server is section 9.2.
 - Website kits ([kits.md](kits.md)) are not production-tested; WordPress and framework
   compatibility is unverified.
 

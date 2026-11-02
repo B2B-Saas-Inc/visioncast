@@ -84,11 +84,19 @@ def person_counts(person):
 
 
 def erase_person(person_id, *, user=None):
-    """Erase all PII for ``person_id``. Returns counts dict (no PII)."""
+    """Erase all PII for ``person_id``, here and on any self-hosted live server. Returns counts dict (no PII)."""
+    from webinars.hosting.engagement import forget_on_live_server
+
     now = timezone.now()
+    # Outside the transaction: a live server that's slow or down must not hold up the erasure.
+    # Whatever it still holds goes with the room, at the end of its retention period, so whoever
+    # runs this is told, and can erase again with the server on.
+    registrations = list(Registration.objects.filter(person_id=person_id).select_related("occurrence"))
+    not_reached = forget_on_live_server(registrations)
     with transaction.atomic():
         person = Person.objects.select_for_update().get(pk=person_id)
         counts = person_counts(person)
+        counts["live_servers_not_reached"] = not_reached
         original_email_key = person.email_key
         if person.email_key:
             # Waiting-room verification rows carry the address until they expire.
@@ -101,7 +109,7 @@ def erase_person(person_id, *, user=None):
         person.erased_at = now
         person.save(update_fields=[*PII_FIELDS, "email_key", "custom_fields", "erased_at", "updated_at"])
 
-        Registration.objects.filter(person=person).update(submitted_profile={}, custom_fields={}, updated_at=now)
+        Registration.objects.filter(person=person).update(submitted_profile={}, custom_fields={}, engagement={}, updated_at=now)
         AttributionTouch.objects.filter(Q(person=person) | Q(registration__person=person)).delete()
         OrganizationExternalId.objects.filter(person=person).delete()
         BrowserCapability.objects.filter(person=person).update(revoked_at=now, revoked_reason="erased")

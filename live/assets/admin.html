@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Live settings</title>
+  <link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/room.css">
+</head>
+<body class="admin">
+  <header class="bar">
+    <img src="/assets/mark.svg" alt="" width="28" height="28">
+    <h1>Live settings</h1>
+    <span class="bar-gap"></span>
+    <span class="pill" id="who" hidden></span>
+    <button class="btn btn-bar" type="button" id="sign-out">Sign out</button>
+  </header>
+  <main class="admin-main" id="main" hidden>
+    <nav class="admin-nav" aria-label="Settings">
+      <button class="seg" type="button" data-page="sessions">Sessions</button>
+      <button class="seg" type="button" data-page="brand">Brand</button>
+      <button class="seg" type="button" data-page="keys">Saved stream keys</button>
+      <button class="seg" type="button" data-page="accounts" id="nav-accounts" hidden>People</button>
+      <button class="seg" type="button" data-page="activity">Activity</button>
+      <button class="seg" type="button" data-page="me">Your account</button>
+    </nav>
+    <p class="error" id="admin-error" role="alert" hidden></p>
+    <p class="notice" id="admin-saved" role="status" hidden></p>
+    <section id="page-sessions" hidden></section>
+    <section id="page-session" hidden></section>
+    <section id="page-brand" hidden>
+      <div class="box admin-box">
+        <h2>Brand</h2>
+        <p class="muted">How every room looks to your audience, in recordings and in broadcasts. Saving updates open rooms straight away. A host or producer can still change one session from its Look tab.</p>
+        <form id="brand-form">
+          <div class="colours">
+            <label><input type="color" id="b-accent"> Brand colour</label>
+            <label><input type="color" id="b-stage"> Stage background</label>
+          </div>
+          <label for="b-mode">Attendee page</label>
+          <select id="b-mode"><option value="">Light</option><option value="dark">Dark</option></select>
+          <label for="b-font">Font</label>
+          <select id="b-font"><option value="">Default</option><option value="system">Clean</option><option value="serif">Serif</option><option value="rounded">Rounded</option><option value="custom" id="b-font-custom" hidden>Your font</option><option value="mono">Monospace</option></select>
+          <button class="btn btn-primary-inline" type="submit">Save brand</button>
+        </form>
+      </div>
+      <div class="box admin-box">
+        <h2>Logo</h2>
+        <p class="muted">A PNG of at most 2 MB, shown in the room's header.</p>
+        <p><img id="b-logo" alt="Your logo" height="48" hidden></p>
+        <input type="file" id="b-logo-file" accept=".png,image/png">
+        <div class="row"><button class="mini danger" type="button" id="b-logo-remove" hidden>Remove the logo</button></div>
+      </div>
+      <div class="box admin-box">
+        <h2>Your font</h2>
+        <p class="muted">A WOFF2, WOFF, TTF or OTF of at most 8 MB. Make sure your licence allows it on a website.</p>
+        <p class="small" id="b-font-state"></p>
+        <input type="file" id="b-font-file" accept=".woff2,.woff,.ttf,.otf">
+        <div class="row"><button class="mini danger" type="button" id="b-font-remove" hidden>Remove the font</button></div>
+      </div>
+    </section>
+    <section id="page-keys" hidden></section>
+    <section id="page-accounts" hidden></section>
+    <section id="page-activity" hidden></section>
+    <section id="page-me" hidden></section>
+  </main>
+  <script src="/assets/admin.js"></script>
+</body>
+</html>

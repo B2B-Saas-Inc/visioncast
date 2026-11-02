@@ -31,4 +31,11 @@ urlpatterns = [
          hosting.occurrence_registrant_reconcile, name="manage-hosting-registrant-reconcile"),
     path("api/v1/manage/occurrences/<uuid:pk>/hosting/manual-link", hosting.occurrence_hosting_manual_link,
          name="manage-hosting-manual-link"),
+    path("api/v1/manage/occurrences/<uuid:pk>/live/crew", hosting.occurrence_crew, name="manage-live-crew"),
+    path("api/v1/manage/occurrences/<uuid:pk>/live/crew/<str:member>", hosting.occurrence_crew_member, name="manage-live-crew-member"),
+    path("api/v1/manage/occurrences/<uuid:pk>/live/crew/<str:member>/new-link", hosting.occurrence_crew_new_link, name="manage-live-crew-new-link"),
+    path("api/v1/manage/occurrences/<uuid:pk>/live/settings", hosting.occurrence_live_settings, name="manage-live-settings"),
+    path("api/v1/manage/occurrences/<uuid:pk>/live/destinations", hosting.occurrence_live_destinations, name="manage-live-destinations"),
+    path("api/v1/manage/occurrences/<uuid:pk>/engagement", hosting.occurrence_engagement, name="manage-engagement"),
+    path("api/v1/manage/hosting/accounts/<uuid:pk>/live/brand", hosting.hosting_account_live_brand, name="manage-live-brand"),
 ]

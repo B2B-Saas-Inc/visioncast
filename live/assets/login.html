@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Sign in</title>
+  <link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/room.css">
+</head>
+<body>
+  <main>
+    <section class="gate">
+      <h2>Sign in</h2>
+      <p class="muted">Settings for this live server.</p>
+      <form id="login-form">
+        <div id="email-field">
+          <label for="email">Email</label>
+          <input id="email" type="email" autocomplete="username" autofocus>
+        </div>
+        <label for="password" id="password-label">Password</label>
+        <input id="password" type="password" autocomplete="current-password" required>
+        <button class="btn btn-primary" type="submit" id="login-button">Sign in</button>
+      </form>
+      <p class="error" id="login-error" role="alert" hidden></p>
+    </section>
+  </main>
+  <script src="/assets/admin.js"></script>
+</body>
+</html>

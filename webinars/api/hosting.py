@@ -1,10 +1,11 @@
 """Hosting providers over the management API (docs/hosting.md).
 
 Scopes: ``hosting_admin`` (accounts and their set-only credentials), ``hosting_provision``
-(preview / confirm / reconcile / manual links), ``config_read`` (GET of providers and an
-occurrence's hosting state only). Every scope here is superuser-granted
+(preview / confirm / reconcile / manual links, crew, a live room's settings and stream keys,
+engagement), ``config_read`` (GET of providers and an occurrence's hosting state only). Every scope here is superuser-granted
 (``services.PRIVILEGED_SCOPES``). Responses never contain credentials, join links, host
-start links or embed URLs: only ``secretsSet`` / ``hasJoinUrl`` / ``hasHostUrl`` flags.
+start links or embed URLs: only ``secretsSet`` / ``hasJoinUrl`` / ``hasHostUrl`` flags. The one
+exception is a crew member's own link, returned once when it's made so that it can be sent to them.
 
 Creating, updating or attaching a provider session is two steps, like publication: the
 first ``execute`` returns 428 with the preview and a single-use ``confirmToken``; repeat
@@ -13,7 +14,7 @@ the identical request with header ``Webinar-Confirm-Token``.
 from django.core.exceptions import ValidationError
 
 from webinars import confirmation
-from webinars.hosting import ADAPTERS, base, service
+from webinars.hosting import ADAPTERS, base, engagement, service
 from webinars.models import ApiKey, HostingAccount, Occurrence, ProviderRegistrant
 
 from .management import CONFIRM_HEADER, _ConfirmationRequired, _endpoint, _Invalid, _parse
@@ -407,3 +408,82 @@ def occurrence_hosting_manual_link(request, key, body, pk):
                                             embed_url=values.get("embedUrl", ""), api_key=key)
     except ValidationError as exc:
         raise _validation(exc)
+
+
+# ---- a self-hosted live room: crew, settings, stream keys, brand and what people did
+
+
+def _crew_row(member):
+    return {k: member[k] for k in ("id", "role", "name", "title")}
+
+
+CREW_FIELDS = {"role": ("role", "str"), "name": ("name", "str"), "title": ("title", "str")}
+LIVE_SETTINGS_FIELDS = {"settings": ("settings", "object"), "theme": ("theme", "dict"), "survey": ("survey", "object_or_null")}
+LIVE_DESTINATION_FIELDS = {"destinations": ("destinations", "objectlist")}
+LIVE_BRAND_FIELDS = {k: (k, "str") for k in ("accent", "stage", "mode", "font")}
+
+
+def _live(call):
+    try:
+        return call()
+    except ValidationError as exc:
+        raise _validation(exc)
+
+
+@_endpoint(PROVISION, ("GET", "POST"))
+def occurrence_crew(request, key, body, pk):
+    occ = _occurrence(pk)
+    if request.method == "GET":
+        return 200, {"results": [_crew_row(m) for m in _live(lambda: service.crew_list(occ))]}
+    values = _parse(body, CREW_FIELDS, required=("role", "name"))
+    added = _live(lambda: service.crew_add(occ, role=values["role"], name=values["name"], title=values.get("title", ""), api_key=key))
+    return 201, added
+
+
+@_endpoint(PROVISION, ("DELETE",))
+def occurrence_crew_member(request, key, body, pk, member):
+    occ = _occurrence(pk)
+    _live(lambda: service.crew_remove(occ, member, api_key=key))
+    return 204, None
+
+
+@_endpoint(PROVISION, ("POST",))
+def occurrence_crew_new_link(request, key, body, pk, member):
+    occ = _occurrence(pk)
+    return 200, _live(lambda: service.crew_new_link(occ, member, api_key=key))
+
+
+@_endpoint(PROVISION, ("GET", "PATCH"), read_scopes=PROVISION_READ)
+def occurrence_live_settings(request, key, body, pk):
+    occ = _occurrence(pk)
+    if request.method == "GET":
+        return 200, _live(lambda: service.live_settings(occ))
+    values = _parse(body, LIVE_SETTINGS_FIELDS)
+    return 200, _live(lambda: service.update_live_settings(occ, values, api_key=key))
+
+
+@_endpoint(PROVISION, ("GET", "PATCH"))
+def occurrence_live_destinations(request, key, body, pk):
+    occ = _occurrence(pk)
+    if request.method == "GET":
+        return 200, _live(lambda: service.live_destinations(occ))
+    values = _parse(body, LIVE_DESTINATION_FIELDS, required=("destinations",))
+    return 200, _live(lambda: service.update_live_destinations(occ, values["destinations"], api_key=key))
+
+
+@_endpoint(ADMIN, ("GET", "PATCH"), read_scopes=ADMIN_READ)
+def hosting_account_live_brand(request, key, body, pk):
+    account = _account(pk, "id")
+    if request.method == "GET":
+        return 200, _live(lambda: service.live_brand(account))
+    values = _parse(body, LIVE_BRAND_FIELDS)
+    return 200, _live(lambda: service.update_live_brand(account, values, api_key=key))
+
+
+@_endpoint(PROVISION, ("GET", "POST"))
+def occurrence_engagement(request, key, body, pk):
+    """GET is counts only. What a person actually said goes out through destinations, not here."""
+    occ = _occurrence(pk)
+    if request.method == "POST":
+        return 200, _live(lambda: engagement.sync(occ, api_key=key))
+    return 200, engagement.summary(occ)

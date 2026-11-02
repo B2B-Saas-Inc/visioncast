@@ -1,0 +1,40 @@
+[package]
+name = "visioncast-live"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Self-hosted webinar rooms for VisionCast, built on LiveKit"
+publish = false
+
+[dependencies]
+argon2 = "0.5"
+async-trait = "0.1"
+axum = { version = "0.8", features = ["ws"] }
+base64 = "0.22"
+chacha20poly1305 = "0.10"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+futures-util = "0.3"
+hmac = "0.12"
+livekit-api = { version = "=0.10.0", default-features = false, features = ["services", "access-token", "webhooks", "rustls-tls-webpki-roots"] }
+livekit-protocol = "=0.8.2"
+rand = "0.9"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "json"] }
+rusty-s3 = "0.8"
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+subtle = "2"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "rt-multi-thread", "signal", "net", "sync", "time"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs", "limit", "set-header"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[dev-dependencies]
+http-body-util = "0.1"
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+strip = true

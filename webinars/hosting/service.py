@@ -16,6 +16,7 @@
 import json
 import logging
 import uuid
+from datetime import timedelta
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
@@ -32,12 +33,13 @@ from webinars.models import (
     Registration,
 )
 
-from . import base, get_adapter
+from . import ADAPTERS, base, get_adapter
 
 logger = logging.getLogger("webinars.hosting")
 
 ACTIONS = ("create", "update", "attach")
 MAX_REGISTRANT_ATTEMPTS = 5
+DOOR_RETRY_SECONDS = 30
 BLOCKING_STATES = (HostedSession.State.IN_FLIGHT, HostedSession.State.NEEDS_RECONCILIATION)
 _CAPABILITY_FLAG = {"create": "create", "update": "update", "attach": "attach", "register": "register_attendees"}
 
@@ -71,7 +73,7 @@ def _secrets_or_empty(account):
 
 def account_warnings(account):
     adapter = adapter_for(account)
-    warnings = list(adapter.allowlist_problems())
+    warnings = list(adapter.allowlist_problems()) + list(adapter.config_problems(account.config or {}))
     missing = adapter.validate_credentials(_secrets_or_empty(account))
     if missing:
         warnings.append("Some credentials are not set.")
@@ -209,6 +211,7 @@ def preview(occ, account, action, external_id=""):
     if not getattr(adapter.capabilities, _CAPABILITY_FLAG[action]):
         problems.append(f"{adapter.label} does not support '{action}' here.")
     problems.extend(adapter.allowlist_problems())
+    problems.extend(adapter.config_problems(account.config or {}))
     problems.extend(adapter.occurrence_problems(occ, action))
     if occ.status == Occurrence.Status.CANCELLED:
         problems.append("The session is cancelled.")
@@ -428,6 +431,11 @@ def recover_stale_operations(now=None):
                 session.save(update_fields=["state", "last_error", "updated_at"])
             audit("hosting.operation_lost", obj=session, operation_action=op.action, operation=str(op.pk))
             changed += 1
+    # A lost attempt at a repeatable request is simply tried again.
+    changed += ProviderRegistrant.objects.filter(
+        state=ProviderRegistrant.State.PENDING, attempts__gt=0, updated_at__lt=cutoff,
+        session__provider__in=_idempotent_providers(),
+    ).update(state=ProviderRegistrant.State.FAILED, last_error="register: no outcome recorded", updated_at=now)
     changed += ProviderRegistrant.objects.filter(
         state=ProviderRegistrant.State.PENDING, attempts__gt=0, updated_at__lt=cutoff
     ).update(state=ProviderRegistrant.State.NEEDS_RECONCILIATION, last_error="register: no outcome recorded",
@@ -445,7 +453,7 @@ def flag_unbound_registrants(now=None):
     from django.db.models import F, Q
 
     pks = list(ProviderRegistrant.objects.filter(
-        session__provider=HostingAccount.Provider.RIVERSIDE, session__mode=HostedSession.Mode.ATTACHED,
+        session__provider__in=_per_registrant_providers(), session__mode__in=PER_REGISTRANT_MODES,
         session__state__in=(HostedSession.State.LINKED, HostedSession.State.OUT_OF_DATE),
         session__account__isnull=False,
     ).exclude(session__external_id="").filter(
@@ -466,10 +474,21 @@ def flag_unbound_registrants(now=None):
             if pr.state not in (ProviderRegistrant.State.LINKED, ProviderRegistrant.State.FAILED) and not (
                     pr.state == ProviderRegistrant.State.PENDING and pr.attempts == 0):
                 continue
-            pr.state = ProviderRegistrant.State.NEEDS_RECONCILIATION
-            pr.join_url_encrypted = ""
-            pr.last_error = "Bound to a different provider event or account (or unbound): check Riverside and reconcile."
-            pr.save(update_fields=["state", "join_url_encrypted", "last_error", "updated_at"])
+            if adapter_for(session).register_idempotent:
+                # Nothing to check by hand: bind it to the current event and let the sweep
+                # ask for the link again.
+                pr.state = ProviderRegistrant.State.FAILED
+                pr.attempts = 0
+                pr.event_account_id, pr.event_external_id = current_binding(session)
+                pr.join_url_encrypted = ""
+                pr.last_error = "Bound to a different provider event or account: asking for a new link."
+                pr.save(update_fields=["state", "attempts", "event_account", "event_external_id", "join_url_encrypted",
+                                       "last_error", "updated_at"])
+            else:
+                pr.state = ProviderRegistrant.State.NEEDS_RECONCILIATION
+                pr.join_url_encrypted = ""
+                pr.last_error = "Bound to a different provider event or account (or unbound): check Riverside and reconcile."
+                pr.save(update_fields=["state", "join_url_encrypted", "last_error", "updated_at"])
             audit("hosting.registrant_unbound", obj=pr.registration, session=str(session.pk))
             changed += 1
     return changed
@@ -580,8 +599,10 @@ def mark_out_of_date(occ):
         return False
     if session.synced_schedule_generation == occ.schedule_generation:
         return False
+    # A session run again has new engagement to bring back.
     updated = HostedSession.objects.filter(pk=session.pk, state=HostedSession.State.LINKED).update(
-        state=HostedSession.State.OUT_OF_DATE, updated_at=timezone.now()
+        state=HostedSession.State.OUT_OF_DATE, updated_at=timezone.now(), engagement_synced_at=None, engagement_ended_at=None,
+        engagement_next_at=None, engagement_attempts=0,
     )
     if updated:
         audit("hosting.out_of_date", obj=session, schedule_generation=occ.schedule_generation)
@@ -605,12 +626,24 @@ def note_cancelled(occ):
 # ---------------------------------------------------------------------------
 
 
+PER_REGISTRANT_MODES = (HostedSession.Mode.ATTACHED, HostedSession.Mode.PROVISIONED)
+
+
+def _per_registrant_providers():
+    """Providers that give each registrant their own link (Riverside, LiveKit)."""
+    return [provider for provider, adapter in ADAPTERS.items() if adapter.capabilities.register_attendees]
+
+
+def _idempotent_providers():
+    return [provider for provider, adapter in ADAPTERS.items() if adapter.register_idempotent]
+
+
 def _per_registrant_links(session):
-    """Linked attached Riverside sessions hand out per-registrant links only."""
+    """Linked sessions of these providers hand out per-registrant links only."""
     return (
         session is not None
-        and session.provider == HostingAccount.Provider.RIVERSIDE
-        and session.mode == HostedSession.Mode.ATTACHED
+        and session.provider in _per_registrant_providers()
+        and session.mode in PER_REGISTRANT_MODES
         and session.state in (HostedSession.State.LINKED, HostedSession.State.OUT_OF_DATE)
     )
 
@@ -639,7 +672,7 @@ def registrant_bound(pr, session):
 def has_join_destination(occ):
     """Whether admitted registrants have somewhere to go, without reading any secret.
 
-    * Linked Riverside sessions: the hosting account is enabled. Each registrant's own
+    * Linked sessions with personal links: the hosting account is enabled. Each registrant's own
       link is checked at admission; the shared ``join_url`` neither opens nor closes
       the doors.
     * Everything else: the occurrence join link is set.
@@ -657,11 +690,11 @@ def has_join_destination(occ):
 def attendee_join_url(occ, registration):
     """Private link for one admitted registrant. Never raises.
 
-    * Linked Riverside sessions: that registrant's own link, or None (not admitted yet:
+    * Linked sessions with personal links: that registrant's own link, or None (not admitted yet:
       the shared ``join_url`` is never a fallback, so links are not shareable and paid
       seats cannot be passed on). None too when the account is disabled, the
       registration belongs to another occurrence or is not active, or the stored link
-      is not an https Riverside link. Lookup errors also return None (fail closed).
+      is not an https link on the provider's hosts. Lookup errors also return None (fail closed).
     * Everything else (including detached sessions): the occurrence join link."""
     try:
         session = session_for(occ)
@@ -685,19 +718,36 @@ def attendee_join_url(occ, registration):
         # detach and re-attach to another event (same session row) the old link is refused.
         if pr is not None and pr.join_url_encrypted and registrant_bound(pr, session):
             link = crypto.decrypt_secret(pr.join_url_encrypted)
-            return base.https_link(link, adapter_for(session).link_hosts) or None
+            return base.https_link(link, adapter_for(session).join_link_hosts(session.account.config or {})) or None
     except Exception as exc:  # decryption or DB error: fail closed
         logger.warning("attendee link lookup failed: %s", type(exc).__name__)
     return None
+
+
+def prepare_attendee_link(occ, registration, transport=None):
+    """Ask now for a personal link the worker hasn't got yet, so nobody waits at the door for a
+    background job. Only where asking is safe to repeat (LiveKit). Makes a network call, so
+    call it outside any transaction. Attempts are spaced out: during an outage a refreshing
+    attendee doesn't start a new request every time."""
+    session = session_for(occ)
+    if not _per_registrant_links(session) or not adapter_for(session).register_idempotent:
+        return
+    if registration.occurrence_id != occ.pk:
+        return
+    pr = ProviderRegistrant.objects.filter(registration_id=registration.pk).first()
+    if pr is not None:
+        if pr.state == ProviderRegistrant.State.LINKED and registrant_bound(pr, session):
+            return
+        if pr.updated_at > timezone.now() - timedelta(seconds=DOOR_RETRY_SECONDS):
+            return
+    ensure_registrant(registration, transport=transport, at_door=True)
 
 
 def _registrant_session(registration):
     session = HostedSession.objects.select_related("account").filter(occurrence_id=registration.occurrence_id).first()
     if (
         session is None
-        or session.provider != HostingAccount.Provider.RIVERSIDE
-        or session.mode != HostedSession.Mode.ATTACHED
-        or session.state not in (HostedSession.State.LINKED, HostedSession.State.OUT_OF_DATE)
+        or not _per_registrant_links(session)
         or session.account is None
         or not session.account.enabled
         or not session.external_id
@@ -706,8 +756,11 @@ def _registrant_session(registration):
     return session
 
 
-def ensure_registrant(registration, transport=None):
-    """Create this registrant's provider link once. Returns the ProviderRegistrant state or None."""
+def ensure_registrant(registration, transport=None, at_door=False):
+    """Create this registrant's provider link once. Returns the ProviderRegistrant state or None.
+
+    ``at_door``: the attendee is waiting, and the request is safe to repeat, so the worker's
+    attempt limit doesn't lock them out after an outage."""
     registration = Registration.objects.select_related("person").get(pk=registration.pk)
     if registration.status != Registration.Status.REGISTERED or not registration.person.email:
         return None
@@ -733,6 +786,12 @@ def ensure_registrant(registration, transport=None):
         elif pr.state == ProviderRegistrant.State.PENDING and pr.attempts > 0:
             # A previous attempt started and never recorded an outcome: do not re-send.
             return pr.state
+        elif not registrant_bound(pr, session) and adapter.register_idempotent:
+            # Nothing for a person to check: ask for a link on the current event.
+            pr.session = session
+            pr.event_account_id, pr.event_external_id = binding
+            pr.join_url_encrypted = ""
+            pr.attempts = 0
         elif not registrant_bound(pr, session):
             # Made for another event/account, or a legacy row with no binding: never
             # re-send automatically (a registrant may already exist there) and never
@@ -746,11 +805,12 @@ def ensure_registrant(registration, transport=None):
             return pr.state
         elif pr.state in (ProviderRegistrant.State.LINKED, ProviderRegistrant.State.NEEDS_RECONCILIATION):
             return pr.state
-        elif pr.attempts >= MAX_REGISTRANT_ATTEMPTS:
+        elif pr.attempts >= MAX_REGISTRANT_ATTEMPTS and not (at_door and adapter.register_idempotent):
             return pr.state
         pr.state = ProviderRegistrant.State.PENDING
         pr.attempts += 1
-        pr.save(update_fields=["state", "attempts", "updated_at"])
+        pr.save(update_fields=["state", "attempts", "session", "event_account", "event_external_id",
+                               "join_url_encrypted", "updated_at"])
         attempt = pr.attempts
         account = session.account
     try:
@@ -775,8 +835,9 @@ def ensure_registrant(registration, transport=None):
         if (pr.event_account_id, pr.event_external_id) != binding or current_binding(session) != binding:
             # The session was detached / re-attached to another event or account while this
             # call was out: the outcome is about the old event. Keep nothing from it (no link)
-            # and leave the row for a person; the attempt count is not reset.
-            pr.state = ProviderRegistrant.State.NEEDS_RECONCILIATION
+            # and leave the row for a person (or, if asking again is safe, for the next
+            # attempt, which binds it to the new event); the attempt count is not reset.
+            pr.state = ProviderRegistrant.State.FAILED if adapter.register_idempotent else ProviderRegistrant.State.NEEDS_RECONCILIATION
             pr.join_url_encrypted = ""
             pr.last_error = (f"The provider event changed during this attempt [late outcome: {outcome.kind}]: "
                              "check Riverside and reconcile.")[:300]
@@ -791,6 +852,8 @@ def ensure_registrant(registration, transport=None):
             pr.join_url_encrypted = crypto.encrypt_secret(outcome.join_url)
         elif outcome.kind == "failed":
             pr.state = ProviderRegistrant.State.FAILED
+        elif adapter.register_idempotent:
+            pr.state = ProviderRegistrant.State.FAILED  # safe to ask again
         else:
             pr.state = ProviderRegistrant.State.NEEDS_RECONCILIATION
         pr.save()
@@ -856,13 +919,13 @@ def reconcile_registrant(registration, decision, *, join_url="", external_id="",
 
 
 def sweep_registrants(limit=20, transport=None):
-    """Worker hook: create missing Riverside registrant links. Returns the number attempted."""
+    """Worker hook: create missing per-registrant links. Returns the number attempted."""
     from django.db.models import Q
 
     recover_stale_operations()
     sessions = HostedSession.objects.filter(
-        provider=HostingAccount.Provider.RIVERSIDE,
-        mode=HostedSession.Mode.ATTACHED,
+        provider__in=_per_registrant_providers(),
+        mode__in=PER_REGISTRANT_MODES,
         state__in=(HostedSession.State.LINKED, HostedSession.State.OUT_OF_DATE),
         account__enabled=True,
     ).values_list("occurrence_id", flat=True)
@@ -882,3 +945,194 @@ def sweep_registrants(limit=20, transport=None):
             logger.warning("registrant sweep error: %s", type(exc).__name__)
         count += 1
     return count
+
+
+# ---------------------------------------------------------------------------
+# The host's room and recordings (providers with host_room / recordings)
+# ---------------------------------------------------------------------------
+
+
+def _crew_session(occ):
+    session = session_for(occ)
+    adapter = adapter_for(session) if session is not None else None
+    if (
+        adapter is None
+        or not adapter.capabilities.host_room
+        or session.state not in (HostedSession.State.LINKED, HostedSession.State.OUT_OF_DATE)
+        or session.account is None
+        or not session.account.enabled
+        or not session.external_id
+    ):
+        raise ValidationError({"action": ["This session has no room yet: create it first."]})
+    if occ.status == Occurrence.Status.CANCELLED:
+        raise ValidationError({"action": ["The session is cancelled."]})
+    try:
+        return session, adapter, load_secrets(session.account)
+    except (crypto.DecryptionError, ValueError):
+        raise ValidationError({"credentials": ["Stored credentials could not be decrypted; set them again."]})
+
+
+def _crew_outcome(outcome):
+    if outcome.kind != "succeeded":
+        raise ValidationError({"action": [f"Your live server didn't answer ({outcome.error})."]})
+    return outcome
+
+
+def _display_name(user):
+    return (user.get_full_name() or user.get_username() or "Host")[:80]
+
+
+def host_room_link(occ, *, user, transport=None):
+    """This person's own host link. Everyone who opens the room from the studio is themselves in
+    it, on the record. Audited."""
+    session, adapter, secrets = _crew_session(occ)
+    outcome = _crew_outcome(adapter.crew_add(session.account.config or {}, secrets, session.external_id, role="host",
+                                             name=_display_name(user), email=user.email or "", key=f"studio-user-{user.pk}",
+                                             transport=transport or base.default_transport))
+    audit("hosting.host_link_used", user=user, obj=session)
+    return outcome.join_url
+
+
+def crew_list(occ, *, transport=None):
+    session, adapter, secrets = _crew_session(occ)
+    return _crew_outcome(adapter.crew_list(session.account.config or {}, secrets, session.external_id,
+                                           transport=transport or base.default_transport)).data["crew"]
+
+
+def crew_add(occ, *, role, name, title="", user=None, api_key=None, transport=None):
+    """Adds someone to the crew and returns their own link. Raises ``ValidationError``."""
+    if role not in ("host", "producer", "guest"):
+        raise ValidationError({"role": ["Choose host, producer or guest."]})
+    name = (name or "").strip()
+    if not name:
+        raise ValidationError({"name": ["Give their name."]})
+    session, adapter, secrets = _crew_session(occ)
+    outcome = _crew_outcome(adapter.crew_add(session.account.config or {}, secrets, session.external_id, role=role, name=name[:80],
+                                             title=(title or "").strip()[:80], transport=transport or base.default_transport))
+    audit("hosting.crew_added", user=user, api_key=api_key, obj=session, role=role, member=outcome.external_id)
+    return {"id": outcome.external_id, "url": outcome.join_url}
+
+
+def crew_new_link(occ, member_id, *, user=None, api_key=None, transport=None):
+    session, adapter, secrets = _crew_session(occ)
+    if not adapter.valid_external_id(member_id):
+        raise ValidationError({"member": ["Unknown crew member."]})
+    outcome = _crew_outcome(adapter.crew_new_link(session.account.config or {}, secrets, session.external_id, member_id,
+                                                  transport=transport or base.default_transport))
+    audit("hosting.crew_new_link", user=user, api_key=api_key, obj=session, member=member_id)
+    return {"id": member_id, "url": outcome.join_url}
+
+
+def crew_remove(occ, member_id, *, user=None, api_key=None, transport=None):
+    session, adapter, secrets = _crew_session(occ)
+    if not adapter.valid_external_id(member_id):
+        raise ValidationError({"member": ["Unknown crew member."]})
+    _crew_outcome(adapter.crew_remove(session.account.config or {}, secrets, session.external_id, member_id,
+                                      transport=transport or base.default_transport))
+    audit("hosting.crew_removed", user=user, api_key=api_key, obj=session, member=member_id)
+
+
+def _live_session(occ):
+    session, adapter, secrets = _crew_session(occ)
+    if not adapter.capabilities.live_settings:
+        raise ValidationError({"action": ["This provider has no settings of its own."]})
+    return session, adapter, secrets
+
+
+def live_settings(occ, *, transport=None):
+    session, adapter, secrets = _live_session(occ)
+    return _crew_outcome(adapter.live_api(session.account.config or {}, secrets, "settings", "GET", f"/rooms/{session.external_id}/settings",
+                                          transport=transport or base.default_transport)).data
+
+
+def update_live_settings(occ, changes, *, user=None, api_key=None, transport=None):
+    """``changes`` may hold ``settings``, ``theme`` and ``survey``. The service checks each."""
+    session, adapter, secrets = _live_session(occ)
+    outcome = _crew_outcome(adapter.live_api(session.account.config or {}, secrets, "settings", "PATCH", f"/rooms/{session.external_id}/settings", changes,
+                                             transport=transport or base.default_transport))
+    audit("hosting.live_settings_changed", user=user, api_key=api_key, obj=session, fields=sorted(changes))
+    return outcome.data
+
+
+def live_destinations(occ, *, transport=None):
+    session, adapter, secrets = _live_session(occ)
+    return _crew_outcome(adapter.live_api(session.account.config or {}, secrets, "destinations", "GET", f"/rooms/{session.external_id}/destinations",
+                                          transport=transport or base.default_transport)).data
+
+
+def update_live_destinations(occ, destinations, *, user=None, api_key=None, transport=None):
+    """Stream keys are set here and never read back. Audited without them."""
+    session, adapter, secrets = _live_session(occ)
+    outcome = _crew_outcome(adapter.live_api(session.account.config or {}, secrets, "destinations", "PUT", f"/rooms/{session.external_id}/destinations",
+                                             {"destinations": destinations}, transport=transport or base.default_transport))
+    audit("hosting.live_destinations_changed", user=user, api_key=api_key, obj=session, platforms=sorted(str(d.get("platform")) for d in destinations))
+    return outcome.data
+
+
+def _account_live(account):
+    adapter = adapter_for(account)
+    if not adapter.capabilities.live_settings:
+        raise ValidationError({"action": ["This provider has no settings of its own."]})
+    try:
+        secrets = load_secrets(account)
+    except (crypto.DecryptionError, ValueError):
+        raise ValidationError({"credentials": ["Stored credentials could not be decrypted; set them again."]})
+    if adapter.validate_credentials(secrets):
+        raise ValidationError({"credentials": ["Set the service secret first."]})
+    return adapter, secrets
+
+
+def live_brand(account, *, transport=None):
+    adapter, secrets = _account_live(account)
+    return _crew_outcome(adapter.live_api(account.config or {}, secrets, "brand", "GET", "/brand", transport=transport or base.default_transport)).data
+
+
+def update_live_brand(account, theme, *, user=None, api_key=None, transport=None):
+    adapter, secrets = _account_live(account)
+    # The service replaces the whole theme, and a caller may send only the colour.
+    current = _crew_outcome(adapter.live_api(account.config or {}, secrets, "brand", "GET", "/brand", transport=transport or base.default_transport)).data
+    merged = {k: theme.get(k, current.get(k) or "") for k in ("accent", "stage", "mode", "font")}
+    outcome = _crew_outcome(adapter.live_api(account.config or {}, secrets, "brand", "PUT", "/brand", merged, transport=transport or base.default_transport))
+    audit("hosting.live_brand_changed", user=user, api_key=api_key, obj=account)
+    return outcome.data
+
+
+def fetch_recordings(occ, *, transport=None):
+    """Read-only: what the provider recorded for this session. Raises ``ValidationError``."""
+    session = session_for(occ)
+    adapter = adapter_for(session) if session is not None else None
+    if adapter is None or not adapter.capabilities.recordings or not session.external_id or session.account is None:
+        raise ValidationError({"action": ["This session has no provider recordings to check."]})
+    try:
+        secrets = load_secrets(session.account)
+    except (crypto.DecryptionError, ValueError):
+        raise ValidationError({"credentials": ["Stored credentials could not be decrypted; set them again."]})
+    if adapter.validate_credentials(secrets):
+        raise ValidationError({"credentials": ["Some credentials are not set."]})
+    outcome = adapter.fetch_recordings(session.account.config or {}, secrets, session.external_id,
+                                       transport=transport or base.default_transport)
+    if outcome.kind != "succeeded":
+        raise ValidationError({"action": [f"The recordings could not be fetched ({outcome.error})."]})
+    return outcome.data["recordings"]
+
+
+def live_settings_link(account, *, user, room="", transport=None):
+    """A one-time link that signs this Administrator in to the live server's own settings, as
+    themselves, where brand and stream keys are kept. Raises ``ValidationError``."""
+    if not user.email:
+        raise ValidationError({"action": ["Your account has no email address, which the live server signs you in by. Add one first."]})
+    adapter = adapter_for(account)
+    if not adapter.capabilities.live_settings:
+        raise ValidationError({"action": ["This provider has no settings of its own."]})
+    try:
+        secrets = load_secrets(account)
+    except (crypto.DecryptionError, ValueError):
+        raise ValidationError({"credentials": ["Stored credentials could not be decrypted; set them again."]})
+    if adapter.validate_credentials(secrets):
+        raise ValidationError({"credentials": ["Set the service secret first."]})
+    outcome = adapter.fetch_settings_link(account.config or {}, secrets, room, email=user.email, name=_display_name(user),
+                                          transport=transport or base.default_transport)
+    if outcome.kind != "succeeded":
+        raise ValidationError({"action": [f"Your live server didn't answer ({outcome.error})."]})
+    audit("hosting.live_settings_opened", user=user, obj=account)
+    return outcome.data["url"]

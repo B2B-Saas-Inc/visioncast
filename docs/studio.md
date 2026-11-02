@@ -13,3 +13,8 @@
 - **Connect**: integrations (choosing a native provider on the create page reloads it with that provider's settings and credential boxes and hides the webhook-only fields; webhook destinations, event types, payload groups, consent requirements, field mapping rows, encrypted signing secret generate-once/paste, encrypted credentials by name), deliveries with retry, API keys (scopes, reveal once, revoke).
 - **Team**: email invitations with role, hashed single-use expiring link (`INVITATION_TTL_HOURS`, default 72), acceptance sets username/password transactionally. Without email delivery the link is shown once to the inviter.
 - Developer docs: `/developers/`, `/developers/api/`, `/developers/mcp/`, `/api/v1/openapi.json`.
+
+## Your own live video
+
+With the LiveKit add-on connected ([live/README.md](../live/README.md)), a session's Hosting page has **Your room**: open the studio as a host with a link that's yours alone, manage the crew person by person, check for recordings and their caption files, and see what people did. **Brand**, under Workspace, sets your name, colour and logo across the studio, the waiting room and live rooms ([branding.md](branding.md)). Brand, stream keys and broadcasting are on your live server's own settings page, `/admin`, one click away from **Broadcast and brand settings** on a session or **Open live settings** on the account. The live room itself has its own tools: Chat, Q&A, Polls, Files, Rooms, People, Look, Broadcast and Settings.
+

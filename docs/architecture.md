@@ -127,7 +127,7 @@ run_once(worker_id: str) -> int
 
 Event types: `registration.created`, `registration.updated`, `occurrence.cancelled`,
 `occurrence.rescheduled`, `reminder.due`, `recording.published`, `attendance.recorded`,
-`follow_up.requested`.
+`follow_up.requested`, `engagement.recorded`.
 
 ## HTTP contract (exact, shared with sdk/)
 

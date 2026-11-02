@@ -36,7 +36,7 @@ test('no status claims a live connection', () => {
 });
 
 test('backend test claim is static-mock only', () => {
-  assert.equal(BACKEND_TESTS.passed, 2453);
+  assert.equal(BACKEND_TESTS.passed, 2510);
   assert.equal(BACKEND_TESTS.database, 'PostgreSQL');
   assert.match(BACKEND_TESTS.note, /static mocks/i);
   assert.match(BACKEND_TESTS.note, /no test talks to a live vendor/i);
@@ -57,7 +57,7 @@ const byId = Object.fromEntries(INTEGRATIONS.map((i) => [i.id, i]));
 
 test('only mock-tested outbound, hosting and automation-preset integrations are marked built', () => {
   assert.deepEqual(idsWith('built'), [
-    'activecampaign', 'amplitude', 'attio', 'beehiiv', 'brevo', 'customerio', 'ga4', 'hubspot', 'mailchimp', 'make', 'mixpanel',
+    'activecampaign', 'amplitude', 'attio', 'beehiiv', 'brevo', 'customerio', 'ga4', 'hubspot', 'livekit', 'mailchimp', 'make', 'mixpanel',
     'n8n', 'pipedrive', 'posthog', 'resend', 'rudderstack', 'salesforce', 'segment', 'sequel', 'ses', 'wistia', 'zapier', 'zoom',
   ]);
 });

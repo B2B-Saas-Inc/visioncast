@@ -178,7 +178,52 @@ def _tickets_and_hosting_paths():
                            **std})},
         "/api/v1/manage/occurrences/{id}/hosting/manual-link": {"parameters": occ, "post": _op("Manual link (StreamYard; no outbound calls)",
             HOSTING_TAG, security=KEY, body=hosting.MANUAL_LINK_INPUT_SCHEMA, responses={"200": _json(_ref("HostedSession")), **std})},
+        **_live_paths(occ, std),
         **_attendance_import_paths(),
+    }
+
+
+LIVE_TAG = "Management (self-hosted live rooms)"
+
+
+def _live_paths(occ, std):
+    member = [*occ, {"name": "member", "in": "path", "required": True, "schema": {"type": "string", "maxLength": 128}}]
+    room = {"type": "object", "properties": {"settings": _OBJ, "theme": _OBJ, "survey": {"type": ["object", "null"]}, "savedLayouts": {"type": "array", "items": _OBJ}}}
+    dests = {"type": "object", "properties": {"destinations": {"type": "array", "items": _OBJ}}}
+    counts = {"type": "object", "properties": {k: {"type": "integer"} for k in ("people", "chatMessages", "questions", "pollVotes", "surveyAnswers")}}
+    pulled = {"type": "object", "properties": {"people": {"type": "integer"}, "changed": {"type": "integer"}, "final": {"type": "boolean"}}}
+    theme = {"type": "object", "properties": {k: _S for k in ("accent", "stage", "mode", "font")}}
+    settings_body = {"type": "object", "additionalProperties": False, "properties": {"settings": _OBJ, "theme": _OBJ, "survey": _OBJ}}
+    return {
+        "/api/v1/manage/occurrences/{id}/live/crew": {"parameters": occ,
+            "get": _op("Crew of a live session (no links)", LIVE_TAG, security=KEY, description="Scope: hosting_provision. Names are personal, so config_read can't see them.",
+                       responses={"200": _json({"type": "object", "properties": {"results": {"type": "array", "items": _OBJ}}}), **_errors(401, 403, 404)}),
+            "post": _op("Add a host, producer or guest", LIVE_TAG, security=KEY, description="Returns their personal link, once. Scope: hosting_provision.",
+                        body={"type": "object", "additionalProperties": False, "required": ["role", "name"], "properties": {"role": {"type": "string", "enum": ["host", "producer", "guest"]}, "name": _S, "title": _S}},
+                        responses={"201": _json({"type": "object", "properties": {"id": _S, "url": _S}}), **std})},
+        "/api/v1/manage/occurrences/{id}/live/crew/{member}": {"parameters": member,
+            "delete": _op("Remove from the crew", LIVE_TAG, security=KEY, description="Their link stops working and they're put out of the room.",
+                          responses={"204": {"description": "Removed"}, **_errors(400, 401, 403, 404)})},
+        "/api/v1/manage/occurrences/{id}/live/crew/{member}/new-link": {"parameters": member,
+            "post": _op("Replace someone's link", LIVE_TAG, security=KEY, description="The old link stops working. Returns the new one, once.", body={"type": "object", "additionalProperties": False},
+                        responses={"200": _json({"type": "object", "properties": {"id": _S, "url": _S}}), **std})},
+        "/api/v1/manage/occurrences/{id}/live/settings": {"parameters": occ,
+            "get": _op("Room settings, look and survey", LIVE_TAG, security=KEY, responses={"200": _json(room), **_errors(401, 403, 404)}),
+            "patch": _op("Change room settings, look or survey", LIVE_TAG, security=KEY, body=settings_body, responses={"200": _json(room), **std})},
+        "/api/v1/manage/occurrences/{id}/live/destinations": {"parameters": occ,
+            "get": _op("Where the session broadcasts (keys masked)", LIVE_TAG, security=KEY, responses={"200": _json(dests), **_errors(401, 403, 404)}),
+            "patch": _op("Set where the session broadcasts", LIVE_TAG, security=KEY, description="Keys are set-only: a blank key keeps the one stored.",
+                         body={"type": "object", "additionalProperties": False, "required": ["destinations"], "properties": {"destinations": {"type": "array", "items": _OBJ}}},
+                         responses={"200": _json(dests), **std})},
+        "/api/v1/manage/occurrences/{id}/engagement": {"parameters": occ,
+            "get": _op("Counts of what people did in a live session", LIVE_TAG, security=KEY, description="Counts only, never what anyone said.",
+                       responses={"200": _json(counts), **_errors(401, 403, 404)}),
+            "post": _op("Bring engagement back now", LIVE_TAG, security=KEY, description="Sends engagement.recorded for what changed.", body={"type": "object", "additionalProperties": False}, responses={"200": _json(pulled), **std})},
+        "/api/v1/manage/hosting/accounts/{id}/live/brand": {"parameters": occ,
+            "get": _op("Brand of every room on a live server", LIVE_TAG, security=KEY, responses={"200": _json(theme), **_errors(401, 403, 404)}),
+            "patch": _op("Change the brand of every room", LIVE_TAG, security=KEY, description="Scope: hosting_admin.",
+                         body={"type": "object", "additionalProperties": False, "properties": {k: _S for k in ("accent", "stage", "mode", "font")}},
+                         responses={"200": _json(theme), **std})},
     }
 
 

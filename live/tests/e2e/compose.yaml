@@ -1,0 +1,94 @@
+# Disposable stack for tests/e2e/run.sh: a real LiveKit server, Egress, Redis and S3-compatible
+# storage. Test credentials only; never deploy this file. Production is in deploy/live/.
+name: vc-live-e2e
+services:
+  redis:
+    image: redis:7-alpine
+  livekit:
+    image: livekit/livekit-server:v1.13.11
+    command: ["--config", "/etc/livekit.yaml"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes: ["./livekit.yaml:/etc/livekit.yaml:ro"]
+    # A fixed address that browsers on this machine and Egress can both reach for media.
+    # Container addresses are routable from the host on Linux and OrbStack.
+    networks:
+      default:
+        ipv4_address: 172.30.77.10
+    ports: ["127.0.0.1:17880:7880"]
+    depends_on: [redis]
+  egress:
+    image: livekit/egress:v1.15.0
+    cap_add: [SYS_ADMIN]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    # Trusts the local RTMP server's certificate, as it would a real platform's.
+    volumes: ["./certs/server.crt:/etc/ssl/certs/ca-certificates.crt:ro"]
+    environment:
+      EGRESS_CONFIG_BODY: |
+        api_key: devkey
+        api_secret: e2e-livekit-secret-e2e-livekit-secret-e2e
+        ws_url: ws://livekit:7880
+        insecure: true
+        redis:
+          address: redis:6379
+        cpu_cost:
+          room_composite_cpu_cost: 1
+    depends_on: [livekit]
+  captions:
+    build: ../../captions
+    image: visioncast-captions:local
+    environment:
+      CAPTIONS_BIND: 0.0.0.0:8090
+      CAPTIONS_THREADS: "2"
+    volumes: ["./models:/models:ro"]
+    ports: ["127.0.0.1:18095:8090"]
+  # An encoder's way in: OBS or vMix send RTMP here. The test pushes with ffmpeg.
+  ingress:
+    image: livekit/ingress:v1.4.3
+    environment:
+      INGRESS_CONFIG_BODY: |
+        api_key: devkey
+        api_secret: e2e-livekit-secret-e2e-livekit-secret-e2e
+        ws_url: ws://livekit:7880
+        redis:
+          address: redis:6379
+        rtmp_port: 1935
+        whip_port: -1
+        http_relay_port: 9090
+    ports: ["127.0.0.1:12935:1935"]
+    depends_on: [livekit]
+  # Turns decks into page images. No network, as in production: it only sees the shared folder.
+  slides:
+    build: ../../slides
+    image: visioncast-slides:local
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs: [/tmp, /home/slides]
+    volumes: ["${SLIDES_SPOOL:-/tmp/vc-slides-spool}:/spool"]
+  translate:
+    image: libretranslate/libretranslate:v1.7.2
+    environment:
+      LT_LOAD_ONLY: en,es
+    ports: ["127.0.0.1:15000:5000"]
+  # Stands in for YouTube, Meta, X and LinkedIn: it takes RTMP and RTMPS, and plays back what it got.
+  rtmp:
+    image: bluenviron/mediamtx:1.12.3
+    environment:
+      MTX_RTMPENCRYPTION: optional
+      MTX_RTMPSERVERKEY: /certs/server.key
+      MTX_RTMPSERVERCERT: /certs/server.crt
+      MTX_PATHDEFAULTS_SOURCE: publisher
+    volumes: ["./certs:/certs:ro"]
+    ports: ["127.0.0.1:11935:1935", "127.0.0.1:18888:8888"]
+  # S3-compatible storage for recordings. It checks every signature, as a real bucket does:
+  # anyone may read, as a public CDN would, and only the test's key may write.
+  s3:
+    image: chrislusf/seaweedfs:latest
+    command: ["server", "-dir=/tmp", "-s3", "-s3.port=9000", "-s3.config=/etc/s3.json", "-volume.max=40"]
+    volumes: ["./s3.json:/etc/s3.json:ro"]
+    ports: ["127.0.0.1:19000:9000"]
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.77.0/24

@@ -3,24 +3,22 @@
 * Hosting accounts (credentials): Administrators and superusers only.
 * Session hosting panel: Editors (``webinars.change_occurrence``) may look and preview;
   confirming a create/update/attach, reconciling or saving manual links needs an
-  Administrator or superuser, because it acts on a real provider account.
+  Administrator or superuser, because it acts on a real provider account. Editors can open
+  the host room they run the session from.
 * Analysts never reach these pages. Secrets, join links, host start links and embed
-  URLs are never rendered: only "Set" / "Not set" flags.
+  URLs are never rendered: only "Set" / "Not set" flags. One exception, on an explicit audited
+  request: one person's crew link, for sending to them.
 """
 from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404, redirect
 
+from webinars.audit import audit
 from webinars.hosting import ADAPTERS, get_adapter, service
 from webinars.models import HostingAccount, Occurrence
-from webinars.roles import ADMINISTRATOR
 
-from .access import forbidden, render, studio_view
+from .access import forbidden, is_hosting_admin, no_store, render, studio_view
 
 T = "studio/hosting/"
-
-
-def is_hosting_admin(user):
-    return bool(user.is_superuser or user.groups.filter(name=ADMINISTRATOR).exists())
 
 
 def _admin_only(request):
@@ -55,13 +53,14 @@ def _account_form(request, account, provider, *, errors=None, state=None, warnin
         "enabled": account.enabled if account else False,
         "config": dict(account.config or {}) if account else {},
     }
-    config_fields = [{"name": f.name, "label": f.label, "help": f.help, "required": f.required,
+    config_fields = [{"name": f.name, "label": f.label, "help": f.help, "required": f.required, "choices": f.choices,
                       "value": state["config"].get(f.name, "")} for f in adapter.config_fields]
     secret_fields = [{"name": f.name, "label": f.label, "help": f.help,
                       "is_set": bool(serialized and serialized["secretsSet"].get(f.name))} for f in adapter.credential_fields]
     return render(request, T + "account_form.html", {
         "account": account, "provider": provider, "adapter": adapter.describe(), "state": state,
         "config_fields": config_fields, "secret_fields": secret_fields, "errors": errors or {},
+        "live_settings": adapter.capabilities.live_settings,
         "warnings": warnings if warnings is not None else (serialized["warnings"] if serialized else adapter.allowlist_problems()),
     }, status=status)
 
@@ -100,6 +99,11 @@ def hosting_account_edit(request, pk):
     if denied:
         return denied
     account = get_object_or_404(HostingAccount, pk=pk)
+    if request.method == "POST" and request.POST.get("step") == "live_settings":
+        try:
+            return redirect(service.live_settings_link(account, user=request.user))
+        except ValidationError as exc:
+            return _account_form(request, account, account.provider, errors=_errors(exc), status=400)
     if request.method == "POST":
         return _save_from_post(request, account, account.provider)
     return _account_form(request, account, account.provider)
@@ -140,6 +144,45 @@ def session_hosting(request, pk):
                     _check_confirm_token(request, occ, account, action, external_id)
                     service.execute(occ, account, action, external_id=external_id, user=request.user)
                     return redirect("studio:session-hosting", pk=occ.pk)
+            elif op == "host_room":
+                return redirect(service.host_room_link(occ, user=request.user))
+            elif op == "engagement_sync":
+                if not admin:
+                    return forbidden(request, "Only Administrators can do that.")
+                from webinars.hosting import engagement
+
+                done = engagement.sync(occ, user=request.user)
+                ctx["notice"] = f"Brought back what {done['people']} people did. {done['changed']} changed."
+            elif op == "crew_add":
+                if not admin:
+                    return forbidden(request, "Only Administrators can manage the crew.")
+                added = service.crew_add(occ, role=request.POST.get("role", ""), name=request.POST.get("name", ""),
+                                         title=request.POST.get("title", ""), user=request.user)
+                ctx["crew_link"] = {"name": request.POST.get("name", "").strip(), "url": added["url"]}
+            elif op in ("crew_new_link", "crew_remove", "crew_show"):
+                if not admin:
+                    return forbidden(request, "Only Administrators can manage the crew.")
+                member = request.POST.get("member", "")
+                if op == "crew_remove":
+                    service.crew_remove(occ, member, user=request.user)
+                    ctx["notice"] = "Removed. Their link no longer works."
+                elif op == "crew_new_link":
+                    ctx["crew_link"] = {"name": request.POST.get("name", ""), "url": service.crew_new_link(occ, member, user=request.user)["url"]}
+                else:
+                    found = next((m for m in service.crew_list(occ) if m["id"] == member), None)
+                    if found is None:
+                        raise ValidationError({"member": ["That person isn't on the crew any more."]})
+                    audit("hosting.crew_link_used", user=request.user, obj=session, member=member)
+                    ctx["crew_link"] = {"name": found["name"], "url": found["url"]}
+            elif op == "live_settings":
+                if not admin:
+                    return forbidden(request, "Only Administrators can open the live server's settings.")
+                if session is None or session.account is None:
+                    raise ValidationError({"action": ["Link this session to a live server first."]})
+                return redirect(service.live_settings_link(session.account, room=session.external_id, user=request.user))
+            elif op == "recordings":
+                ctx["recordings"] = service.fetch_recordings(occ)
+                ctx["recordings_checked"] = True
             elif op in ("reconcile", "manual", "detach"):
                 if not admin:
                     return forbidden(request, "Only Administrators can change provider links.")
@@ -159,10 +202,23 @@ def session_hosting(request, pk):
             ctx["errors"] = _errors(exc)
     session = service.session_for(occ)
     ctx["session"] = service.serialize_session(session) if session is not None else None
+    ctx["room_ready"] = bool(ctx["session"] and ctx["session"]["capabilities"] and ctx["session"]["capabilities"]["hostRoom"]
+                             and ctx["session"]["state"] in ("linked", "out_of_date"))
+    if ctx["room_ready"] and admin:
+        try:
+            ctx["crew"] = service.crew_list(occ)
+        except ValidationError:
+            ctx["crew"] = None  # the room still works: the page says it couldn't ask
+        from webinars.hosting import engagement
+
+        ctx["engagement"] = engagement.summary(occ)
     ctx["account_cards"] = [
         {"account": a, "describe": get_adapter(a.provider).describe()} for a in accounts
     ]
-    return render(request, T + "session_hosting.html", ctx, status=400 if ctx["errors"] else 200)
+    ctx["any_attach"] = any(get_adapter(a.provider).capabilities.attach for a in accounts)
+    ctx["any_manual"] = any(get_adapter(a.provider).capabilities.manual_link for a in accounts)
+    response = render(request, T + "session_hosting.html", ctx, status=400 if ctx["errors"] else 200)
+    return no_store(response) if ctx.get("crew_link") else response
 
 
 _CONFIRM_SALT = "webinars.studio.hosting.confirm"

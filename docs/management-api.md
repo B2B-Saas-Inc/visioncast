@@ -1,6 +1,6 @@
 # Management API (event writes)
 
-Server-to-server API for a CMS or back office to manage events. Implementation: `webinars/api/management.py`. Routes: `webinars/urls.py`.
+Server-to-server API for a CMS or back office to manage events. Implementation: `webinars/api/management.py` and `webinars/api/hosting.py`. Routes: `webinars/urls.py` and `webinars/api/urls_hosting.py`.
 
 ## Authentication and scopes
 
@@ -11,10 +11,11 @@ Send the key as `Authorization: Bearer wbk_<prefix>_<secret>`. `X-Api-Key` also 
 | `content_write` | events (content), hosts, topics, form versions, occurrences, cancellation |
 | `publication` | event visibility changes (also needs `content_write`) and recording publication; confirmed, see [Authentication](api-reference.md#authentication) and below |
 | `attendance_write` | `POST /api/v1/manage/registrations/<id>/attendance` and the attendance import routes under `/api/v1/manage/occurrences/<id>/attendance/imports` (reads also with `config_read`) |
-| `config_read` | **read-only**: `GET` on `/api/v1/manage/events`, `/events/<id>`, `/occurrences/<id>` and `/occurrences/<id>/waiting-room` (see below) |
+| `config_read` | **read-only**: `GET` on `/api/v1/manage/events`, `/events/<id>`, `/occurrences/<id>` and `/occurrences/<id>/waiting-room` (see below), and the reads named for it under Attendance, Hosting, Self-hosted live rooms and [tickets.md](tickets.md) |
+| `hosting_admin`, `hosting_provision` | **privileged**: hosting accounts; provider session and live-room actions (see [Hosting](#hosting-hosting_provision-hosting_admin-for-accounts) and [Self-hosted live rooms](#self-hosted-live-rooms-hosting_provision-hosting_admin-for-brand)) |
 
 **Read-only access (`config_read`).** The scope is checked per method: `config_read` is
-accepted only for `GET` on the four endpoints above. Every other method needs the write
+accepted only for `GET` on the endpoints named for it. Every other method needs the write
 scope, so a read-only key gets `403` before any body is parsed. Responses are the same
 projection as for `content_write`, including **draft** events and `internalName`, except
 that every `url` key (today only `waitingRoom.url`, the shareable `/w/<code>/` room link)
@@ -27,7 +28,7 @@ key that holds it, so treat it as able to read unpublished copy.
 
 Scope names follow the existing snake_case `ApiKey.Scope` convention. That means `content_write`, not `content:write`.
 
-- No other scope grants write access, including `config_read`, `trusted`, `proxy`, `register`, `public_read` and `reporting`.
+- `config_read`, `trusted`, `proxy`, `register`, `public_read` and `reporting` grant no write access on these routes. `payments_admin` writes are in [tickets.md](tickets.md).
 - The two write scopes do not imply each other.
 - Existing keys are not upgraded (see migration `0003_management_api_scopes`, which changes no schema).
 
@@ -192,6 +193,43 @@ Bulk attendance from the hosting provider or a report, reviewed and applied expl
 Unknown and other-session import/row ids are 404. Responses never contain full email
 addresses, join links or provider payloads.
 
+### Hosting (`hosting_provision`, `hosting_admin` for accounts)
+
+Connects sessions to a video provider ([hosting.md](hosting.md)). Base path `/api/v1/manage`. Credentials are set-only and never returned.
+
+| Method and path | Scope | Body |
+|---|---|---|
+| `GET /hosting/providers` | `hosting_provision` or `config_read` | |
+| `GET /hosting/accounts` | `hosting_admin` or `config_read` | |
+| `POST /hosting/accounts` | `hosting_admin` | `provider`, `name`, `enabled`, `config`, `credentials` |
+| `GET /hosting/accounts/{id}` | `hosting_admin` or `config_read` | |
+| `PATCH /hosting/accounts/{id}` | `hosting_admin` | `name`, `enabled`, `config`, `credentials` |
+| `GET /occurrences/{id}/hosting` | `hosting_provision` or `config_read` | |
+| `POST /occurrences/{id}/hosting/preview` | `hosting_provision` | `accountId`, `action`, `externalId` |
+| `POST /occurrences/{id}/hosting/execute` | `hosting_provision` | Same as preview. Answers 428 first: repeat with `Webinar-Confirm-Token` |
+| `POST /occurrences/{id}/hosting/reconcile` | `hosting_provision` | `decision`, `externalId` |
+| `GET /occurrences/{id}/hosting/registrants` | `hosting_provision` or `config_read` | |
+| `POST /occurrences/{id}/hosting/registrants/reconcile` | `hosting_provision` | `registrationId`, `decision`, `joinUrl`, `externalId`. Answers 428 first |
+| `POST /occurrences/{id}/hosting/manual-link` | `hosting_provision` | `accountId`, `joinUrl`, `embedUrl` |
+
+### Self-hosted live rooms (`hosting_provision`, `hosting_admin` for brand)
+
+For sessions on a self-hosted live server ([hosting.md](hosting.md#livekit-self-hosted)). Base path `/api/v1/manage`.
+
+| Route | What it does |
+|---|---|
+| `GET /occurrences/{id}/live/crew` | Hosts, producers and guests: `id`, `role`, `name`, `title`. Never links |
+| `POST /occurrences/{id}/live/crew` `{role, name, title}` | Adds someone. Returns `{id, url}`: their personal link, this once |
+| `POST /occurrences/{id}/live/crew/{member}/new-link` `{}` | Replaces their link, and returns it once. The old one stops working and they're put out of the room |
+| `DELETE /occurrences/{id}/live/crew/{member}` | Removes them |
+| `GET`, `PATCH /occurrences/{id}/live/settings` `{settings, theme, survey}` | Room settings, this session's look and its survey. Send the whole `settings` object. Open rooms update straight away. `config_read` may read |
+| `GET`, `PATCH /occurrences/{id}/live/destinations` `{destinations}` | Where it broadcasts. Keys are set-only: a blank key keeps the one stored |
+| `GET /occurrences/{id}/engagement` | Counts: `people`, `chatMessages`, `questions`, `pollVotes`, `surveyAnswers` |
+| `POST /occurrences/{id}/engagement` `{}` | Brings it back now, rather than waiting for the worker. Returns `{people, changed, final}`, and sends `engagement.recorded` for what changed |
+| `GET`, `PATCH /hosting/accounts/{id}/live/brand` `{accent, stage, mode, font}` | The brand of every room on that server (`hosting_admin`) |
+
+A session with no room yet gets 400. If the live server doesn't answer, so does this, with the reason.
+
 ## Audit
 
 Every write is recorded in `AuditLog` with `actor_api_key`, the object id and field names only:
@@ -207,8 +245,8 @@ The shared scheduling functions also write their own entries (`occurrence.cancel
 ## Not supported
 
 - Webhook destinations (including the Zapier / Make / n8n `preset` field): studio or MCP `save_destination` only, see [mcp.md](mcp.md) and [webhooks.md](webhooks.md#workflow-automation-platforms).
-- Series creation (use admin).
-- Deleting hosts, topics, forms or occurrences.
+- Series creation over REST (use MCP `create_series` or the admin).
+- Deleting topics, forms or occurrences.
 - Bulk operations.
 - Optimistic concurrency tokens. Writes are serialized by row locks, and the last write wins.
 - Idempotency keys for management writes.

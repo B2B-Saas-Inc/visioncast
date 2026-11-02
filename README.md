@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-**The open-source headless CMS for webinars.** Your event pages and registration form live on your own website. Your registrations go straight to the tools you already use. Your video stays in Zoom, Riverside, StreamYard, Wistia or Sequel.
+**The open-source headless CMS for webinars.** Your event pages and registration form live on your own website. Your registrations go straight to the tools you already use. Your video stays in Zoom, Riverside, StreamYard, Wistia or Sequel, or runs on your own server with the optional live add-on.
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/B2B-Saas-Inc/visioncast?include_prereleases&label=release)](https://github.com/B2B-Saas-Inc/visioncast/releases)
@@ -40,7 +40,7 @@ You keep the page. You keep the data. Nobody can reprice either one.
 | An embed that won't style, won't resize on mobile, or isn't supported any more | A JSON API, a dependency-free form script, and kits for WordPress, Next.js, Astro, SvelteKit, Nuxt, Sanity, Contentful, Payload and Prismic |
 | A three-field form, synced late, missing the UTMs, sometimes twice | Your own fields, sent server-side to 17 tools with consent rules. One person per verified email, merged with the anonymous website visitor in PostHog, Amplitude and Mixpanel |
 | Pricing per attendee or per contact, attendee caps, annual escalators | Apache 2.0. No vendor caps, no seats, no contract. You pay for a server |
-| A new video tool means rebuilding every page | You pick the video tool per session. Pages and data stay put |
+| A new video tool means rebuilding every page | You pick the video tool per session, or run your own on LiveKit. Pages and data stay put |
 
 ### Why open source
 
@@ -50,7 +50,7 @@ VisionCast is Apache 2.0. There's no "powered by" badge and no paid tier holding
 
 ### Is it right for you?
 
-It's a good fit if you have a developer and want your events on your own site. It's the wrong choice today if nobody on your team can run a Docker image, or if you want a built-in video studio. A hosted platform will serve you better there.
+It's a good fit if you have a developer and want your events on your own site. It's the wrong choice today if nobody on your team can run a Docker image: a hosted platform will serve you better there. The core app doesn't host video. For that, connect a provider, or run the optional [live add-on](live/README.md), which needs a server of its own.
 
 ## How it works
 
@@ -61,6 +61,8 @@ flowchart LR
   W -->|"registration, same origin"| V
   V -->|"server-side delivery"| D["HubSpot, Salesforce, PostHog,<br/>Customer.io, Segment, ..."]
   V -->|"join link at doors-open"| R["Zoom, Riverside, StreamYard,<br/>Wistia, Sequel"]
+  V -->|"personal link at doors-open"| L["Your own live server<br/>(optional, LiveKit)"]
+  L -->|"attendance, chat, questions,<br/>votes, survey answers"| V
 ```
 
 1. Marketers create an event in the studio from a template, add sessions and pick a registration form. VisionCast won't publish until the event has an upcoming session and the copy it needs.
@@ -86,26 +88,29 @@ flowchart LR
 * **Identity that doesn't create duplicates.** PostHog, Amplitude and Mixpanel identify people by verified email, and VisionCast merges in the anonymous visitor ID your website already tracked.
 * **Consent and attribution.** Analytics, advertising and SMS consent travel with every registration and gate every integration. UTMs, click IDs and first-party cookies are captured only with the matching consent, with separate first-touch and registration-touch records.
 * **Signed webhooks.** Timestamped HMAC signatures, stable delivery IDs, per-destination data groups, and ready recipes for Zapier, Make and n8n. [docs/webhooks.md](docs/webhooks.md)
-* **Attendance from the source.** Pull attendance from Zoom, Riverside (unverified) or a file from any provider. It never runs automatically and never guesses an ambiguous match. [docs/hosting.md](docs/hosting.md)
+* **Attendance from the source.** Pull attendance from Zoom, your own LiveKit server, Riverside (unverified) or a file from any provider. It never runs automatically and never guesses an ambiguous match. [docs/hosting.md](docs/hosting.md)
 
 ### For developers
 
 * **APIs.** A public read API, a registration API with idempotency keys, a first-party proxy API, and a management API for events, sessions, forms and attendance. OpenAPI 3.1 at `/api/v1/openapi.json`. [docs/api-reference.md](docs/api-reference.md), [docs/management-api.md](docs/management-api.md)
 * **Website kits.** A WordPress plugin; references for Next.js, Astro, SvelteKit, Nuxt, React, Vue and Svelte; CMS integrations for Sanity, Contentful, Payload and Prismic; a dependency-free form script and a Google Tag Manager tag. The WordPress plugin and the Next.js, SvelteKit, Astro and Nuxt kits were each installed fresh in Docker; none is production-tested on a real site yet. [docs/kits.md](docs/kits.md)
 * **Recognition without accounts.** A returning browser skips fields it already gave, through a revocable HttpOnly cookie. An email address alone never reveals or changes anyone's profile.
-* **Hosting providers** (preview). Create, update or attach Zoom Webinars; create Wistia and Sequel sessions; attach Riverside with per-registrant links; manual links for StreamYard. [docs/hosting.md](docs/hosting.md)
+* **Hosting providers** (preview). Create, update or attach Zoom Webinars; create Wistia and Sequel sessions; attach Riverside with per-registrant links; manual links for StreamYard; rooms on your own LiveKit server. [docs/hosting.md](docs/hosting.md)
+* **Your own video** (optional add-on). A live studio on a LiveKit server you run, at addresses like `live.example.com/your-event`, in 1080p with high-quality stereo sound: hosts, guests and producers each with their own link, in a green room; go live when ready; layouts you can save, frames, GIF and video overlays, slides from PDF or PowerPoint, screen sharing, virtual backgrounds; polls that pop up or run on a schedule, moderated chat with reactions, public or private Q&A, surveys, downloads; attendees invited on stage; breakout rooms and a networking hub; recorded sessions played as if live; RTMP in from an encoder; broadcast out to YouTube, Meta, X and LinkedIn; live captions, translated if you like, saved per speaker with the recording; each speaker's own copy. Settings live at `/admin`, where everyone signs in as themselves and People lists everyone, crew included. What people did comes back to VisionCast and your CRM. [live/README.md](live/README.md)
+* **Your name on it, on any provider.** One command puts the studio and live rooms on a server, with your name, colour and logo. Any provider that gives you a real server with a public address will do. [docs/branding.md](docs/branding.md)
 * **An MCP server.** Claude and other assistants can draft events, schedule sessions, record attendance and pull reports with a scoped key, under the same rules as your team. [docs/mcp.md](docs/mcp.md)
 
 ### For whoever runs it
 
 * **One image.** Django 5.2 LTS, PostgreSQL 16 and a background worker ship in a single Docker image for linux/amd64 and linux/arm64, published to GHCR on every release.
-* **Production tooling.** Scripts provision a 2 GB DigitalOcean droplet, install everything behind Cloudflare with TLS, rate limits and Access, take nightly encrypted backups, and upgrade in place with a backup first. [deploy/production/README.md](deploy/production/README.md)
+* **Production tooling.** The one-step installer works anywhere. GrowthCast's own scripts, for DigitalOcean and Cloudflare, add TLS, rate limits, Access, nightly encrypted backups and in-place upgrades with a backup first. [deploy/production/README.md](deploy/production/README.md)
+* **Sized for the event, not the year.** The live server can stay small between events and be sized up for them. `size-check.sh` tells you whether it's big enough for the audience you expect, and the room warns hosts if it isn't. [Capacity](live/README.md#capacity)
 * **Privacy controls.** A retention and erasure command, a personal-data-free audit log, encrypted credentials, and outbound requests restricted to approved hosts.
 
 ## What VisionCast is not
 
 * **Not an email platform.** Confirmations, reminders and follow-ups go out as events (`registration.created`, `reminder.due`, ...) for your email tool to send. VisionCast only sends its own operational mail: waiting-room codes and teammate invitations. [docs/email.md](docs/email.md)
-* **Not a video platform.** Join and recording links point at your existing webinar tool. The waiting room controls when the join link appears.
+* **Not a video platform, unless you add one.** Join and recording links point at your existing webinar tool, and the waiting room controls when the join link appears. If you want your own video, the optional [LiveKit add-on](live/README.md) runs the whole session on a separate server of yours.
 * **Not multi-tenant, and not a CRM.** One install serves one organisation. It doesn't verify phone numbers, and it verifies email addresses only through the waiting-room code.
 
 ## Quick start
@@ -151,7 +156,7 @@ deploy/upgrade.sh --image ghcr.io/b2b-saas-inc/visioncast:0.3.7-pre   # first ru
 
 ## Deploy to production
 
-[`deploy/production/`](deploy/production/README.md) takes a fresh DigitalOcean droplet to a working install: Docker Compose, nginx with Let's Encrypt, Cloudflare in front, nightly encrypted backups, retention, and a PASS/FAIL verifier. It's the tooling behind events.growthcast.app.
+On any provider, the simplest route is [`deploy/quickstart/install.sh`](deploy/quickstart/install.sh): see [docs/branding.md](docs/branding.md), and [choosing a provider](live/README.md#choosing-a-provider). What follows is how GrowthCast runs it, on DigitalOcean and Cloudflare, and it's specific to those: [`deploy/production/`](deploy/production/README.md) takes a fresh droplet to a working install: Docker Compose, nginx with Let's Encrypt, Cloudflare in front, nightly encrypted backups, retention, and a PASS/FAIL verifier. It's the tooling behind events.growthcast.app.
 
 ```sh
 deploy/production/provision.sh --apply                      # creates the droplet (dry run without --apply)
@@ -168,6 +173,26 @@ Whatever you deploy on, put these at the edge before any public traffic. The pro
 1. **TLS** that always overwrites `X-Forwarded-Proto`, then `DJANGO_TRUST_X_FORWARDED_PROTO=1`.
 2. **Rate limits** on registration, profile, reset, studio and admin login, `/w/` and `/mcp`. The application's own limits are per process only.
 3. **MFA, SSO or a VPN** in front of `/studio/` and `/admin/`. VisionCast itself only has passwords.
+
+### Add your own live video
+
+Optional. For the studio and live rooms together on one server, under your own name and colours ([branding.md](docs/branding.md)):
+
+```bash
+deploy/quickstart/install.sh --studio events.example.com --live live.example.com --rtc rtc.example.com \
+  --turn turn.example.com --email you@example.com --name "Acme Events" --accent "#0b5a8a" --logo logo.png
+```
+
+Or add live rooms to a VisionCast you already run, on a separate server with three DNS-only hostnames:
+
+```bash
+deploy/live/setup.sh live.example.com rtc.example.com turn.example.com you@example.com
+cd deploy/live && docker compose up -d --build
+```
+
+Sessions then live at `live.example.com/{slug}`, with settings at `/admin`. [Implementation guide, section 9.2](docs/implementation-guide.md#92-your-own-live-video-livekit-add-on-supported-preview). To try it on your machine first: `live/preview/run.sh`.
+
+Before a session, check the server is big enough for your audience with `deploy/live/size-check.sh <attendees>`. Plan on 16 vCPUs and 32 GB to record, broadcast and caption at once. [Capacity, providers, and running a small server between events](live/README.md#capacity).
 
 ## Connect your website
 
@@ -215,7 +240,7 @@ Only **superusers** manage users, groups and role membership. `bootstrap_admin` 
 | `public_read`, `reporting` | MCP only: public read tools and resources; report summary. Public REST reads need no key. |
 | `delivery_admin`, `keys_admin`, `team_admin` | **Privileged.** MCP only; see [docs/mcp.md](docs/mcp.md). |
 | `payments_admin` | **Privileged.** Stripe account (set-only secrets), prices, orders and refunds recorded from Stripe. No money moves through the API. |
-| `hosting_admin`, `hosting_provision` | **Privileged.** Hosting accounts with set-only credentials; provider session create, update, attach and reconcile. |
+| `hosting_admin`, `hosting_provision` | **Privileged.** `hosting_admin`: hosting accounts with set-only credentials, and the live server's brand. `hosting_provision`: provider session create, update, attach and reconcile, and a live session's crew, settings, broadcast destinations and engagement. |
 
 No scope implies another. VisionCast stores keys hashed and shows each one once. Only a superuser can grant a privileged scope, in the studio or with `manage.py create_api_key`.
 
@@ -225,17 +250,25 @@ VisionCast is a pre-release. Here is exactly where it stands on **0.3.7-pre** (2
 
 **Proven**
 
-* 2,453 automated tests pass on Python 3.12 and PostgreSQL 16, with lint, system and migration checks clean.
+* 2,453 automated tests passed on Python 3.12 and PostgreSQL 16 at this release, with lint, system and migration checks clean. The unreleased live add-on work brings that to 2,510.
 * A real-browser walkthrough of the studio passes 13 of 13 steps, plus browser suites for the form script, Google Tag Manager tag and Riverside flow.
 * An end-to-end acceptance test covers create, provision, register, pay, check in, record attendance and deliver.
 * Images build for amd64 and arm64 and publish to GHCR on every tag; backup, restore, in-place upgrade and rollback have been rehearsed.
 * VisionCast runs in production at [events.growthcast.app](https://events.growthcast.app/healthz) behind Cloudflare, serving [growthcast.app/events](https://growthcast.app/events), upgraded in place since its first install on 0.3.0-pre.
 
+**The live add-on, not yet released** (branch `livekit-rust`), on a real stack on one machine:
+
+* Every role in real browsers, 36 of 36 steps, and every newer feature, 24 of 24.
+* Chromium, Firefox, WebKit and phone-sized screens, 8 of 8, including screen sharing in WebKit.
+* 26 of 26 attacks held against the running stack, after an adversarial review by four reviewers.
+* 1,000 event streams with every message delivered, and 100 simulated viewers on real media with under 0.1% packet loss.
+* Captions with 11.2% of words wrong on public recordings of real voices, about a second behind the sound.
+
 **Not yet proven**
 
-* Native integrations, Stripe and hosting providers have only been tested against mocked vendor APIs. Each needs a live sandbox run before you rely on it.
+* Native integrations, Stripe and hosting providers have only been tested against mocked vendor APIs. Each needs a live sandbox run before you rely on it. LiveKit is the exception: it runs against a real server, but only on one machine so far. It hasn't run on a public server, through TURN with real media, on Safari with a camera, or to a real streaming platform.
 * Website kits were installed fresh in Docker but not on a real production site.
-* Nobody has run a security audit or load test.
+* Nobody independent has run a security audit. The core app has had no load test. The live add-on has had an adversarial code review, a repeatable attack suite and a load test, all on one machine ([docs/validation.md](docs/validation.md)).
 
 ## Development
 
@@ -256,6 +289,16 @@ DJANGO_TEST_SQLITE=1 pytest
 ruff check .
 ```
 
+**The live add-on** needs Docker, Node, ffmpeg and Chromium (`PLAYWRIGHT_MODULE`, `PLAYWRIGHT_CHROMIUM_EXECUTABLE`):
+
+```sh
+(cd live && cargo test)                                  # service API, permissions, storage
+live/tests/e2e/run.sh                                    # every role, then every feature, on a real stack
+E2E_SUITE=browsers live/tests/e2e/run.sh                 # Firefox, WebKit and phone screens
+E2E_SUITE=attack LIVE_RTMP_ALLOW_PRIVATE=0 live/tests/e2e/run.sh   # attacks on the running stack
+live/tests/load/run.sh                                   # event streams and simulated viewers
+```
+
 **Browser and SDK tests:**
 
 ```sh
@@ -272,9 +315,11 @@ Issues and pull requests are welcome. Please include a test with every behaviour
 | Document | Contents |
 |---|---|
 | [docs/implementation-guide.md](docs/implementation-guide.md) | **Start here.** Deployment, pages, forms, proxy, waiting room, calendars, webhooks, launch checks |
-| [deploy/production/README.md](deploy/production/README.md) | Production install on a droplet behind Cloudflare, upgrades, verification |
+| [deploy/production/README.md](deploy/production/README.md) | GrowthCast's production install on DigitalOcean behind Cloudflare, upgrades, verification |
 | [docs/studio.md](docs/studio.md) | The marketer studio |
 | [docs/kits.md](docs/kits.md), [docs/browser-integration.md](docs/browser-integration.md), [docs/integration.md](docs/integration.md) | Website kits, form script, consent, first-party proxy, Google Tag Manager |
+| [live/README.md](live/README.md) | Your own video: the studio, roles, addresses, `/admin`, captions, graphics, broadcasting, capacity, choosing a provider, and the service's API |
+| [docs/branding.md](docs/branding.md) | One-step install of the studio and live rooms with your name, colour and logo, backups and upgrades |
 | [docs/native-integrations.md](docs/native-integrations.md), [docs/webhooks.md](docs/webhooks.md) | Native integrations; webhook payloads, signatures, retries |
 | [docs/waiting-room.md](docs/waiting-room.md), [docs/tickets.md](docs/tickets.md), [docs/hosting.md](docs/hosting.md), [docs/email.md](docs/email.md) | Waiting room, seats and paid tickets, hosting providers, operational email |
 | [docs/api-reference.md](docs/api-reference.md), [docs/management-api.md](docs/management-api.md), `GET /api/v1/openapi.json` | Public, registration, proxy and management APIs; OpenAPI 3.1 |

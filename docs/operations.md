@@ -262,6 +262,8 @@ docker compose run --rm web manage purge_personal_data --older-than-days 365 --d
 docker compose run --rm web manage purge_personal_data --person <person-uuid>
 ```
 
+If a session used your own live server and it was off, the output shows `live_servers_not_reached` above 0. Turn it on and run the same command again.
+
 The command clears person PII, submitted profiles, consent evidence, attribution
 touches, organisation IDs, capabilities and queued outbox payloads. It cannot recall
 data already delivered to webhook receivers or stored in backups — handle those via
@@ -300,3 +302,27 @@ External monitoring should probe `https://<host>/healthz` through the reverse pr
 - [ ] `WEBHOOK_HOST_ALLOWLIST` contains only receivers you control or contract with
 - [ ] Backups encrypted, off-host, restore tested, master key stored separately
 - [ ] Retention cron installed and monitored
+
+## Your own live server
+
+Runs from `deploy/live`. See [live/README.md](../live/README.md).
+
+| Task | How |
+|---|---|
+| Start, update | `docker compose up -d --build` in `deploy/live` |
+| Logs | `docker compose logs -f live`, or `traefik`, `egress`, `livekit`, `captions`, `slides`, `ingress`, `translate` |
+| Health | `GET /healthz` on the service host |
+| People at `/admin` | Add, reset and remove under People. Locked out: `docker compose exec live visioncast-live reset-admin you@example.com` prints a link that works once |
+| Who did what | Activity at `/admin` |
+| Replace a crew link | Crew, on the session's page at `/admin` or its Hosting page in the studio |
+| Check it from outside | `deploy/live/verify-public.sh <live host> <media host> <TURN host>` |
+| Slides | `docker compose logs slides`. A deck that fails says so in the room, and doesn't stop the next one |
+| Back up | The `live-data` volume: its SQLite file has accounts, crew, chat, questions, polls, surveys, captions and stream keys, and it holds uploaded files, slide pages, fonts and speakers' own recordings. Main recordings are in your bucket |
+| Retention | Rooms and what's in them go `LIVE_RETENTION_DAYS` after their end, 90 by default. Your bucket's files don't |
+
+**Don't change `LIVE_TICKET_KEY` around a session.** It signs every link and seals stream keys, so all links stop working and keys need entering again.
+
+Speakers' own recordings can be large, about 2 GB an hour each. Watch the disk if you turn them on.
+
+If captions stop, the session carries on. Check `docker compose logs captions`. If it logs that it's falling behind, lower the number of speakers or raise `CAPTIONS_THREADS`.
+

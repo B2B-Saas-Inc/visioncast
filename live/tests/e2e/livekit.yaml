@@ -1,0 +1,16 @@
+port: 7880
+log_level: info
+rtc:
+  tcp_port: 7881
+  port_range_start: 50100
+  port_range_end: 51100
+  use_external_ip: false
+  node_ip: 172.30.77.10
+redis:
+  address: redis:6379
+keys:
+  devkey: e2e-livekit-secret-e2e-livekit-secret-e2e
+webhook:
+  api_key: devkey
+  urls:
+    - http://host.docker.internal:18090/webhooks/livekit

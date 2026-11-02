@@ -1,3 +1,4 @@
-{% load static %}<link rel="icon" href="{% static 'brand/favicon.ico' %}" sizes="any">
+{% load static %}{% if brand.custom_logo %}<link rel="icon" href="{{ brand.logo }}" type="image/png">
+  <link rel="apple-touch-icon" href="{{ brand.logo }}">{% else %}<link rel="icon" href="{% static 'brand/favicon.ico' %}" sizes="any">
   <link rel="icon" href="{% static 'brand/visioncast-icon-small.svg' %}" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="{% static 'brand/apple-touch-icon.png' %}">
+  <link rel="apple-touch-icon" href="{% static 'brand/apple-touch-icon.png' %}">{% endif %}

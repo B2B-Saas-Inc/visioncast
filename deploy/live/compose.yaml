@@ -1,0 +1,150 @@
+# Your own video: LiveKit, Egress for recordings, and visioncast-live, on one server.
+# Run deploy/live/setup.sh first. Host networking because LiveKit carries media on many UDP
+# ports. Everything but Traefik and LiveKit's media ports listens on 127.0.0.1 only.
+#
+# Optional parts are off until asked for: COMPOSE_PROFILES=encoder,translate in .env
+#   encoder    RTMP input, for OBS, vMix or a hardware encoder. Opens port 1935.
+#   translate  captions in other languages. Needs about 1 GB of disk and memory per language.
+name: visioncast-live
+x-host: &host
+  network_mode: host
+  restart: unless-stopped
+services:
+  traefik:
+    <<: *host
+    image: traefik:v3.3
+    environment:
+      LIVE_HOST: ${LIVE_HOST}
+      RTC_HOST: ${RTC_HOST}
+      TURN_HOST: ${TURN_HOST}
+      STUDIO_HOST: ${STUDIO_HOST:-}
+      TLS_RESOLVER: ${TLS_RESOLVER-le}
+    volumes:
+      - ./traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./routes.yml:/etc/traefik/routes.yml:ro
+      - traefik-data:/data
+    depends_on: [live]
+  redis:
+    <<: *host
+    image: redis:7.4-alpine
+    command: ["redis-server", "--bind", "127.0.0.1", "--save", "", "--appendonly", "no"]
+  livekit:
+    <<: *host
+    image: livekit/livekit-server:v1.13.11
+    environment:
+      LIVEKIT_CONFIG: |
+        port: 7880
+        bind_addresses: ["127.0.0.1"]
+        rtc:
+          tcp_port: 7881
+          port_range_start: 50000
+          port_range_end: 60000
+          use_external_ip: ${LIVEKIT_USE_EXTERNAL_IP:-true}
+          node_ip: ${LIVEKIT_NODE_IP:-}
+        redis:
+          address: 127.0.0.1:6379
+        keys:
+          ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
+        webhook:
+          api_key: ${LIVEKIT_API_KEY}
+          urls:
+            - http://127.0.0.1:8080/webhooks/livekit
+        turn:
+          enabled: true
+          domain: ${TURN_HOST}
+          udp_port: 3478
+          tls_port: 5349
+          external_tls: true
+          proxy_protocol: true
+          relay_range_start: 30000
+          relay_range_end: 40000
+    depends_on: [redis]
+  egress:
+    <<: *host
+    image: livekit/egress:v1.15.0
+    cap_add: [SYS_ADMIN]
+    environment:
+      EGRESS_CONFIG_BODY: |
+        api_key: ${LIVEKIT_API_KEY}
+        api_secret: ${LIVEKIT_API_SECRET}
+        ws_url: ws://127.0.0.1:7880
+        insecure: true
+        redis:
+          address: 127.0.0.1:6379
+    depends_on: [livekit]
+  live:
+    <<: *host
+    # Built here, unless you set LIVE_VERSION to a release and IMAGE_OWNER to whoever published it.
+    image: ghcr.io/${IMAGE_OWNER:-b2b-saas-inc}/visioncast-live:${LIVE_VERSION:-local}
+    build: ../../live
+    env_file: .env
+    environment:
+      LIVE_BIND: 127.0.0.1:8080
+      LIVE_PUBLIC_URL: https://${LIVE_HOST}
+      LIVE_INTERNAL_URL: http://127.0.0.1:8080
+      LIVEKIT_URL: http://127.0.0.1:7880
+      LIVEKIT_PUBLIC_URL: wss://${RTC_HOST}
+      LIVE_CAPTIONS_URL: http://127.0.0.1:8090
+      LIVE_SLIDES_DIR: /spool
+      LIVE_TRUST_FORWARDED_FOR: "1"
+    volumes:
+      - live-data:/data
+      - slides-spool:/spool
+    depends_on: [livekit]
+  # Whisper, on its own so that it can't take a live room down with it.
+  captions:
+    <<: *host
+    image: ghcr.io/${IMAGE_OWNER:-b2b-saas-inc}/visioncast-captions:${LIVE_VERSION:-local}
+    build: ../../live/captions
+    environment:
+      CAPTIONS_BIND: 127.0.0.1:8090
+      CAPTIONS_THREADS: ${CAPTIONS_THREADS:-2}
+      CAPTIONS_CONCURRENCY: ${CAPTIONS_CONCURRENCY:-2}
+      WHISPER_MODEL: /models/${WHISPER_MODEL:-ggml-base.en.bin}
+      WHISPER_LANGUAGE: ${WHISPER_LANGUAGE:-en}
+    volumes:
+      - ./models:/models:ro
+  # PDF and PowerPoint to page images. No network at all, and only this one folder.
+  slides:
+    image: ghcr.io/${IMAGE_OWNER:-b2b-saas-inc}/visioncast-slides:${LIVE_VERSION:-local}
+    build: ../../live/slides
+    restart: unless-stopped
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:size=1g", "/home/slides:size=256m"]
+    mem_limit: 2g
+    pids_limit: 200
+    volumes:
+      - slides-spool:/spool
+    depends_on: [live]
+  ingress:
+    <<: *host
+    profiles: [encoder]
+    image: livekit/ingress:v1.4.3
+    environment:
+      INGRESS_CONFIG_BODY: |
+        api_key: ${LIVEKIT_API_KEY}
+        api_secret: ${LIVEKIT_API_SECRET}
+        ws_url: ws://127.0.0.1:7880
+        redis:
+          address: 127.0.0.1:6379
+        rtmp_port: 1935
+        whip_port: -1
+        http_relay_port: 9090
+    depends_on: [livekit]
+  translate:
+    <<: *host
+    profiles: [translate]
+    image: libretranslate/libretranslate:v1.7.2
+    command: ["--host", "127.0.0.1", "--port", "5000"]
+    environment:
+      LT_LOAD_ONLY: en,${LIVE_TRANSLATE_LANGUAGES:-es}
+    volumes:
+      - translate-data:/home/libretranslate/.local
+volumes:
+  traefik-data:
+  live-data:
+  slides-spool:
+  translate-data:

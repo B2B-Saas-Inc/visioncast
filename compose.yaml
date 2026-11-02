@@ -1,5 +1,7 @@
 # Docker Compose deployment for a single host.
 #
+# For the studio and your own live rooms together, with your brand, use deploy/quickstart/install.sh.
+#
 #   cp .env.example .env    # then fill in every secret (see comments in the file)
 #   deploy/build-image.sh   # or: docker compose build  (no version labels)
 #   docker compose run --rm migrate
@@ -17,7 +19,7 @@
 #   WEBINAR_PULL_POLICY  for the `migrate` service only (the one with a `build:` section).
 #                        Default "build" (build locally). Set "never" together with a pulled
 #                        image (`docker pull ghcr.io/<owner>/<repo>:<version>` first) so
-#                        nothing is built. No image has been published yet; see README.
+#                        nothing is built. Releases publish images; see README.
 
 name: webinar-platform
 

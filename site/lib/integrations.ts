@@ -9,9 +9,9 @@
 
 /** Back-end test run the statuses below rely on. Static mocks only; no live vendor calls. */
 export const BACKEND_TESTS = {
-  passed: 2453,
+  passed: 2510,
   database: 'PostgreSQL',
-  note: 'All vendor calls in the test suite use static mocks. No test talks to a live vendor account.',
+  note: 'All vendor calls in the test suite use static mocks. No test talks to a live vendor account. LiveKit has a separate run against a real local server.',
 } as const;
 
 export const CATEGORIES = [
@@ -130,6 +130,17 @@ export const INTEGRATIONS: Integration[] = [
     status: 'limited',
     summary: 'Paste a StreamYard link into a session.',
     details: ['Manual link only.', 'No public API, so no automatic creation or sync and no outbound calls.'],
+  },
+  {
+    id: 'livekit',
+    name: 'LiveKit',
+    category: 'hosting',
+    status: 'built',
+    summary: 'Run rooms and recordings on your own LiveKit server.',
+    details: [
+      'Optional add-on on a separate server of yours: a studio with green room, personal links for every crew member, layouts, frames, overlays, slides, virtual backgrounds, polls, moderated chat and Q&A, surveys, breakout rooms, simulive, RTMP in and out, captions and your brand.',
+      'Tested end to end against a real LiveKit server on a local machine, in Chromium, Firefox and WebKit. Not yet run on a public server or sent to a real platform.',
+    ],
   },
 
   // Built outbound adapters ---------------------------------------------------

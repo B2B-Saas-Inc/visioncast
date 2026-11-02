@@ -1,5 +1,7 @@
 # Production deployment: events.growthcast.app
 
+This is how GrowthCast runs VisionCast, and it's specific to DigitalOcean and Cloudflare. On any other provider, use [deploy/quickstart](../quickstart/install.sh) and [docs/branding.md](../../docs/branding.md).
+
 Full install of VisionCast (web + worker + PostgreSQL under Docker Compose, nginx + Let's Encrypt on
 the host, encrypted backups, retention cron) on one DigitalOcean droplet (Ubuntu 24.04, 2 GB) behind
 Cloudflare (proxied DNS, Access in front of the studio and admin). This tooling installed
@@ -236,3 +238,8 @@ Still the operator's job (nothing here does it):
 
 
 > **Cloudflare 525 after the first proxied request (2026-10-28):** Cloudflare's origin ClientHello leads with the post-quantum `X25519MLKEM768` key share; Ubuntu 24.04's OpenSSL 3.0 answers with a HelloRetryRequest and then rejects the retried hello (`SSL: error:0A0000BA ... bad cipher`) when the catch-all server and the vhost disagree on `ssl_prefer_server_ciphers`. The template now pins `ssl_prefer_server_ciphers on` in the vhost (same as nginx.conf). Diagnose with `error_log ... info;` and look for `SSL_do_handshake() failed` from Cloudflare addresses.
+
+## Your own live video
+
+This guide installs VisionCast. Its optional video add-on goes on a separate server, from `deploy/live`: see [section 9.2 of the implementation guide](../../docs/implementation-guide.md#92-your-own-live-video-livekit-add-on-supported-preview).
+

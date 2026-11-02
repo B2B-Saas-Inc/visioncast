@@ -35,14 +35,16 @@ def _write_heartbeat(path):
 
 
 def _side_sweeps():
-    """Ticket reconciliation (webinars.payments.sweep) and provider registrant links
-    (webinars.hosting.service.sweep_registrants). Each is isolated: a failure in one
-    never stops delivery. Both are no-ops without paid orders / attached sessions."""
+    """Ticket reconciliation (webinars.payments.sweep), provider registrant links
+    (webinars.hosting.service.sweep_registrants) and live-room engagement
+    (webinars.hosting.engagement.sweep). Each is isolated: a failure in one never stops
+    delivery. All are no-ops without paid orders / attached sessions / live rooms."""
     from webinars import payments
+    from webinars.hosting import engagement
     from webinars.hosting import service as hosting_service
 
     done = 0
-    for name, func in (("tickets", payments.sweep), ("hosting", hosting_service.sweep_registrants)):
+    for name, func in (("tickets", payments.sweep), ("hosting", hosting_service.sweep_registrants), ("engagement", engagement.sweep)):
         try:
             done += int(func() or 0)
         except Exception as exc:

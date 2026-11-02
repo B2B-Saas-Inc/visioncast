@@ -16,6 +16,7 @@ urlpatterns = [
     path("api-keys/", v.api_keys, name="api-keys"),
     path("api-keys/new", v.api_key_new, name="api-key-new"),
     path("api-keys/<uuid:pk>/revoke", v.api_key_revoke, name="api-key-revoke"),
+    path("brand/", v.brand_settings, name="brand"),
     path("team/", v.team, name="team"),
     path("team/invite", v.team_invite, name="team-invite"),
     path("team/invitations/<uuid:pk>/revoke", v.invitation_revoke, name="invitation-revoke"),

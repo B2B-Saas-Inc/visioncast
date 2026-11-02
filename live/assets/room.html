@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Webinar room</title>
+  <link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/room.css">
+</head>
+<body>
+  <header class="bar" id="bar">
+    <img id="bar-logo" src="/assets/mark.svg" alt="" height="28">
+    <h1 id="title">Webinar room</h1>
+    <span class="pill pill-role" id="role-pill" hidden></span>
+    <span class="pill" id="phase-pill" hidden></span>
+    <span class="pill pill-rec" id="rec-pill" hidden>Recording</span>
+    <span class="pill pill-rec" id="cast-pill" hidden></span>
+    <span class="pill" id="viewers-pill" hidden></span>
+    <span class="pill" id="state-pill" hidden></span>
+    <span class="bar-gap"></span>
+    <button class="btn btn-bar" type="button" id="audience-view" aria-pressed="false" hidden>Audience view</button>
+    <button class="btn btn-bar" type="button" id="record" aria-pressed="false" hidden>Start recording</button>
+    <button class="btn btn-live" type="button" id="go-live" hidden>Go live</button>
+    <button class="btn btn-bar btn-danger" type="button" id="end" hidden>End session</button>
+  </header>
+
+  <main>
+    <section class="gate" id="gate">
+      <h2 id="gate-title">Join the session</h2>
+      <p class="muted" id="gate-note"></p>
+      <form id="join-form" hidden>
+        <div id="devices" hidden>
+          <div class="preview"><video id="preview" autoplay muted playsinline></video><span id="preview-off" hidden>Camera off</span></div>
+          <div class="row">
+            <label class="check"><input type="checkbox" id="use-cam" checked> Camera</label>
+            <select id="cam-select" aria-label="Camera"></select>
+          </div>
+          <div class="row">
+            <label class="check"><input type="checkbox" id="use-mic" checked> Microphone</label>
+            <select id="mic-select" aria-label="Microphone"></select>
+          </div>
+          <p class="error" id="device-error" hidden></p>
+        </div>
+        <label for="name">Your name</label>
+        <input id="name" maxlength="80" autocomplete="name">
+        <div id="title-field" hidden>
+          <label for="job-title">Your title <span class="muted">(shown under your name on stage)</span></label>
+          <input id="job-title" maxlength="80">
+        </div>
+        <button class="btn btn-primary" type="submit" id="join">Join</button>
+      </form>
+      <p class="error" id="gate-error" role="alert" hidden></p>
+    </section>
+
+    <div class="room" id="room" hidden>
+      <div class="center">
+        <p class="notice" id="notice" hidden></p>
+        <button class="btn btn-sound" type="button" id="enable-sound" hidden>Turn on sound</button>
+        <section class="stage-wrap" aria-label="Stage">
+          <div class="stage" id="stage"></div>
+          <div class="prelive" id="prelive" hidden>
+            <h2 id="prelive-title"></h2>
+            <p class="countdown" id="countdown"></p>
+            <p id="prelive-note"></p>
+            <img id="prelive-banner" alt="" hidden>
+          </div>
+          <div class="poll-pop" id="poll-pop" role="dialog" aria-label="Poll" hidden></div>
+        </section>
+        <section class="breakout" id="breakout" aria-label="Breakout room" hidden>
+          <h2 id="breakout-title"></h2>
+          <div class="breakout-grid" id="breakout-grid"></div>
+          <div class="controls">
+            <button class="btn" type="button" id="br-mic" aria-pressed="false">Mic off</button>
+            <button class="btn" type="button" id="br-cam" aria-pressed="false">Camera off</button>
+            <button class="btn btn-primary-inline" type="button" id="br-leave">Back to the session</button>
+          </div>
+          <p class="muted small">Only people in this room can see and hear you. It isn't recorded.</p>
+        </section>
+        <section class="box survey" id="survey-box" hidden></section>
+        <div class="controls" id="slide-controls" hidden>
+          <button class="btn" type="button" id="slide-prev">Previous slide</button>
+          <span class="muted" id="slide-count"></span>
+          <button class="btn" type="button" id="slide-next">Next slide</button>
+        </div>
+        <p class="notes" id="slide-notes" hidden></p>
+        <div class="layouts" id="layouts" hidden>
+          <span class="muted">Layout</span>
+          <button class="seg" type="button" data-layout="single">Single</button>
+          <button class="seg" type="button" data-layout="split">Split</button>
+          <button class="seg" type="button" data-layout="grid">Grid</button>
+          <button class="seg" type="button" data-layout="speaker">Speaker</button>
+          <button class="seg" type="button" data-layout="pip">Picture in picture</button>
+          <button class="seg" type="button" id="edit-layout" aria-pressed="false">Move and resize</button>
+          <span class="saved-layouts" id="saved-layouts"></span>
+        </div>
+        <div class="controls" id="my-controls" hidden>
+          <button class="btn" type="button" id="mic" aria-pressed="false">Mic off</button>
+          <button class="btn" type="button" id="cam" aria-pressed="false">Camera off</button>
+          <button class="btn" type="button" id="screen" aria-pressed="false">Share screen</button>
+          <button class="btn" type="button" id="cc-crew" aria-pressed="false" hidden>Captions off</button>
+          <button class="btn" type="button" id="devices-btn" aria-expanded="false">Devices</button>
+          <button class="btn btn-ghost" type="button" id="leave-crew">Leave</button>
+        </div>
+        <div class="box device-panel" id="device-panel" hidden>
+          <label for="live-cam">Camera</label><select id="live-cam"></select>
+          <label for="live-mic">Microphone</label><select id="live-mic"></select>
+          <div id="live-speaker-wrap"><label for="live-speaker">Speaker</label><select id="live-speaker"></select></div>
+          <div id="vbg-wrap"><label for="vbg">Background</label>
+            <select id="vbg"><option value="">None</option><option value="blur">Blur</option><option value="image">An image</option></select>
+            <input type="file" id="vbg-file" accept="image/png,image/jpeg,image/webp" hidden>
+          </div>
+        </div>
+        <div class="controls" id="viewer-controls" hidden>
+          <span class="reactions" id="reactions"></span>
+          <button class="btn" type="button" id="cc" aria-pressed="false" hidden>Captions off</button>
+          <select id="cc-language" aria-label="Caption language" hidden></select>
+          <button class="btn" type="button" id="hand" aria-pressed="false" hidden>Raise hand</button>
+          <button class="btn btn-ghost" type="button" id="leave">Leave</button>
+        </div>
+        <p class="error" id="room-error" role="alert" hidden></p>
+        <p class="error" id="size-warning" role="alert" hidden></p>
+        <section class="green" id="green" aria-label="Green room" hidden>
+          <h2>Green room <span class="muted" id="green-note"></span></h2>
+          <div class="green-strip" id="green-strip"></div>
+        </section>
+      </div>
+
+      <aside class="side" id="side" aria-label="Session tools">
+        <nav class="tabs" id="tabs" role="tablist"></nav>
+
+        <section class="panel" id="panel-chat" hidden>
+          <div class="subtabs" id="chat-channels" hidden>
+            <button class="seg" type="button" data-channel="event">Everyone</button>
+            <button class="seg" type="button" data-channel="stage">Crew only</button>
+          </div>
+          <div class="pinned" id="pinned" hidden></div>
+          <p class="visually-hidden" id="chat-announce" aria-live="polite"></p>
+          <ol class="feed" id="messages"></ol>
+          <p class="muted small pad" id="chat-off" hidden>Chat is off.</p>
+          <form class="composer" id="chat-form">
+            <label class="visually-hidden" for="chat-input">Message</label>
+            <input id="chat-input" maxlength="500" autocomplete="off" placeholder="Say something">
+            <button class="btn" type="submit">Send</button>
+          </form>
+        </section>
+
+        <section class="panel" id="panel-qa" hidden>
+          <ol class="feed" id="questions"></ol>
+          <form class="composer stacked" id="qa-form">
+            <label class="visually-hidden" for="qa-input">Your question</label>
+            <input id="qa-input" maxlength="500" autocomplete="off" placeholder="Ask a question">
+            <div class="row">
+              <label class="check" id="qa-anon-wrap"><input type="checkbox" id="qa-anon"> Ask anonymously</label>
+              <button class="btn" type="submit">Ask</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel" id="panel-polls" hidden>
+          <div class="scroll">
+            <details class="box" id="poll-editor" hidden>
+              <summary>New poll</summary>
+              <form id="poll-form">
+                <label for="poll-q">Question</label>
+                <input id="poll-q" maxlength="500">
+                <label>Options</label>
+                <div id="poll-options">
+                  <input class="poll-opt" maxlength="200" placeholder="Option 1">
+                  <input class="poll-opt" maxlength="200" placeholder="Option 2">
+                  <input class="poll-opt" maxlength="200" placeholder="Option 3">
+                  <input class="poll-opt" maxlength="200" placeholder="Option 4">
+                </div>
+                <label for="poll-correct">Correct answer <span class="muted">(quiz only)</span></label>
+                <select id="poll-correct">
+                  <option value="">None</option><option value="0">Option 1</option><option value="1">Option 2</option><option value="2">Option 3</option><option value="3">Option 4</option>
+                </select>
+                <label for="poll-results">Show results</label>
+                <select id="poll-results"><option value="live">While people vote</option><option value="closed">When the poll closes</option></select>
+                <label class="check"><input type="checkbox" id="poll-counts"> Show vote counts, not percentages</label>
+                <label class="check"><input type="checkbox" id="poll-popup" checked> Pop up over the stage for attendees</label>
+                <label for="poll-open-after">Open by itself <span class="muted">(minutes after going live, optional)</span></label>
+                <input id="poll-open-after" type="number" min="0" max="1440" step="1">
+                <label for="poll-close-after">Close by itself <span class="muted">(seconds after opening, optional)</span></label>
+                <input id="poll-close-after" type="number" min="5" max="86400" step="1">
+                <button class="btn" type="submit">Save draft</button>
+              </form>
+            </details>
+            <div id="poll-list"></div>
+            <div class="box" id="survey-editor" hidden></div>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-files" hidden>
+          <div class="scroll">
+            <div class="box" id="file-upload" hidden>
+              <label for="resource-file">Add a file for attendees</label>
+              <input type="file" id="resource-file">
+              <p class="muted small">Stays private until you turn on Share.</p>
+            </div>
+            <div id="file-list"></div>
+            <div class="box" id="recording-list" hidden></div>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-people" hidden>
+          <div class="scroll">
+            <input id="people-search" placeholder="Find someone" aria-label="Find someone">
+            <div id="people-list"></div>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-rooms" hidden>
+          <div class="scroll" id="rooms"></div>
+        </section>
+
+        <section class="panel" id="panel-look" hidden>
+          <div class="scroll" id="look"></div>
+        </section>
+
+        <section class="panel" id="panel-broadcast" hidden>
+          <div class="scroll">
+            <p class="muted small" id="broadcast-intro"></p>
+            <div id="broadcast-list"></div>
+            <div class="box" id="ingress-box" hidden></div>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-settings" hidden>
+          <div class="scroll" id="settings"></div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <div class="modal" id="invite-modal" role="dialog" aria-modal="true" aria-labelledby="invite-title" hidden>
+    <div class="modal-card">
+      <h2 id="invite-title">You've been invited on stage</h2>
+      <p>If you accept, you'll check your camera and microphone, then wait in the green room until a host brings you on. Nothing goes out until then. On stage, your words may be transcribed for captions and saved with the recording.</p>
+      <div class="row end">
+        <button class="btn btn-ghost" type="button" id="invite-no">No thanks</button>
+        <button class="btn btn-primary-inline" type="button" id="invite-yes">Accept</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="audio-sink" hidden></div>
+  <script src="/assets/livekit-client.js"></script>
+  <script src="/assets/stage.js"></script>
+  <script src="/assets/room.js"></script>
+</body>
+</html>

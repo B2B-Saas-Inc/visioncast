@@ -7,7 +7,7 @@
 <div class="page-head">
   <div>
     <h1>Hosting provider</h1>
-    <p class="lede">Link this session to Zoom, Wistia, Sequel, Riverside or StreamYard. Attendees always use the waiting-room link; provider links stay private.</p>
+    <p class="lede">Link this session to Zoom, Wistia, Sequel, Riverside, StreamYard or your own LiveKit server. Attendees always use the waiting-room link; provider links stay private.</p>
   </div>
 </div>
 
@@ -17,14 +17,99 @@
 </div>
 {% endif %}
 
+{% if room_ready %}
+<section class="panel">
+  <div class="panel-head"><h2>Your room</h2></div>
+  <div class="panel-body stack">
+    <p class="help">The crew can get in up to 48 hours early to rehearse in the green room. Attendees enter through the waiting room, each with a personal link, and see nothing until you go live.</p>
+    <div class="form-actions" style="margin-top:var(--s-3)">
+      <form method="post" action="{% url 'studio:session-hosting' pk=occ.pk %}" target="_blank">
+        {% csrf_token %}<input type="hidden" name="op" value="host_room">
+        <button class="btn btn-primary" type="submit">Open the studio as a host</button>
+      </form>
+      {% if can_execute and session.capabilities.liveSettings %}
+      <form method="post" action="{% url 'studio:session-hosting' pk=occ.pk %}" target="_blank">
+        {% csrf_token %}<input type="hidden" name="op" value="live_settings">
+        <button class="btn btn-ghost" type="submit">Broadcast and brand settings</button>
+      </form>
+      {% endif %}
+      {% if session.capabilities.recordings %}
+      <form method="post" action="{% url 'studio:session-hosting' pk=occ.pk %}">
+        {% csrf_token %}<input type="hidden" name="op" value="recordings">
+        <button class="btn btn-ghost" type="submit">Check for recordings</button>
+      </form>
+      {% endif %}
+    </div>
+    {% if crew_link %}
+    <div class="callout callout-warn">
+      <p><strong>This is {{ crew_link.name }}'s own link.</strong> Anyone with it can act as them, so send it only to them. You can replace or remove it below.</p>
+      <p><code id="crew-link">{{ crew_link.url }}</code></p>
+      <button class="btn btn-sm" type="button" data-copy="#crew-link">Copy</button>
+    </div>
+    {% endif %}
+    {% if can_execute %}
+    <h3>Crew</h3>
+    {% if crew is None %}<p class="help">Your live server didn't answer, so the crew can't be listed right now.</p>{% else %}
+    {% if crew %}
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th scope="col">Name</th><th scope="col">Role</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+      <tbody>{% for m in crew %}<tr>
+        <td>{{ m.name }}{% if m.title %} <span class="small">{{ m.title }}</span>{% endif %}</td><td>{{ m.role|capfirst }}</td>
+        <td><form method="post" action="{% url 'studio:session-hosting' pk=occ.pk %}" style="display:inline-flex;gap:var(--s-2)">
+          {% csrf_token %}<input type="hidden" name="member" value="{{ m.id }}"><input type="hidden" name="name" value="{{ m.name }}">
+          <button class="btn btn-ghost btn-sm" name="op" value="crew_show" type="submit">Show link</button>
+          <button class="btn btn-ghost btn-sm" name="op" value="crew_new_link" type="submit">New link</button>
+          <button class="btn btn-ghost btn-sm" name="op" value="crew_remove" type="submit">Remove</button>
+        </form></td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+    {% endif %}
+    <form method="post" action="{% url 'studio:session-hosting' pk=occ.pk %}">
+      {% csrf_token %}<input type="hidden" name="op" value="crew_add">
+      <div class="field"><label class="label" for="crew-name">Name</label><input class="input" id="crew-name" name="name" maxlength="80" required></div>
+      <div class="field"><label class="label" for="crew-title">Title <span class="optional">(optional, shown on stage)</span></label><input class="input" id="crew-title" name="title" maxlength="80"></div>
+      <div class="field"><label class="label" for="crew-role">Role</label><select class="select" id="crew-role" name="role">
+        <option value="guest">Guest: comes on stage when brought on</option><option value="host">Host: on stage, runs the show</option><option value="producer">Producer: runs the show, never seen or heard</option>
+      </select></div>
+      <button class="btn btn-sm" type="submit">Add to the crew</button>
+    </form>
+    {% endif %}
+    {% endif %}
+    {% if can_execute %}
+    <h3>What people did</h3>
+    <p class="help">Chat, questions, poll votes and survey answers come back by themselves about 10 minutes after the session ends. They're on each registration, and go to destinations subscribed to <code>engagement.recorded</code> that list the engagement group.</p>
+    <p id="engagement-summary">{{ engagement.people }} people · {{ engagement.chatMessages }} chat messages · {{ engagement.questions }} questions · {{ engagement.pollVotes }} poll votes · {{ engagement.surveyAnswers }} survey answers</p>
+    <form method="post" action="{% url 'studio:session-hosting' pk=occ.pk %}">
+      {% csrf_token %}<input type="hidden" name="op" value="engagement_sync">
+      <button class="btn btn-ghost btn-sm" type="submit">Bring it back now</button>
+    </form>
+    {% endif %}
+    {% if recordings_checked %}
+      {% if recordings %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th scope="col">Recording</th><th scope="col">Status</th><th scope="col" class="num">Minutes</th></tr></thead>
+        <tbody>{% for r in recordings %}<tr>
+          <td>{% if r.publicUrl %}<a href="{{ r.publicUrl }}" rel="noopener noreferrer">{{ r.filename }}</a>{% elif r.filename %}<code>{{ r.filename }}</code>{% else %}<span class="small">Not finished yet</span>{% endif %}</td>
+          <td>{{ r.status }}</td><td class="num">{% widthratio r.durationSeconds 60 1 %}</td>
+        </tr>{% for c in r.captions %}<tr><td colspan="3" class="small">{% if c.url %}<a href="{{ c.url }}" rel="noopener noreferrer">{{ c.speaker }}: {% if c.kind == "srt" %}SRT{% else %}transcript{% endif %}</a>{% else %}{{ c.speaker }}: {% if c.kind == "srt" %}SRT{% else %}transcript{% endif %}{% endif %}</td></tr>{% endfor %}{% endfor %}</tbody>
+      </table></div>
+      <p class="help">To send a recording to registrants, copy its link into <a href="{% url 'studio:session' pk=occ.pk %}#recording-title">Recording</a> on the session page.</p>
+      {% else %}
+      <p class="help">Nothing recorded for this session yet.</p>
+      {% endif %}
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
 <section class="panel">
   <div class="panel-head"><h2>Current link</h2></div>
   <div class="panel-body">
     {% if session %}
       <p>Provider: <strong>{{ session.provider }}</strong> · Mode: {{ session.mode }} · State: <span class="badge{% if session.state == 'linked' %} badge-success{% elif session.state == 'needs_reconciliation' or session.state == 'failed' or session.state == 'out_of_date' %} badge-warn{% endif %}">{{ session.state }}</span></p>
       {% if session.externalId %}<p>Provider ID: <code>{{ session.externalId }}</code></p>{% endif %}
-      <p>Attendee link: {% if session.hasJoinUrl %}<span class="badge badge-success">Set</span>{% else %}<span class="badge badge-warn">Not set</span>{% endif %}
-         · Host link: {% if session.hasHostUrl %}<span class="badge badge-success">Stored privately</span>{% else %}<span class="badge">None</span>{% endif %}</p>
+      <p>Attendee link: {% if session.capabilities.registerAttendees %}<span class="badge badge-success">Personal, one per registrant</span>{% elif session.hasJoinUrl %}<span class="badge badge-success">Set</span>{% else %}<span class="badge badge-warn">Not set</span>{% endif %}
+         · {% if session.capabilities.hostRoom %}Host links: <span class="badge badge-success">One per person</span>{% else %}Host link: {% if session.hasHostUrl %}<span class="badge badge-success">Stored privately</span>{% else %}<span class="badge">None</span>{% endif %}{% endif %}</p>
       {% if session.outOfDate %}<div class="callout callout-warn">The session was rescheduled after it was last sent to the provider. {% if session.capabilities.update %}Preview an update below.{% else %}Change the time in the provider yourself.{% endif %}</div>{% endif %}
       {% if session.lastError %}<p class="help">{{ session.lastError }}</p>{% endif %}
 
@@ -75,7 +160,7 @@
   <p class="callout">No enabled hosting accounts. {% if can_execute %}<a href="{% url 'studio:hosting-accounts' %}">Connect a provider</a>.{% else %}Ask an Administrator to connect one.{% endif %}</p>
 {% else %}
 <section class="panel">
-  <div class="panel-head"><h2>Create, update or attach</h2></div>
+  <div class="panel-head"><h2>{% if any_attach %}Create, update or attach{% else %}Create or update{% endif %}</h2></div>
   <div class="panel-body">
     <form method="post" action="{% url 'studio:session-hosting' pk=occ.pk %}">
       {% csrf_token %}<input type="hidden" name="op" value="preview">
@@ -86,14 +171,16 @@
         </select>
       </div>
       <fieldset class="fieldset"><legend>Action</legend>
-        <label class="choice"><input type="radio" name="action" value="create"{% if action == "create" or not action %} checked{% endif %}><span>Create a new provider session</span></label>
-        <label class="choice"><input type="radio" name="action" value="update"{% if action == "update" %} checked{% endif %}><span>Send the current time to the linked session</span></label>
-        <label class="choice"><input type="radio" name="action" value="attach"{% if action == "attach" %} checked{% endif %}><span>Attach an existing provider session</span></label>
+        <label class="choice"><input type="radio" name="action" value="create"{% if action == "create" or not action and not room_ready %} checked{% endif %}><span>Create a new provider session</span></label>
+        <label class="choice"><input type="radio" name="action" value="update"{% if action == "update" or not action and room_ready %} checked{% endif %}><span>Send the current time to the linked session</span></label>
+        {% if any_attach %}<label class="choice"><input type="radio" name="action" value="attach"{% if action == "attach" %} checked{% endif %}><span>Attach an existing provider session</span></label>{% endif %}
       </fieldset>
+      {% if any_attach %}
       <div class="field">
-        <label class="label" for="h-ext">Existing provider session/event ID <span class="small">(attach only)</span></label>
+        <label class="label" for="h-ext">Existing provider session/event ID <span class="optional">(attach only)</span></label>
         <input class="input" id="h-ext" name="external_id" value="{{ external_id }}" maxlength="128" spellcheck="false">
       </div>
+      {% endif %}
       <div class="form-actions"><button class="btn" type="submit">Preview</button></div>
     </form>
 
@@ -124,6 +211,7 @@
   </div>
 </section>
 
+{% if any_manual %}
 <section class="panel">
   <div class="panel-head"><h2>Manual link (StreamYard)</h2></div>
   <div class="panel-body">
@@ -138,7 +226,7 @@
         </select>
       </div>
       <div class="field"><label class="label" for="m-join">Attendee link</label><input class="input" type="password" autocomplete="off" id="m-join" name="join_url" maxlength="1000"></div>
-      <div class="field"><label class="label" for="m-embed">Embed URL <span class="small">(optional)</span></label><input class="input" type="password" autocomplete="off" id="m-embed" name="embed_url" maxlength="1000"></div>
+      <div class="field"><label class="label" for="m-embed">Embed URL <span class="optional">(optional)</span></label><input class="input" type="password" autocomplete="off" id="m-embed" name="embed_url" maxlength="1000"></div>
       <div class="form-actions"><button class="btn btn-sm" type="submit">Save link</button></div>
     </form>
     {% else %}
@@ -146,5 +234,6 @@
     {% endif %}
   </div>
 </section>
+{% endif %}
 {% endif %}
 {% endblock %}
