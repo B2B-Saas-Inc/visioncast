@@ -38,6 +38,8 @@ runs 0.3.7-pre. Each run is recorded in [docs/validation.md](../../docs/validati
    droplet in `/root/visioncast-secrets/smtp-password` (one line, mode 600) before bootstrap, never
    on a command line. Only `A-Z a-z 0-9 _ . / : , { } = @ + % ! * ~ ^ -` are accepted (shell/compose
    safe); pick a relay that issues such a credential.
+   DigitalOcean blocks outgoing ports 25, 465 and 587 on Droplets, so use a relay port it leaves open:
+   Amazon SES also listens on 2587 (STARTTLS) and 2465 (TLS), and `SMTP_PORT=2587` works there.
 5. **Image source**, one of:
    * build on the droplet from the uploaded source (default; ~5 minutes on 1 vCPU, hash-locked
      wheels only, no compiler), or
