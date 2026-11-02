@@ -154,6 +154,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/{slug}/lobby", get(session_page))
         .route("/{slug}/green-room", get(session_page))
         .route("/{slug}/public", get(session_public))
+        // The bare domain goes to /admin, which sends anyone signed out to /login.
+        .route("/", get(|| async { axum::response::Redirect::temporary("/admin") }))
         .route("/login", get(admin::login_page).post(admin::login))
         .route("/logout", post(admin::logout))
         .route("/login/link/{token}", get(admin::use_link))

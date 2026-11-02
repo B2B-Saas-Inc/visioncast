@@ -1755,3 +1755,11 @@ async fn made_up_addresses_cant_flood_the_activity_log_or_be_huge() {
     let long = "x".repeat(100_000);
     assert_eq!(c.call("POST", "/login", None, Some(json!({"email":long,"password":"nope"}))).await.0, StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn the_bare_domain_goes_to_admin_which_sends_anyone_signed_out_to_login() {
+    let c = ctx(false);
+    let (status, _, headers) = c.call("GET", "/", None, None).await;
+    assert_eq!(status, StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(headers.get("location").unwrap(), "/admin");
+}

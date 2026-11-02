@@ -1,11 +1,14 @@
 from django.urls import include, path
 
 from django.views.decorators.http import require_safe
+from django.views.generic import RedirectView
 
 from webinars import brand, covers, developers, mcp, waiting_room_views
 from webinars.api import management, urls_hosting, urls_tickets, views
 
 urlpatterns = urls_tickets.urlpatterns + urls_hosting.urlpatterns + [
+    # The bare domain goes to the studio, which sends anyone signed out to its sign-in page.
+    path("", require_safe(RedirectView.as_view(pattern_name="studio:dashboard")), name="home"),
     # Marketer studio (session auth, Django permissions; webinars/studio/)
     path("studio/", include("webinars.studio.urls")),
     # Hosted waiting room (public; docs/waiting-room.md)

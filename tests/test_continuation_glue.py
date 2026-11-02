@@ -171,7 +171,7 @@ def test_openapi_every_route_is_documented(spec):
     from webinars.urls import urlpatterns
 
     documented = set(spec["paths"])
-    skip = {"studio/", "developers/", "developers/api/", "developers/mcp/", "api/v1/openapi.json",
+    skip = {"", "studio/", "developers/", "developers/api/", "developers/mcp/", "api/v1/openapi.json",
             "media/covers/<uuid:pk>.<str:ext>", "brand/logo.png", "brand/brand.css"}
     for pattern in urlpatterns:
         route = str(pattern.pattern)
