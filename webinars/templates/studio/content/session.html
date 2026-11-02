@@ -66,6 +66,7 @@
               <code class="reveal-value grow" id="room-url" aria-labelledby="room-url-label">{{ room_url }}</code>
               <button class="btn btn-ghost btn-sm" type="button" data-copy="#room-url">{% include "studio/_icon.html" with name="copy" size=16 %} Copy</button>
             </div>
+            {% if occ.event.visibility == "draft" %}<p class="callout callout-warn" role="note" id="room-url-draft" style="margin-top:var(--s-2)">This event is a draft, so the link shows “This session isn't available” until you <a href="{% url 'studio:event-edit' occ.event.pk %}">publish it</a>, public or unlisted.</p>{% endif %}
           </div>
 
           <div>

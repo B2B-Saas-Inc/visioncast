@@ -209,3 +209,13 @@ def test_unknown_invite_token_is_not_stored(client):
     resp = client.get("/studio/invite/not-a-real-token/")
     assert resp.status_code == 404
     assert INVITE_SESSION_KEY not in client.session
+
+
+def test_session_page_warns_that_a_draft_events_room_link_isnt_available(django_user_model, session_occ):
+    from webinars import waiting_room
+    waiting_room.configure(session_occ, enabled=True)
+    editor = client_for(make_user(django_user_model, "m2-draft", EDITOR))
+    type(session_occ.event).objects.filter(pk=session_occ.event_id).update(visibility="draft")
+    assert b'id="room-url-draft"' in editor.get(f"/studio/sessions/{session_occ.pk}/").content
+    type(session_occ.event).objects.filter(pk=session_occ.event_id).update(visibility="unlisted")
+    assert b'id="room-url-draft"' not in editor.get(f"/studio/sessions/{session_occ.pk}/").content

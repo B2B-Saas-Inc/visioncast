@@ -391,7 +391,14 @@ def test_unknown_or_disabled_code_404(client):
 def test_draft_event_room_404(client):
     occ = room_occurrence()
     type(occ.event).objects.filter(pk=occ.event_id).update(visibility="draft")
-    assert client.get(f"/w/{occ.waiting_room_code}/").status_code == 404
+    resp = client.get(f"/w/{occ.waiting_room_code}/")
+    assert resp.status_code == 404
+    # A real page, not the server's bare "Not Found", and the same one as for a mistyped link,
+    # so nobody can tell a draft exists or read its title.
+    body = resp.content.decode()
+    assert "This session isn&#x27;t available" in body and occ.event.public_title not in body
+    assert body == client.get("/w/doesnotexist1/").content.decode()
+    assert resp["Cache-Control"] == "no-store"
 
 
 def test_room_page_never_contains_join_url(client):

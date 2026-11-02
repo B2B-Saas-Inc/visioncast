@@ -93,7 +93,14 @@ def _render(request, occ, *, step=None, errors=None, values=None, status=200, em
 
 @require_GET
 def room(request, code):
-    occ = _occ_or_404(code)
+    occ = wr.occurrence_for_code(code)
+    if occ is None:
+        # One answer for a mistyped link and an unpublished event, so drafts can't be discovered.
+        return _no_store(TemplateResponse(request, "waiting_room/message.html", {
+            "occ": None, "title": "This session isn't available",
+            "message": "The link may be mistyped, or the session isn't open yet. Check the link in your "
+                       "invitation, or ask the organizer for a new one.",
+        }, status=404))
     return _render(request, occ, step=request.GET.get("step"))
 
 
