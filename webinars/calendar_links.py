@@ -14,8 +14,13 @@ Template rules (``validate_template``):
   no credentials, default port, at most 1000 characters).
 
 Values are percent-encoded before substitution. An unset or invalid template falls
-back to the JSON event API URL (the previous behaviour). Only public fields are used:
-join, waiting-room and managed-room links are never read here.
+back to the JSON event API URL (the previous behaviour).
+
+Join link: when the session's managed waiting room is on, calendar entries carry the room
+URL (``/w/<code>/``), the same link confirmations and reminders use (``outbox.occurrence_links``).
+It is the link attendees are meant to share: the door asks for an email and a code, and paid
+sessions go through checkout there. The provider's own join and waiting-room links are never
+read here.
 """
 import logging
 import re
@@ -142,10 +147,26 @@ def _clean(value, limit):
     return value if len(value) <= limit else value[: limit - 1].rstrip() + "…"
 
 
-def event_details(event, url):
-    """Description text shared by ICS and web calendar links: summary plus public URL."""
-    summary = _clean(event.summary, MAX_DETAILS_LENGTH - len(url) - 2)
-    return "\n\n".join(part for part in [summary, url] if part)
+def room_link(occurrence):
+    """The managed waiting room URL for a scheduled session whose room is on, else None."""
+    if occurrence is None or occurrence.status != occurrence.Status.SCHEDULED or not occurrence.waiting_room_enabled:
+        return None
+    # Lazy import: webinars.waiting_room imports modules that import this one.
+    from webinars.waiting_room import room_url
+
+    url = room_url(occurrence)
+    try:
+        validate_public_https_url(url or "")
+    except ValidationError:
+        return None
+    return url
+
+
+def event_details(event, url, join=None):
+    """Description text shared by ICS and web calendar links: join link, summary, public URL."""
+    lead = f"Join: {join}" if join else ""
+    summary = _clean(event.summary, MAX_DETAILS_LENGTH - len(url) - len(lead) - 4)
+    return "\n\n".join(part for part in [lead, summary, url] if part)
 
 
 def _compact(dt):
@@ -160,17 +181,21 @@ def _addable(occurrence):
     return occurrence.status == occurrence.Status.SCHEDULED and occurrence.ends_at > timezone.now()
 
 
-def google_url(occurrence, title, details):
+def google_url(occurrence, title, details, location=None):
     params = {"action": "TEMPLATE", "text": title,
               "dates": f"{_compact(occurrence.starts_at)}/{_compact(occurrence.ends_at)}", "details": details}
+    if location:
+        params["location"] = location
     if _TZ_NAME.fullmatch(occurrence.timezone or ""):
         params["ctz"] = occurrence.timezone
     return f"{GOOGLE_URL}?{urlencode(params, quote_via=quote)}"
 
 
-def _outlook_url(base, occurrence, title, details):
+def _outlook_url(base, occurrence, title, details, location=None):
     params = {"path": "/calendar/action/compose", "rru": "addevent", "subject": title,
               "startdt": _iso(occurrence.starts_at), "enddt": _iso(occurrence.ends_at), "body": details}
+    if location:
+        params["location"] = location
     return f"{base}?{urlencode(params, quote_via=quote, safe='/')}"
 
 
@@ -179,16 +204,18 @@ def calendar_links(occurrence):
 
     ``ics`` is always the absolute ICS URL (a cancelled occurrence's ICS carries
     METHOD:CANCEL). The web links are ``None`` unless the occurrence is scheduled
-    and has not ended. Nothing private is included.
+    and has not ended. With the managed room on, the room URL is the location and the
+    first line of the details; provider links are never included.
     """
     event = occurrence.event
     links = {"ics": ics_url(occurrence), "google": None, "outlook": None, "office365": None}
     if _addable(occurrence):
         title = _clean(event.public_title, MAX_TITLE_LENGTH)
-        details = event_details(event, public_event_url(event, occurrence))
-        links["google"] = google_url(occurrence, title, details)
-        links["outlook"] = _outlook_url(OUTLOOK_URL, occurrence, title, details)
-        links["office365"] = _outlook_url(OFFICE365_URL, occurrence, title, details)
+        join = room_link(occurrence)
+        details = event_details(event, public_event_url(event, occurrence), join)
+        links["google"] = google_url(occurrence, title, details, join)
+        links["outlook"] = _outlook_url(OUTLOOK_URL, occurrence, title, details, join)
+        links["office365"] = _outlook_url(OFFICE365_URL, occurrence, title, details, join)
     return links
 
 

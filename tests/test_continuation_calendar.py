@@ -156,13 +156,43 @@ def test_slug_values_are_percent_encoded(settings, form):
     assert _prop(build_ics(occ), "URL") == url
 
 
-def test_private_links_never_reachable_via_template(settings, form):
+def test_provider_links_never_reachable_via_template(settings, form):
     settings.PUBLIC_EVENT_URL_TEMPLATE = "https://www.example.com/webinars/{slug}/{occurrence_id}"
     event = make_event(form, slug="room-event")
-    occ = make_occurrence(event, waiting_room_enabled=True, waiting_room_code="roomcode12345")
-    body = build_ics(occ)
-    _assert_private_absent(body, occ)
+    occ = make_occurrence(event, join_url=JOIN_URL, waiting_room_url=WAITING_URL)
+    _assert_private_absent(build_ics(occ), occ)
     _assert_private_absent(str(links_for(occ)), occ)
+
+
+def test_calendars_carry_the_managed_room_link(settings, form):
+    settings.PUBLIC_BASE_URL = "https://events.example.com"
+    event = make_event(form, slug="room-event", summary="A public summary.")
+    occ = make_occurrence(event, join_url=JOIN_URL, waiting_room_url=WAITING_URL, waiting_room_enabled=True, waiting_room_code="roomcode12345")
+    room = "https://events.example.com/w/roomcode12345/"
+    body = build_ics(occ)
+    assert _prop(body, "LOCATION") == room
+    assert _prop(body, "DESCRIPTION").startswith(f"Join: {room}\\n\\nA public summary.")
+    assert _prop(body, "URL") == calendar_links.public_event_url(event, occ)
+    links = links_for(occ)
+    google = parse_qs(urlsplit(links["google"]).query)
+    assert google["location"] == [room] and google["details"][0].startswith(f"Join: {room}")
+    for key in ("outlook", "office365"):
+        q = parse_qs(urlsplit(links[key]).query)
+        assert q["location"] == [room] and q["body"][0].startswith(f"Join: {room}")
+    # The provider's own links stay out, even with the room on.
+    _assert_private_absent(body)
+    _assert_private_absent(str(links))
+
+
+def test_no_room_link_when_the_room_is_off_or_the_session_cancelled(settings, form):
+    settings.PUBLIC_BASE_URL = "https://events.example.com"
+    event = make_event(form, slug="room-event")
+    off = make_occurrence(event, waiting_room_enabled=False, waiting_room_code="roomcode12345")
+    assert _prop(build_ics(off), "LOCATION") is None and "roomcode12345" not in str(links_for(off))
+    on = make_occurrence(event, waiting_room_enabled=True, waiting_room_code="roomcode67890", days=12)
+    cancel_occurrence(on)
+    on.refresh_from_db()
+    assert _prop(build_ics(on), "LOCATION") is None and "roomcode67890" not in build_ics(on)
 
 
 # ---------------------------------------------------------------------------

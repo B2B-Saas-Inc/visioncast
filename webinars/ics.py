@@ -1,13 +1,14 @@
 """RFC 5545 calendar generation with stable UID / SEQUENCE.
 
-Only public information is included: private join / waiting-room links are
-never written to calendar files. The event URL comes from
-``calendar_links.public_event_url`` (``PUBLIC_EVENT_URL_TEMPLATE`` or the JSON API).
+The provider's private join and waiting-room links are never written to calendar files.
+With the managed waiting room on, ``LOCATION`` and the first line of ``DESCRIPTION`` are the
+room URL (``calendar_links.room_link``), the link attendees join by. ``URL`` is the event page
+(``calendar_links.public_event_url``: ``PUBLIC_EVENT_URL_TEMPLATE`` or the JSON API).
 """
 import re
 from datetime import timezone as dt_timezone
 
-from webinars.calendar_links import event_details, public_event_url
+from webinars.calendar_links import event_details, public_event_url, room_link
 
 PRODID = "-//Webinar Platform//Webinar Calendar 1.0//EN"
 
@@ -60,7 +61,8 @@ def build_ics(occurrence):
     event = occurrence.event
     cancelled = occurrence.status == occurrence.Status.CANCELLED
     url = event_public_url(event, occurrence)
-    description = event_details(event, url)
+    join = room_link(occurrence)
+    description = event_details(event, url, join)
     dtstamp = occurrence.updated_at or occurrence.created_at
 
     lines = [
@@ -78,6 +80,9 @@ def build_ics(occurrence):
         f"SUMMARY:{escape_text(event.public_title)}",
         f"DESCRIPTION:{escape_text(description)}",
     ]
+    if join and _URI.fullmatch(join) and '"' not in join:
+        # TEXT value: escaped like any other, so a URL can't end the property early.
+        lines.append(f"LOCATION:{escape_text(join)}")
     if _URI.fullmatch(url) and '"' not in url:
         lines.append(f"URL:{url}")
     lines += [
