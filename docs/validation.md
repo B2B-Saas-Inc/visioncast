@@ -2,6 +2,13 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## GrowthCast production: 0.4.0-pre, SES email, and a public live server — 2026-11-02
+
+- **Studio.** events.growthcast.app updated to `0.4.0-pre` (the live studio). `verify.sh --expect-access` 0 failures. Found while doing it: every update since 0.3.0-pre had stopped after `deploy/upgrade.sh`, because `docker compose run --rm migrate` read the rest of `host-update.sh` from stdin, so `current` still pointed at 0.3.0-pre and the post-update steps never ran. Restarting from `current` brought 0.3.0-pre back for about 10 minutes. Fixed in `e3efd64`, `current` repointed, post-update steps run by hand.
+- **Email.** Amazon SES in us-east-1: domain `events.growthcast.app` verified, DKIM and custom MAIL FROM `bounce.events.growthcast.app` both SUCCESS. SMTP user limited to `*@events.growthcast.app`. DigitalOcean blocks outgoing 587, so `SMTP_PORT=2587`. A message from the worker to `success@simulator.amazonses.com` was accepted. **Not yet:** the account is in the SES sandbox, and the first production-access request was denied (case 179363852100440), so only verified addresses receive mail.
+- **Live server.** DigitalOcean `s-4vcpu-8gb-amd`, nyc2, reserved IP, `v0.4.0-pre` built on the server. `verify-public.sh` all 16 checks pass (27 s from macOS after making its port probe use `-G`; before, about 75 s per closed port). `live/tests/turn/check.cjs` from a workstation: **video went through TURN over TLS on 443 with nothing else allowed**, first time on a public server. Connected to the studio as a LiveKit account with no warnings; the studio brand (GrowthCast, `#9e321b`, logo) pushed to it and served back byte for byte.
+- **Not yet:** a recording bucket, a real session with people on phones, and a resize up for an event.
+
 ## Screen sharing on Safari (`live/`, branch `livekit-rust`, not released) — 2026-11-01
 
 - **Reported from the preview, reproduced in WebKit:** Share screen failed with "Something went wrong. Check your connection". The page asked the server for a token and connected to LiveKit before asking for the screen, and Safari only allows that from the click itself: "getDisplayMedia must be called from a user gesture handler". It never worked on Safari. The browser suite covered watching and cameras, not screen sharing.
