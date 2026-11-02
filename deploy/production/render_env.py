@@ -34,6 +34,7 @@ SECRET_KEYS = (
     "INTEGRATION_MASTER_KEY",
     "INTEGRATION_MASTER_KEY_PREVIOUS",
     "SMTP_PASSWORD",
+    "POSTHOG_EMAIL_API_KEY",
     "BOOTSTRAP_ADMIN_PASSWORD",
 )
 GENERATED_KEYS = ("DJANGO_SECRET_KEY", "POSTGRES_PASSWORD", "INTEGRATION_MASTER_KEY")
@@ -149,6 +150,10 @@ def validate(values):
             die("EMAIL_DELIVERY=smtp needs SMTP_HOST")
         if (values.get("SMTP_STARTTLS", "1") == "1") == (values.get("SMTP_SSL", "0") == "1"):
             die("exactly one of SMTP_STARTTLS / SMTP_SSL must be 1")
+    if values.get("EMAIL_DELIVERY", "disabled") == "posthog":
+        for key in ("POSTHOG_EMAIL_API_KEY", "POSTHOG_EMAIL_TEMPLATE_ID"):
+            if not values.get(key):
+                die(f"EMAIL_DELIVERY=posthog needs {key}")
     for key, value in values.items():
         if not SAFE_VALUE_RE.match(value):
             die(f"{key} contains characters outside the safe set")

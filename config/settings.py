@@ -5,6 +5,7 @@ unset/false) is fail-closed: missing secrets or hosts raise ``ImproperlyConfigur
 at start-up instead of silently falling back to insecure defaults.
 """
 import os
+import re
 import secrets
 from pathlib import Path
 
@@ -357,8 +358,8 @@ INVITATION_TTL_HOURS = env_int("INVITATION_TTL_HOURS", 72)
 # Outgoing email (waiting-room verification codes, team invitations)
 #
 # Disabled by default: messages are dropped (``webinars.mail.DisabledBackend``)
-# and nothing leaves the process. Set EMAIL_DELIVERY=smtp plus the SMTP_* values
-# to send for real; credentials are read from the environment only and never
+# and nothing leaves the process. Set EMAIL_DELIVERY=smtp plus the SMTP_* values,
+# or EMAIL_DELIVERY=posthog plus the POSTHOG_EMAIL_* values, to send for real; credentials are read from the environment only and never
 # rendered, logged or stored. See docs/email.md.
 # ---------------------------------------------------------------------------
 
@@ -380,10 +381,23 @@ if EMAIL_DELIVERY == "smtp":
         raise ImproperlyConfigured("Set only one of SMTP_STARTTLS and SMTP_SSL.")
     if not (EMAIL_USE_TLS or EMAIL_USE_SSL) and not _RELAXED:
         raise ImproperlyConfigured("SMTP delivery requires SMTP_STARTTLS=1 or SMTP_SSL=1 in production.")
+elif EMAIL_DELIVERY == "posthog":
+    # PostHog transactional email (docs/email.md): one template for the platform's own messages.
+    EMAIL_BACKEND = "webinars.mail.PostHogBackend"
+    POSTHOG_EMAIL_HOST = env_str("POSTHOG_EMAIL_HOST", "us.posthog.com").lower()
+    POSTHOG_EMAIL_API_KEY = env_str("POSTHOG_EMAIL_API_KEY")
+    POSTHOG_EMAIL_TEMPLATE_ID = env_str("POSTHOG_EMAIL_TEMPLATE_ID").lower()
+    EMAIL_TIMEOUT = env_int("POSTHOG_EMAIL_TIMEOUT_SECONDS", 10)
+    if not re.fullmatch(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+", POSTHOG_EMAIL_HOST) or ".i.posthog.com" in POSTHOG_EMAIL_HOST:
+        raise ImproperlyConfigured("POSTHOG_EMAIL_HOST must be the app host you sign in at, e.g. us.posthog.com (not the ingestion host).")
+    if not re.fullmatch(r"phs_[A-Za-z0-9_-]{16,200}", POSTHOG_EMAIL_API_KEY):
+        raise ImproperlyConfigured("POSTHOG_EMAIL_API_KEY must be a project secret API key (phs_...) with Workflow: Write.")
+    if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", POSTHOG_EMAIL_TEMPLATE_ID):
+        raise ImproperlyConfigured("POSTHOG_EMAIL_TEMPLATE_ID must be the transactional template's ID.")
 elif EMAIL_DELIVERY == "disabled":
     EMAIL_BACKEND = "webinars.mail.DisabledBackend"
 else:
-    raise ImproperlyConfigured("EMAIL_DELIVERY must be 'disabled' or 'smtp'.")
+    raise ImproperlyConfigured("EMAIL_DELIVERY must be 'disabled', 'smtp' or 'posthog'.")
 
 
 # ---------------------------------------------------------------------------

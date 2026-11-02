@@ -7,7 +7,7 @@
     <p class="eyebrow">Team</p>
     <h1>Invitation created for {{ invitation.email }}</h1>
     <p class="lede">
-      {% if email_sent and mail_mode == "smtp" %}We emailed the link to {{ invitation.email }}.
+      {% if email_sent and mail_mode == "smtp" or email_sent and mail_mode == "posthog" %}We emailed the link to {{ invitation.email }}.
       {% elif email_sent and mail_mode == "preview" %}The email was saved to the Preview mailbox (this environment doesn't send real email).
       {% else %}The email wasn't sent because email delivery is turned off. Share the link below with them yourself.{% endif %}
       The link works once, for the {{ invitation.role }} role, until {{ invitation.expires_at|date:"M j, H:i" }}.

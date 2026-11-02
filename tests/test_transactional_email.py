@@ -15,7 +15,7 @@ from webinars.models import Destination
 
 pytestmark = pytest.mark.django_db
 
-EMAIL_PROVIDERS = ("resend", "ses")
+EMAIL_PROVIDERS = ("resend", "ses", "posthog_email")
 BASE_URL = "https://webinars.example.com"
 CFG = {
     "region": "global",

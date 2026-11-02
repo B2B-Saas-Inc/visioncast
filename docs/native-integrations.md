@@ -462,6 +462,20 @@ Official pages the implementer fetched with WebFetch on 2026-10-27 and compared 
 - SES: subject encoding of non-ASCII with `Charset: UTF-8`; sending quotas (default 200 per 24 hours and 1 per second in the sandbox) and the account's sandbox state, which rejects unverified recipients with `MessageRejected`.
 - Neither adapter stores the provider message id (no model field); it is logged (SES) or ignored (Resend).
 
+### PostHog transactional email (attendee emails through PostHog Workflows)
+
+Status: **source implemented (`webinars/native_providers/posthog_email.py`, rendering shared with Resend and SES); tests mock-only (`tests/test_native_posthog_email.py`); not checked against a PostHog project.** The platform's own email can use PostHog too, with `EMAIL_DELIVERY=posthog` ([email.md](email.md#posthog-transactional-email)).
+
+References fetched 2026-11-02: https://posthog.com/docs/workflows/transactional-emails (VERIFIED: one recipient per send; the template can't read person properties, so everything comes from `message_data`; `Idempotency-Key` header of 1 to 255 visible ASCII characters kept 24 hours, same key and request replays the first `message_id` with `replayed: true`, a different request with the key is `422 idempotency_key_reused`, `409 idempotency_key_in_flight`; refusals carry `code`, among them `recipient_suppressed`, `recipient_unreachable`, `template_not_transactional`, `marketing_template`, `sending_paused`, `quota_limited`, `throttled` (429 with `Retry-After`) and `delivery_unavailable` (503, retry with the same key); 600 requests a minute and 20,000 an hour per key), https://posthog.com/docs/workflows/transactional-emails/api (VERIFIED: `POST https://<us|eu>.posthog.com/api/projects/@current/messaging/send/email/`, app host not ingestion host, `Authorization: Bearer <project secret API key>`, body `template_id`, `to`, `message_data`, `distinct_id`; `202` with `message_id`).
+
+| Provider | Request | Auth and dedupe | Body | Read back |
+|---|---|---|---|---|
+| PostHog | `POST https://<us\|eu>.posthog.com/api/projects/@current/messaging/send/email/` | `Authorization: Bearer <phs_ key>`; `Idempotency-Key: <delivery id>` | `template_id`, `to`, `distinct_id` (verified email, else person id, as the PostHog analytics destination), `message_data`: `subject`, `text`, `html` (paragraphs only), `event_type`, `message`, `delivery_id` | `message_id` (informational) |
+
+**Settings.** *PostHog host* (US or EU Cloud), *Template ID* (UUID), the shared subject prefix, per-message overrides and send confirmation, the set-only *Project secret API key* (`^phs_[A-Za-z0-9_-]{16,200}$`; a public `phc_` token or a personal `phx_` key is refused) and the processing acknowledgement. No from or reply-to settings: the sender is the template's. Self-hosted PostHog isn't offered here yet.
+
+**Open points.** Whether a template outputs `{{ variables.html }}` unescaped depends on how it's built in PostHog's editor (UNVERIFIED); the plain text is always in `{{ variables.text }}`. Retries after 24 hours can send twice, like Resend.
+
 ## Marketer setup
 
 1. Ask the operator to allowlist the vendor host.

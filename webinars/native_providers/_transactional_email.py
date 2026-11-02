@@ -15,7 +15,6 @@ email in the profile or identity group. Cancelled registrations are skipped exce
 ``occurrence.cancelled``. Nothing here reads secrets.
 """
 import datetime
-import html
 import re
 from string import Formatter
 from types import SimpleNamespace
@@ -25,6 +24,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 
 from webinars import native_integrations as ni
+from webinars.email_html import _URL_IN_TEXT, to_html_fragment  # noqa: F401 (re-exported for providers)
 from webinars.validation import validate_public_https_url
 
 EVENT_TYPES = (
@@ -154,8 +154,6 @@ FROM_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .,'&()-]{0,%d}$" % (MAX_FROM_NAM
 SUBJECT_PREFIX = re.compile(r"^[\x20-\x7a\x7c\x7e]{1,%d}$" % MAX_SUBJECT_PREFIX_CHARS)  # printable ASCII without { }
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _WS = re.compile(r"\s+")
-_URL_IN_TEXT = re.compile(r"https://[^\s<>\"']+")
-_LINK_TRAIL = ".,;:!?)"
 _DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
@@ -395,22 +393,8 @@ def values_for(key, facts, event_type, body):
 
 
 def to_html(text):
-    """HTML part from the rendered text: escaped paragraphs, ``<br>`` line breaks, auto-linked https URLs."""
-    parts = []
-    for paragraph in re.split(r"\n\s*\n", text.strip()):
-        escaped = html.escape(paragraph, quote=True)
-        linked = _URL_IN_TEXT.sub(_anchor, escaped)
-        parts.append("<p>" + linked.replace("\n", "<br>\n") + "</p>")
-    return "<!DOCTYPE html>\n<html><body>\n" + "\n".join(parts) + "\n</body></html>\n"
-
-
-def _anchor(match):
-    url = match.group(0)
-    trail = ""
-    while url and url[-1] in _LINK_TRAIL:
-        trail = url[-1] + trail
-        url = url[:-1]
-    return f'<a href="{url}">{url}</a>{trail}'
+    """HTML part from the rendered text: the fragment in a minimal document."""
+    return "<!DOCTYPE html>\n<html><body>\n" + to_html_fragment(text) + "\n</body></html>\n"
 
 
 def render(cfg, facts, event_type, body):

@@ -2,6 +2,11 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## GrowthCast moves from Amazon SES to PostHog transactional email — 2026-11-02
+
+- At the owner's request, GrowthCast's own deployment no longer uses SES. Removed: the SES domain and recipient identities, the IAM user `visioncast-events-ses-smtp` with its key and policy, the five DKIM and MAIL FROM records in Cloudflare, the SMTP settings in every release's `.env` and in `bootstrap.conf`, and the SMTP secret files (shredded). Production runs `EMAIL_DELIVERY=disabled` until PostHog is set up. The pending SES production-access request can't be withdrawn and is harmless.
+- VisionCast keeps SMTP and the SES and Resend destinations. New, optional: `EMAIL_DELIVERY=posthog` for the platform's own email and a **PostHog transactional email** destination for attendee email (docs/email.md). Tests mock-only: `tests/test_mail_posthog.py`, `tests/test_native_posthog_email.py`. Full suite 2,540 passed, 1 skipped.
+
 ## GrowthCast production: 0.4.2-pre, brand colour and font — 2026-11-02
 
 - `update.sh` ran end to end for the first time since 0.3.0-pre (the stdin fix): backup, migration `0014_studio_brand_font`, restart, `current` switched, host files refreshed. `verify.sh --expect-access` 0 failures.

@@ -212,7 +212,7 @@ HOST_PROVISIONING = {
         "Run `manage.py migrate`, then `manage.py sync_roles`, then create the first superuser with "
         "`manage.py bootstrap_admin` from a trusted shell (never via an API key).",
         "Run the image twice: `web` behind a TLS-terminating proxy with rate limits, and `worker` for the outbox.",
-        "Set WEBHOOK_HOST_ALLOWLIST before enabling destinations; set EMAIL_DELIVERY and SMTP settings for mail.",
+        "Set WEBHOOK_HOST_ALLOWLIST before enabling destinations; set EMAIL_DELIVERY with SMTP or PostHog settings for mail.",
         "Create scoped API keys in the studio (Settings → API keys); give agents the least scopes needed.",
         "Verify with get_configuration_readiness and the webinar://config/current resource.",
     ],
