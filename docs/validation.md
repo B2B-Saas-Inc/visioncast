@@ -2,6 +2,12 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Automatic rooms and full delete for events and sessions — 2026-11-03
+
+- A hosting account can be marked `auto_provision` (studio switch "Create a room for every new session"; `autoProvision` in the API and MCP). Every new session, from the studio, the API or MCP, then gets its provider session on commit and its hosted waiting room switched on, so the lobby link is live at once; a reschedule of such a session is sent on instead of sitting `out_of_date`. One account at a time; it must be enabled and able to create. Provider failures land on the hosted session as before and never block the save.
+- Events can be deleted at any visibility, sessions can be deleted, in the studio (new "Delete session" panel, "Delete event" panel on every event), `DELETE /api/v1/manage/occurrences/<id>`, and the gated MCP tools `delete_event` and `delete_session` (`delete_draft_event` kept as a deprecated name). Both refuse (409 / a studio notice) while registrations or ticket orders exist: cancel instead. Provider rooms are never deleted remotely.
+- `tests/test_hosting_auto_provision.py` (11 tests: exclusivity and validation of the flag, room and lobby on create through `save_occurrence` with on-commit callbacks executed, a 503 recorded not raised, reschedule sent on only for automatic sessions, delete rules in the service, studio pages and posts) plus updated API and MCP delete tests. Full suite: 2,552 passed, 1 skipped (the LiveKit stack test), lint clean, `makemigrations --check` clean (migration `0015_hosting_auto_provision`).
+
 ## Live server update and backup scripts — 2026-11-02
 
 - live.growthcast.app moved to `v0.4.6-pre` with `deploy/live/update.sh`: backup first, rebuild, only the changed service recreated, `/healthz` answered within a second. (The tag was checked out by hand once beforehand, to put the script on the server, so it reported `v0.4.6-pre -> v0.4.6-pre`.)

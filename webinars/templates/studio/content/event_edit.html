@@ -221,12 +221,16 @@
 
     {% if can_delete %}
       <section class="panel" aria-labelledby="danger-title">
-        <div class="panel-head"><h2 id="danger-title">Delete draft</h2></div>
-        <form method="post" action="{% url 'studio:event-delete' event.pk %}" class="panel-body" data-confirm="Delete this draft event and its sessions? This can't be undone.">
+        <div class="panel-head"><h2 id="danger-title">Delete event</h2></div>
+        {% if delete_problem %}
+        <div class="panel-body"><p class="help">{{ delete_problem }}</p></div>
+        {% else %}
+        <form method="post" action="{% url 'studio:event-delete' event.pk %}" class="panel-body" data-confirm="Delete this event and its sessions? {% if event.visibility != 'draft' %}Its landing page goes away at once. {% endif %}This can't be undone.">
           {% csrf_token %}
-          <p class="help">Only drafts without registrations can be deleted.</p>
+          <p class="help">Removes the event and its sessions{% if event.visibility != "draft" %}, and takes its landing page down{% endif %}. Events with registrations or ticket orders can't be deleted: cancel their sessions instead.</p>
           <button class="btn btn-danger btn-sm" type="submit">{% include "studio/_icon.html" with name="trash" size=16 %} Delete event</button>
         </form>
+        {% endif %}
       </section>
     {% endif %}
   </aside>

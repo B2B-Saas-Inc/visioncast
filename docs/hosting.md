@@ -50,6 +50,26 @@ API: `hosting_admin` scope for accounts; `hosting_provision` for preview/execute
 manual links; `config_read` may GET providers and an occurrence's hosting state. All three
 scopes are superuser-granted and never delegable. Analysts never see these pages.
 
+## Automatic rooms
+
+One account can be marked **Create a room for every new session** (studio: the account's page;
+API/MCP: `autoProvision`). It must be enabled and its provider must be able to create (Zoom,
+Wistia, Sequel, LiveKit); turning it on for one account turns it off for any other. From then on:
+
+- Every new session (studio, API, MCP, recurring) gets its provider session the moment it is
+  saved, and its hosted waiting room is switched on, so the lobby link is live at once. The
+  provider's attendee link lands in the session's private Join URL as usual.
+- A reschedule of a session created this way is sent on to the provider straight away instead of
+  waiting as `out_of_date`.
+- A session saved with its own Join URL, or already linked, is left alone.
+- A provider failure is recorded on the hosted session exactly like a manual attempt (`failed`,
+  or `needs_reconciliation` for an unknown outcome) and never blocks saving the session; the
+  session's Hosting page shows it and a person retries there. The lobby still opens.
+
+The calls run after the session's transaction commits, so a session is never half-saved because
+the provider was slow. Deleting a session or event forgets the link; the provider's room is
+never deleted remotely.
+
 ## Preview → confirm (never automatic)
 
 Publishing an event never creates provider sessions. On a session's Hosting page (or

@@ -844,6 +844,9 @@ class HostingAccount(TimestampedModel):
     config = models.JSONField(default=dict, blank=True)
     credentials_encrypted = models.TextField(blank=True)
     enabled = models.BooleanField(default=False)
+    # Create a provider session (and open the lobby) for every new session automatically.
+    # At most one account has this; webinars.hosting.service.auto_provision.
+    auto_provision = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.name} ({self.provider})"

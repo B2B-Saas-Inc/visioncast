@@ -330,6 +330,14 @@ class OccurrenceForm(forms.ModelForm):
         return cleaned
 
 
+def _after_commit_auto_provision(occurrence_id):
+    """Once the new session is committed, create its provider session on the auto account
+    (webinars.hosting.service.auto_provision). Outbound, so never inside the transaction."""
+    from webinars.hosting import service
+
+    transaction.on_commit(lambda: service.auto_provision(occurrence_id))
+
+
 def persist_occurrence(request, form, obj, change):
     """Create or update an occurrence from a validated ``OccurrenceForm``."""
     from webinars.scheduling import reschedule_occurrence
@@ -346,6 +354,7 @@ def persist_occurrence(request, form, obj, change):
             obj.ics_uid = _new_ics_uid()
         obj.save()
         audit("occurrence.created", user=request.user, obj=obj, event_id=str(obj.event_id))
+        _after_commit_auto_provision(obj.pk)
         return
 
     changed = set(form.changed_data)

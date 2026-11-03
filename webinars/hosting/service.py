@@ -80,10 +80,23 @@ def account_warnings(account):
     return warnings
 
 
-def save_account(account=None, *, provider, name, config, posted_secrets, enabled, user=None, api_key=None):
-    """Create or update an account. Returns ``(account, warnings)``; raises ValidationError(dict)."""
+def save_account(account=None, *, provider, name, config, posted_secrets, enabled, auto_provision=None, user=None,
+                 api_key=None):
+    """Create or update an account. Returns ``(account, warnings)``; raises ValidationError(dict).
+
+    ``auto_provision`` (None keeps the stored value) makes this the account every new session is
+    created on, see ``auto_provision``; only one account can have it, and only an enabled one
+    whose provider can create sessions.
+    """
     adapter = adapter_for(provider)
     errors = {}
+    if auto_provision is None:
+        auto_provision = bool(account.auto_provision) if account is not None else False
+    auto_provision = bool(auto_provision)
+    if auto_provision and not adapter.capabilities.create:
+        errors["auto_provision"] = ["This provider can't create sessions, so it can't do it automatically."]
+    elif auto_provision and not enabled:
+        errors["auto_provision"] = ["Enable the account to create sessions automatically."]
     if account is not None and account.provider != provider:
         errors["provider"] = ["The provider of an existing account cannot change."]
     name = (name or "").strip()
@@ -111,12 +124,16 @@ def save_account(account=None, *, provider, name, config, posted_secrets, enable
     account.name = name
     account.config = {f.name: config.get(f.name, "") for f in adapter.config_fields}
     account.enabled = bool(enabled)
+    account.auto_provision = auto_provision
     changed_secrets = sorted(k for k in merged if merged.get(k) != existing.get(k))
     if merged:
         account.credentials_encrypted = crypto.encrypt_secret(json.dumps(merged, separators=(",", ":")))
-    account.save()
+    with transaction.atomic():
+        account.save()
+        if auto_provision:
+            HostingAccount.objects.filter(auto_provision=True).exclude(pk=account.pk).update(auto_provision=False)
     audit("hosting.account_saved", user=user, api_key=api_key, obj=account, provider=provider, created=created,
-          enabled=account.enabled, credentials_changed=changed_secrets)
+          enabled=account.enabled, auto_provision=account.auto_provision, credentials_changed=changed_secrets)
     return account, account_warnings(account)
 
 
@@ -128,12 +145,77 @@ def serialize_account(account):
         "provider": account.provider,
         "name": account.name,
         "enabled": account.enabled,
+        "autoProvision": account.auto_provision,
         "config": {f.name: (account.config or {}).get(f.name, "") for f in adapter.config_fields},
         "secretsSet": {f.name: bool(secrets.get(f.name)) for f in adapter.credential_fields},
         "capabilities": adapter.capabilities.as_dict(),
         "contract": adapter.contract,
         "warnings": account_warnings(account),
     }
+
+
+# ---------------------------------------------------------------------------
+# Automatic provisioning (the account marked auto_provision)
+# ---------------------------------------------------------------------------
+
+
+def auto_account():
+    """The enabled account new sessions are created on, or None."""
+    return HostingAccount.objects.filter(enabled=True, auto_provision=True).order_by("name").first()
+
+
+def _auto_log():
+    return logging.getLogger("webinars.hosting")
+
+
+def auto_provision(occurrence_id, *, transport=None):
+    """Create the provider session for a new occurrence on the auto account, and open its lobby.
+
+    Runs after the occurrence's transaction commits (``admin.persist_occurrence``). Does nothing
+    without an auto account, for a cancelled session, or when the session is already linked or
+    has a join link. A provider failure is recorded on the hosted session like any other
+    operation, never raised: the session page shows it and a person retries from there.
+    Returns the serialized hosted session, or None when nothing was done.
+    """
+    from webinars import waiting_room
+
+    account = auto_account()
+    if account is None:
+        return None
+    occ = Occurrence.objects.select_related("event").filter(pk=occurrence_id).first()
+    if occ is None or occ.status != Occurrence.Status.SCHEDULED or occ.join_url or session_for(occ) is not None:
+        return None
+    if not adapter_for(account).capabilities.create:
+        return None
+    try:
+        if not occ.waiting_room_enabled:
+            waiting_room.configure(occ, enabled=True)
+            occ.refresh_from_db()
+        return execute(occ, account, "create", transport=transport)
+    except ValidationError as exc:
+        _auto_log().warning("auto-provision skipped for %s: %s", occ.pk, getattr(exc, "message_dict", exc))
+        return None
+
+
+def auto_update(occurrence_id, *, transport=None):
+    """After a reschedule, send the new time to the provider when the session was created
+    automatically (the auto account owns it and can update). Same error handling as
+    ``auto_provision``. Returns the serialized hosted session, or None."""
+    occ = Occurrence.objects.select_related("event").filter(pk=occurrence_id).first()
+    if occ is None or occ.status != Occurrence.Status.SCHEDULED:
+        return None
+    session = session_for(occ)
+    if session is None or session.account is None or not session.account.auto_provision or not session.account.enabled:
+        return None
+    if session.state != HostedSession.State.OUT_OF_DATE or session.mode != HostedSession.Mode.PROVISIONED:
+        return None
+    if not adapter_for(session.account).capabilities.update:
+        return None
+    try:
+        return execute(occ, session.account, "update", transport=transport)
+    except ValidationError as exc:
+        _auto_log().warning("auto-update skipped for %s: %s", occ.pk, getattr(exc, "message_dict", exc))
+        return None
 
 
 # ---------------------------------------------------------------------------

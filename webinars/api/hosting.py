@@ -31,6 +31,7 @@ ACCOUNT_FIELDS = {
     "provider": ("provider", "str"),
     "name": ("name", "str"),
     "enabled": ("enabled", "bool"),
+    "autoProvision": ("auto_provision", "bool"),
     "config": ("config", "dict"),
     "credentials": ("credentials", "dict"),
 }
@@ -45,6 +46,8 @@ ACCOUNT_INPUT_SCHEMA = {
         "provider": {"type": "string", "enum": PROVIDERS},
         "name": {"type": "string", "minLength": 1, "maxLength": 200},
         "enabled": {"type": "boolean"},
+        "autoProvision": {"type": "boolean", "description": "Create a provider session, and open the lobby, for every new "
+                          "session automatically. Only one account; needs enabled and a provider that can create."},
         "config": {**_STR_MAP, "description": "Non-secret settings named by the provider's configFields."},
         "credentials": {**_STR_MAP, "writeOnly": True,
                         "description": "Set-only secrets named by credentialFields; blank keeps the stored value. Never returned."},
@@ -118,7 +121,8 @@ def hosting_accounts(request, key, body):
     try:
         account, _warnings = service.save_account(
             provider=values["provider"], name=values["name"], config=values.get("config") or {},
-            posted_secrets=values.get("credentials") or {}, enabled=values.get("enabled", False), api_key=key,
+            posted_secrets=values.get("credentials") or {}, enabled=values.get("enabled", False),
+            auto_provision=values.get("auto_provision", False), api_key=key,
         )
     except ValidationError as exc:
         raise _validation(exc)
@@ -136,7 +140,7 @@ def hosting_account_detail(request, key, body, pk):
         account, _warnings = service.save_account(
             account, provider=account.provider, name=values.get("name", account.name),
             config=values.get("config", account.config or {}), posted_secrets=values.get("credentials") or {},
-            enabled=values.get("enabled", account.enabled), api_key=key,
+            enabled=values.get("enabled", account.enabled), auto_provision=values.get("auto_provision"), api_key=key,
         )
     except ValidationError as exc:
         raise _validation(exc)

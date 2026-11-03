@@ -246,6 +246,16 @@ def reschedule_occurrence(occurrence, *, local_start, tz_name, fold=None, durati
         )
     _sync(occurrence, occ, _RESCHEDULE_FIELDS)
     _hosting_hook("mark_out_of_date", occ)
+    _after_commit_hosting("auto_update", occ)
+
+
+def _after_commit_hosting(name, occ):
+    """Run an outbound hosting step (``service.auto_update``) once the caller's transaction
+    commits; a provider failure is recorded on the hosted session, never raised here."""
+    from webinars.hosting import service
+
+    fn = getattr(service, name)
+    transaction.on_commit(lambda: fn(occ.pk))
 
 
 def _hosting_hook(name, occ):

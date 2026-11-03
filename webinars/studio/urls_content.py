@@ -20,6 +20,7 @@ urlpatterns = [
     path("sessions/<uuid:pk>/waiting-room", v.session_waiting_room, name="session-waiting-room"),
     path("sessions/<uuid:pk>/admission", v.session_admission, name="session-admission"),
     path("sessions/<uuid:pk>/cancel", v.session_cancel, name="session-cancel"),
+    path("sessions/<uuid:pk>/delete", v.session_delete, name="session-delete"),
     path("sessions/<uuid:pk>/recording", v.session_recording, name="session-recording"),
     path("sessions/<uuid:pk>/live.json", v.session_live, name="session-live"),
     path("sessions/<uuid:pk>/registrations", v.session_registrations, name="session-registrations"),

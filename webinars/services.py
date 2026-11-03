@@ -191,20 +191,59 @@ def delete_host(host, *, user=None, api_key=None):
         host.delete()
 
 
-def delete_draft_event(event, *, user=None):
+def event_delete_problem(event):
+    """Why ``event`` can't be deleted, or None. Registrations and ticket orders are records
+    people rely on (orders are the financial record, PROTECT): cancel the sessions instead."""
+    if Registration.objects.filter(occurrence__event=event).exists():
+        return "Events with registrations cannot be deleted. Cancel their sessions instead."
+    from webinars.models import TicketOrder
+
+    if TicketOrder.objects.filter(occurrence__event=event).exists():
+        return "Events with ticket orders cannot be deleted. Cancel their sessions instead."
+    return None
+
+
+def delete_event(event, *, user=None, api_key=None):
+    """Delete an event and its sessions, whatever its visibility: a published event's landing
+    page goes away at once. Refused while any session has registrations or ticket orders.
+    Provider sessions (rooms) are never deleted remotely."""
     with transaction.atomic():
         event = Event.objects.select_for_update().get(pk=event.pk)
-        if event.visibility != Event.Visibility.DRAFT:
-            raise ValidationError("Only draft events can be deleted. Unpublish it first.")
-        if Registration.objects.filter(occurrence__event=event).exists():
-            raise ValidationError("Events with registrations cannot be deleted.")
-        from webinars.models import TicketOrder
-
-        if TicketOrder.objects.filter(occurrence__event=event).exists():
-            # Orders are the financial record (PROTECT): never cascade them away.
-            raise ValidationError("Events with ticket orders cannot be deleted.")
-        audit("event.deleted", user=user, obj=event, revision=event.revision)
+        problem = event_delete_problem(event)
+        if problem:
+            raise ValidationError(problem)
+        audit("event.deleted", user=user, api_key=api_key, obj=event, revision=event.revision,
+              visibility=event.visibility, sessions=event.occurrences.count())
         event.delete()
+
+
+# Kept for callers written against the old name.
+delete_draft_event = delete_event
+
+
+def occurrence_delete_problem(occ):
+    """Why ``occ`` can't be deleted, or None."""
+    if Registration.objects.filter(occurrence=occ).exists():
+        return "Sessions with registrations cannot be deleted. Cancel the session instead."
+    from webinars.models import TicketOrder
+
+    if TicketOrder.objects.filter(occurrence=occ).exists():
+        return "Sessions with ticket orders cannot be deleted. Cancel the session instead."
+    return None
+
+
+def delete_occurrence(occ, *, user=None, api_key=None):
+    """Remove a session that nobody registered for. With registrations or orders, cancel it
+    instead (``scheduling.cancel_occurrence``), which notifies people and keeps the record.
+    A linked provider session is forgotten, never deleted remotely."""
+    with transaction.atomic():
+        occ = Occurrence.objects.select_for_update().select_related("event").get(pk=occ.pk)
+        problem = occurrence_delete_problem(occ)
+        if problem:
+            raise ValidationError(problem)
+        audit("occurrence.deleted", user=user, api_key=api_key, obj=occ, event_id=str(occ.event_id),
+              status=occ.status, starts_at=occ.starts_at.isoformat())
+        occ.delete()
 
 
 # ---------------------------------------------------------------------------

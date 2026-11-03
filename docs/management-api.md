@@ -99,7 +99,7 @@ The public `/api/v1/events` projection is unchanged. Draft events stay 404 there
 - Publishing (`public`/`unlisted`) is refused with `409 not_ready` when the patched event has no upcoming session, no Attention hook or summary, or no Action copy. The studio, MCP and Django admin use the same check (`services.publish_problems`).
 - If anything changed: `revision` is incremented under a row lock, a new `EventRevision` snapshot is stored and audit `event.revised` is written. A no-op PATCH does not create a revision.
 
-**DELETE** returns 409 unless the event is `draft` and no occurrence has any registration, including cancelled ones. To retire a published event, PATCH its visibility instead.
+**DELETE** removes the event and its occurrences whatever its visibility (a published landing page goes away at once). It returns 409 while any occurrence has a registration, including cancelled ones, or a ticket order: cancel the occurrences instead. Provider sessions are never deleted remotely.
 
 ### Occurrences (`content_write`)
 
@@ -108,6 +108,7 @@ The public `/api/v1/events` projection is unchanged. Draft events stay 404 there
 | POST | `/api/v1/manage/events/<uuid>/occurrences` | create; required `timezone`, `localStart` |
 | GET | `/api/v1/manage/occurrences/<uuid>` | |
 | PATCH | `/api/v1/manage/occurrences/<uuid>` | partial update |
+| DELETE | `/api/v1/manage/occurrences/<uuid>` | 204; 409 with registrations or ticket orders (cancel instead) |
 | POST | `/api/v1/manage/occurrences/<uuid>/cancel` | `{}` |
 | POST | `/api/v1/manage/occurrences/<uuid>/recording` | `{"recordingUrl":"https://…"}` |
 | GET, PATCH | `/api/v1/manage/occurrences/<uuid>/waiting-room` | `enabled` (bool), `admissionLeadMinutes` (int), `admissionMode` (`auto`\|`hold`\|`open`\|`ended`). Response: `{enabled, url, admissionMode, admissionLeadMinutes, state, attendanceFinalizedAt}`; `url` is the shareable `/w/<code>/` room. 409 on cancelled occurrences. See [waiting-room.md](waiting-room.md). |

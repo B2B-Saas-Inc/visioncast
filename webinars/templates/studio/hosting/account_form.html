@@ -69,6 +69,13 @@
         <label class="switch"><input type="checkbox" name="enabled" value="on"{% if state.enabled %} checked{% endif %}><span class="switch-track" aria-hidden="true"></span> Enabled</label>
         <p class="help">Enabled accounts can be chosen on sessions. Enabling needs every credential to be set.</p>
       </div>
+      {% if can_create %}
+      <div class="field">
+        <label class="switch"><input type="checkbox" name="auto_provision" value="on"{% if state.auto_provision %} checked{% endif %}><span class="switch-track" aria-hidden="true"></span> Create a room for every new session</label>
+        <p class="help">Each new session gets its {{ adapter.label }} session and a lobby link the moment it's scheduled, and a reschedule is sent on. One account at a time; turning this on here turns it off elsewhere.</p>
+        {% if errors.auto_provision %}<p class="field-error">{{ errors.auto_provision|join:" " }}</p>{% endif %}
+      </div>
+      {% endif %}
     </div>
   </section>
 

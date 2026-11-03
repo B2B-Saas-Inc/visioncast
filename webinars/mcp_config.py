@@ -357,17 +357,33 @@ def publish_recording(args, key):
                  publication_confirmed=True, pk=occ.pk)
 
 
-def delete_draft_event(args, key):
-    from webinars.models import Registration
+def delete_event(args, key):
+    from webinars import services
 
     event = _get(Event, pk=args["eventId"])
-    preview = {"eventId": str(event.pk), "visibility": event.visibility,
-               "sessions": event.occurrences.count(),
-               "hasRegistrations": Registration.objects.filter(occurrence__event=event).exists()}
-    gated = _gate("delete_draft_event", key, args, preview, state=event.revision)
+    problem = services.event_delete_problem(event)
+    preview = {"eventId": str(event.pk), "visibility": event.visibility, "sessions": event.occurrences.count(),
+               "problem": problem,
+               "effect": "The event and its sessions are removed" + (
+                   "; its landing page goes away at once." if event.visibility != Event.Visibility.DRAFT else ".")}
+    gated = _gate("delete_event", key, args, preview, state=event.revision)
     if gated:
         return gated
     return _mgmt(management.event_detail, "DELETE", key, pk=event.pk)
+
+
+def delete_session(args, key):
+    from webinars import services
+
+    occ = _get(Occurrence, pk=args["sessionId"])
+    problem = services.occurrence_delete_problem(occ)
+    preview = {"sessionId": str(occ.pk), "eventId": str(occ.event_id), "status": occ.status, "problem": problem,
+               "effect": "The session and its lobby link are removed. A provider room is left as it is. "
+                         "To tell registrants, cancel instead."}
+    gated = _gate("delete_session", key, args, preview, state=str(occ.schedule_generation))
+    if gated:
+        return gated
+    return _mgmt(management.occurrence_detail, "DELETE", key, pk=occ.pk)
 
 
 def finalize_attendance(args, key):
@@ -851,14 +867,14 @@ def _account_state(account):
 
 
 def _account_preview(args, account):
-    changes = {k: v for k, v in args.items() if k in ("provider", "name", "enabled", "config")}
+    changes = {k: v for k, v in args.items() if k in ("provider", "name", "enabled", "autoProvision", "config")}
     changes["credentialsSet"] = sorted(k for k, v in (args.get("credentials") or {}).items() if str(v).strip())
     return {"accountId": str(account.pk) if account else None, "changes": changes,
             "effect": "Credentials are encrypted and never returned; blank values keep the stored secret."}
 
 
 def create_hosting_account(args, key):
-    body = {k: args[k] for k in ("provider", "name", "enabled", "config", "credentials") if k in args}
+    body = {k: args[k] for k in ("provider", "name", "enabled", "autoProvision", "config", "credentials") if k in args}
     if body.get("provider") not in _hosting_api().PROVIDERS:
         raise ToolError(400, "validation_error", "Request validation failed.", {"provider": "Unknown provider."})
     gated = _gate("create_hosting_account", key, args, _account_preview(body, None), state=_account_state(None))
@@ -871,7 +887,7 @@ def update_hosting_account(args, key):
     from webinars.models import HostingAccount
 
     account = _get(HostingAccount, pk=args["accountId"])
-    body = {k: args[k] for k in ("name", "enabled", "config", "credentials") if k in args}
+    body = {k: args[k] for k in ("name", "enabled", "autoProvision", "config", "credentials") if k in args}
     gated = _gate("update_hosting_account", key, args, _account_preview(body, account), state=_account_state(account))
     if gated:
         return gated
@@ -1276,9 +1292,17 @@ TOOLS = [
          "seriesId": {"type": ["string", "null"], "maxLength": 20},
          "registrationOpen": {"type": "boolean"}, "dryRun": {"type": "boolean", "default": False},
      }, ["eventId", "timezone", "localStarts"])},
-    {"name": "delete_draft_event", "scopes": CONTENT, "handler": delete_draft_event, "gated": True,
-     "description": "Delete a draft event without registrations. Gated: dry run, then confirmToken.",
+    {"name": "delete_event", "scopes": CONTENT, "handler": delete_event, "gated": True,
+     "description": "Delete an event and its sessions (any visibility; a published landing page goes away). Refused "
+                    "with registrations or ticket orders: cancel sessions instead. Gated: dry run, then confirmToken.",
      "inputSchema": _schema({"eventId": _UUID}, ["eventId"], gated=True)},
+    {"name": "delete_draft_event", "scopes": CONTENT, "handler": delete_event, "gated": True,
+     "description": "Deprecated name for delete_event.",
+     "inputSchema": _schema({"eventId": _UUID}, ["eventId"], gated=True)},
+    {"name": "delete_session", "scopes": CONTENT, "handler": delete_session, "gated": True,
+     "description": "Delete a session nobody registered for (with registrations or orders, use cancel_session). "
+                    "Gated: dry run, then confirmToken.",
+     "inputSchema": _schema({"sessionId": _UUID}, ["sessionId"], gated=True)},
     {"name": "set_event_visibility", "scopes": PUBLISH, "handler": set_event_visibility, "gated": True,
      "description": "Publish (public/unlisted) or unpublish (draft) an event after readiness checks. Gated.",
      "inputSchema": _schema({"eventId": _UUID, "visibility": {"type": "string", "enum": list(Event.Visibility.values)}},

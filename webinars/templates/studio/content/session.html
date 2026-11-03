@@ -170,6 +170,20 @@
         </form>
       </section>
     {% endif %}
+    {% if can_delete %}
+      <section class="panel" aria-labelledby="delete-title">
+        <div class="panel-head"><h2 id="delete-title">Delete session</h2></div>
+        {% if delete_problem %}
+        <div class="panel-body"><p class="help">{{ delete_problem }}</p></div>
+        {% else %}
+        <form method="post" action="{% url 'studio:session-delete' occ.pk %}" class="panel-body" data-confirm="Delete this session? Its lobby link stops working and this can't be undone.">
+          {% csrf_token %}
+          <p class="help">Removes the session and its lobby link. Nobody has registered, so nobody is notified. A room created on your live server is left as it is.</p>
+          <button class="btn btn-danger btn-sm" type="submit">{% include "studio/_icon.html" with name="trash" size=16 %} Delete session</button>
+        </form>
+        {% endif %}
+      </section>
+    {% endif %}
   </aside>
 </div>
 {% endblock %}

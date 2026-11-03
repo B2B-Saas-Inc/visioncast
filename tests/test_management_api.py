@@ -282,16 +282,25 @@ def test_publication_token_bound_to_state(client, form, publish_key, content_key
 def test_delete_rules(client, form, content_key):
     from webinars.models import Event
 
+    from webinars.models import Occurrence
+
     public = make_event(form, slug="pub")
-    assert call(client, "DELETE", f"{BASE}/events/{public.pk}", content_key).status_code == 409
-    draft_with_regs = make_event(form, slug="drafted", visibility="draft")
-    make_registration(make_occurrence(draft_with_regs))
-    assert call(client, "DELETE", f"{BASE}/events/{draft_with_regs.pk}", content_key).status_code == 409
+    busy_occ = make_occurrence(public)
+    make_registration(busy_occ)
+    resp = call(client, "DELETE", f"{BASE}/events/{public.pk}", content_key)
+    assert resp.status_code == 409 and "registrations" in resp.json()["error"]["message"]
+    assert call(client, "DELETE", f"{BASE}/occurrences/{busy_occ.pk}", content_key).status_code == 409
     draft = make_event(form, slug="empty", visibility="draft")
-    make_occurrence(draft)
+    spare = make_occurrence(draft)
+    assert call(client, "DELETE", f"{BASE}/occurrences/{spare.pk}", content_key).status_code == 204
+    assert not Occurrence.objects.filter(pk=spare.pk).exists()
     assert call(client, "DELETE", f"{BASE}/events/{draft.pk}", content_key).status_code == 204
     assert not Event.objects.filter(pk=draft.pk).exists()
-    assert Event.objects.filter(pk__in=[public.pk, draft_with_regs.pk]).count() == 2
+    # Any visibility can be deleted once nobody is registered: the landing page goes away.
+    listed = make_event(form, slug="listed", visibility="public")
+    make_occurrence(listed)
+    assert call(client, "DELETE", f"{BASE}/events/{listed.pk}", content_key).status_code == 204
+    assert Event.objects.filter(pk=public.pk).exists()
 
 
 def test_missing_event_404(client, content_key):

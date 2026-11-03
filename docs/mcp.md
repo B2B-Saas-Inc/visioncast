@@ -53,7 +53,8 @@ Publishing a not-ready event (no upcoming session, Attention/summary or Action) 
 | list_events, get_event, get_form_schema | public_read or content_write | |
 | create_event, update_event (no visibility change), schedule_session, update_session, cancel_session, configure_waiting_room, create_host, create_topic | content_write | |
 | update_host, update_topic, create_form_version, update_form_version, set_event_cta, set_event_cover, create_series, schedule_recurring_sessions (optional dryRun) | content_write | |
-| delete_draft_event | content_write | yes |
+| delete_event (any visibility; 409 with registrations or orders), delete_session (same rule; cancel_session to notify people) | content_write | yes |
+| delete_draft_event | content_write | yes (deprecated name for delete_event) |
 | list_catalog | config_read or content_write | |
 | record_attendance | attendance_write | |
 | finalize_attendance | attendance_write | yes |

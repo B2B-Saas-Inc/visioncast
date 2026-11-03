@@ -653,18 +653,12 @@ def event_detail(request, key, body, pk):
     if request.method == "GET":
         return 200, serialize_event(Event.objects.get(pk=pk))
     if request.method == "DELETE":
-        with transaction.atomic():
-            event = Event.objects.select_for_update().get(pk=pk)
-            if event.visibility != Event.Visibility.DRAFT:
-                raise _conflict("Only draft events can be deleted; unpublish with PATCH visibility=draft first.")
-            if Registration.objects.filter(occurrence__event=event).exists():
-                raise _conflict("Events with registrations cannot be deleted; set visibility instead.")
-            from webinars.models import TicketOrder
+        from webinars import services
 
-            if TicketOrder.objects.filter(occurrence__event=event).exists():
-                raise _conflict("Events with ticket orders cannot be deleted; set visibility instead.")
-            audit("event.deleted", api_key=key, obj=event, revision=event.revision)
-            event.delete()
+        try:
+            services.delete_event(Event.objects.get(pk=pk), api_key=key)
+        except ValidationError as exc:
+            raise _conflict(" ".join(exc.messages))
         return 204, None
     values = _parse(body, EVENT_FIELDS)
     with transaction.atomic():
@@ -915,10 +909,18 @@ def event_occurrences(request, key, body, pk):
     return 201, serialize_occurrence(Occurrence.objects.get(pk=occ.pk))
 
 
-@_endpoint(CONTENT, ("GET", "PATCH"), read_scopes=CONTENT_READ)
+@_endpoint(CONTENT, ("GET", "PATCH", "DELETE"), read_scopes=CONTENT_READ)
 def occurrence_detail(request, key, body, pk):
     if request.method == "GET":
         return 200, serialize_occurrence(Occurrence.objects.get(pk=pk))
+    if request.method == "DELETE":
+        from webinars import services
+
+        try:
+            services.delete_occurrence(Occurrence.objects.get(pk=pk), api_key=key)
+        except ValidationError as exc:
+            raise _conflict(" ".join(exc.messages))
+        return 204, None
     values = _parse(body, OCCURRENCE_FIELDS)
     with transaction.atomic():
         occ = Occurrence.objects.select_for_update().get(pk=pk)

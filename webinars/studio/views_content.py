@@ -549,7 +549,8 @@ def _render_editor(request, event, *, values=None, errors=None, session_values=N
             "problems": services.publish_problems(event),
             "can_change": can_change,
             "readonly": not can_change,
-            "can_delete": can(user, "webinars.delete_event") and event.visibility == Event.Visibility.DRAFT,
+            "can_delete": can(user, "webinars.delete_event"),
+            "delete_problem": services.event_delete_problem(event),
             "can_add_session": can(user, "webinars.add_occurrence"),
             "session_values": session_values,
             "session_errors": session_errors,
@@ -636,7 +637,7 @@ def event_delete(request, pk):
     event = get_object_or_404(Event, pk=pk)
     name = event.internal_name
     try:
-        services.delete_draft_event(event, user=request.user)
+        services.delete_event(event, user=request.user)
     except ValidationError as exc:
         _flash_validation(request, exc)
         return redirect("studio:event-edit", pk=event.pk)
@@ -741,6 +742,8 @@ def _render_session(request, occ, *, values=None, errors=None, status=200):
             "counts": _session_counts(occ),
             "timezones": _timezones(values.get("timezone")),
             "can_view_registrations": can(user, "webinars.view_registration"),
+            "can_delete": can(user, "webinars.delete_occurrence"),
+            "delete_problem": services.occurrence_delete_problem(occ),
         },
         status=status,
     )
@@ -814,6 +817,19 @@ def session_cancel(request, pk):
     cancel_occurrence(occ, user=request.user)
     messages.success(request, "Session cancelled. Registrants are notified and reminders stop.")
     return redirect("studio:session", pk=occ.pk)
+
+
+@studio_view(perm="webinars.view_occurrence", write_perm="webinars.delete_occurrence", methods=("POST",))
+def session_delete(request, pk):
+    occ = _get_occurrence(pk)
+    event_pk = occ.event_id
+    try:
+        services.delete_occurrence(occ, user=request.user)
+    except ValidationError as exc:
+        _flash_validation(request, exc)
+        return redirect("studio:session", pk=occ.pk)
+    messages.success(request, "Session deleted.")
+    return redirect("studio:event-edit", pk=event_pk)
 
 
 @studio_view(perm="webinars.view_occurrence", write_perm="webinars.change_occurrence", methods=("POST",))

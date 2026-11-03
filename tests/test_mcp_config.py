@@ -213,14 +213,24 @@ def test_content_key_cannot_publish_recording_over_mcp(client):
     assert "publish_recording" not in tool_names(client, key)
 
 
-def test_delete_draft_is_gated(client):
-    from webinars.models import Event
+def test_delete_event_and_session_are_gated(client):
+    from webinars.models import Event, Occurrence
 
     key = make_api_key(("content_write",))
-    event = make_event(make_form(), slug="ev-del", visibility="draft")
-    dry, done = confirm(client, key, "delete_draft_event", {"eventId": str(event.pk)})
+    event = make_event(make_form(), slug="ev-del", visibility="public")
+    occ = make_occurrence(event)
+    dry, done = confirm(client, key, "delete_session", {"sessionId": str(occ.pk)})
+    assert dry["structuredContent"]["preview"]["problem"] is None
+    assert not done["isError"], done
+    assert not Occurrence.objects.filter(pk=occ.pk).exists()
+    dry, done = confirm(client, key, "delete_event", {"eventId": str(event.pk)})
+    assert "landing page" in dry["structuredContent"]["preview"]["effect"]
     assert not done["isError"], done
     assert not Event.objects.filter(pk=event.pk).exists()
+    # The old name still works.
+    other = make_event(make_form(version="f-old"), slug="ev-old", visibility="draft")
+    _dry, done = confirm(client, key, "delete_draft_event", {"eventId": str(other.pk)})
+    assert not done["isError"] and not Event.objects.filter(pk=other.pk).exists()
 
 
 # ---- destinations, secrets and test sends --------------------------------------------------

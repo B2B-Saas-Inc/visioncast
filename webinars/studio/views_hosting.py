@@ -51,6 +51,7 @@ def _account_form(request, account, provider, *, errors=None, state=None, warnin
     state = state or {
         "name": account.name if account else "",
         "enabled": account.enabled if account else False,
+        "auto_provision": account.auto_provision if account else False,
         "config": dict(account.config or {}) if account else {},
     }
     config_fields = [{"name": f.name, "label": f.label, "help": f.help, "required": f.required, "choices": f.choices,
@@ -61,6 +62,7 @@ def _account_form(request, account, provider, *, errors=None, state=None, warnin
         "account": account, "provider": provider, "adapter": adapter.describe(), "state": state,
         "config_fields": config_fields, "secret_fields": secret_fields, "errors": errors or {},
         "live_settings": adapter.capabilities.live_settings,
+        "can_create": adapter.capabilities.create,
         "warnings": warnings if warnings is not None else (serialized["warnings"] if serialized else adapter.allowlist_problems()),
     }, status=status)
 
@@ -69,11 +71,12 @@ def _save_from_post(request, account, provider):
     adapter = get_adapter(provider)
     config = {f.name: request.POST.get(f"config-{f.name}", "") for f in adapter.config_fields}
     secrets = {f.name: request.POST.get(f"secret-{f.name}", "") for f in adapter.credential_fields}
-    state = {"name": request.POST.get("name", ""), "enabled": request.POST.get("enabled") == "on", "config": config}
+    state = {"name": request.POST.get("name", ""), "enabled": request.POST.get("enabled") == "on", "config": config,
+             "auto_provision": request.POST.get("auto_provision") == "on"}
     try:
         account, warnings = service.save_account(
             account, provider=provider, name=state["name"], config=config, posted_secrets=secrets,
-            enabled=state["enabled"], user=request.user,
+            enabled=state["enabled"], auto_provision=state["auto_provision"], user=request.user,
         )
     except ValidationError as exc:
         return _account_form(request, account, provider, errors=_errors(exc), state=state, status=400)

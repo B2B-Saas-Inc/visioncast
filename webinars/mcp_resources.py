@@ -40,7 +40,10 @@ webinar://guides/implementation-guide for the end-to-end website rollout.
 3. Catalogue: create_host / create_topic (tags) / update_host / update_topic.
 4. Event: create_event (draft, AIDA copy), set_event_cta, set_event_cover or heroImageUrl.
 5. Schedule: schedule_session, or create_series + schedule_recurring_sessions (explicit starts,
-   never RRULE expansion). Join links are write-only.
+   never RRULE expansion). Join links are write-only. With a hosting account marked
+   autoProvision (step 13), each new session gets its provider session and lobby link
+   automatically. delete_session / delete_event remove what nobody registered for;
+   cancel_session tells registrants.
 6. Waiting room: configure_waiting_room (enabled, lead minutes, admission mode).
 7. Publish: set_event_visibility (publication scope) — dry run shows readiness problems and
    returns a confirmToken; repeat with dryRun=false and the token.
