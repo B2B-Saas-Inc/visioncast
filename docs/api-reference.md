@@ -87,7 +87,7 @@ Only `public` events are listed (never `draft` or `unlisted`). Ordered newest fi
 ```
 
 Each `Event` (same shape as the detail endpoint, `webinars/api/views.py`
-`serialize_event`): `slug, title, summary, heroImageUrl, aida{attention,interest,decision,action},
+`serialize_event`): `slug, title, summary, heroImageUrl, cardImageUrl (listing image or null), aida{attention,interest,decision,action},
 learningOutcomes[], hosts[{name,slug,title,imageUrl}], topics[{name,slug}], formVersion, cta,
 occurrences[{id, startsAt, endsAt, timezone, status, registrationOpen, recordingUrl, calendarUrl, calendarLinks}]`.
 `occurrences` lists **all** occurrences (past, cancelled included) ordered by start; filter

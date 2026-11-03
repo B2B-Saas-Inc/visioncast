@@ -84,6 +84,7 @@ export function normalizeEvent(raw) {
     title: str(raw.title, 500) || '',
     summary: str(raw.summary, 5000) || '',
     heroImageUrl: httpsUrl(raw.heroImageUrl),
+    cardImageUrl: httpsUrl(raw.cardImageUrl),
     formVersion,
     hosts: list(raw.hosts)
       .filter((h) => h && typeof h === 'object')

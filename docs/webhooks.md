@@ -42,7 +42,7 @@ further deliveries.
 | `consents` | `sms`, `analytics`, `advertising`: `{granted, disclosureVersion, recordedAt, withdrawnAt, source, serverVerified}` |
 | `attribution` | `firstTouch`, `registrationTouch`: `{parameters, identifiers, pageUrl, referrer, recordedAt}` (URLs stored without query/hash) |
 | `registration` | `id, status, attendance, formVersion, identityVerified, createdAt, updatedAt` |
-| `event` | self-contained snapshot: `id, slug, title, summary, heroImageUrl, aida{attention,interest,decision,action}, learningOutcomes, hosts[], topics[], thankYou, cta, revision, occurrence{id,startsAt,endsAt,timezone,status,icsUid,icsSequence,cancelledAt, recordingUrl?, managedRoomUrl? \| (joinUrl?, waitingRoomUrl?)}` |
+| `event` | self-contained snapshot: `id, slug, title, summary, heroImageUrl, cardImageUrl, aida{attention,interest,decision,action}, learningOutcomes, hosts[], topics[], thankYou, cta, revision, occurrence{id,startsAt,endsAt,timezone,status,icsUid,icsSequence,cancelledAt, recordingUrl?, managedRoomUrl? \| (joinUrl?, waitingRoomUrl?)}` |
 | `delivery_metadata` | `deliveryId, destinationId, destinationKind, eventType, createdAt, attempt` |
 | `mapped` | only when the destination has a `field_mapping` (see below) |
 

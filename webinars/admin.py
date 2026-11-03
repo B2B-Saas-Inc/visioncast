@@ -538,13 +538,20 @@ class EventForm(forms.ModelForm):
         # Ticket prices are charge configuration: set only through payments.update_event_price
         # (payments_admin / Administrator), never by an ordinary content edit, which would
         # otherwise clear them (unbound form fields clean to None) and make a paid event free.
-        exclude = ("revision", "cover_image", "ticket_price_minor", "ticket_currency")
+        exclude = ("revision", "cover_image", "card_image", "ticket_price_minor", "ticket_currency")
 
     def clean_hero_image_url(self):
         value = self.cleaned_data.get("hero_image_url", "")
         _validate_https(value, "hero_image_url")
         if value and self.instance.cover_image_id:
             raise ValidationError("This event has an uploaded cover image. Remove it before using an image URL.")
+        return value
+
+    def clean_card_image_url(self):
+        value = self.cleaned_data.get("card_image_url", "")
+        _validate_https(value, "card_image_url")
+        if value and self.instance.card_image_id:
+            raise ValidationError("This event has an uploaded card image. Remove it before using an image URL.")
         return value
 
     def _clean_label(self, name):
@@ -604,6 +611,8 @@ def event_snapshot(event):
         "summary": event.summary,
         "heroImageUrl": event.hero_url,
         "coverImageId": str(event.cover_image_id) if event.cover_image_id else None,
+        "cardImageUrl": event.card_url,
+        "cardImageId": str(event.card_image_id) if event.card_image_id else None,
         "attention": event.attention,
         "interest": event.interest,
         "decision": event.decision,
@@ -633,7 +642,7 @@ class EventAdmin(admin.ModelAdmin):
     inlines = (OccurrenceInline,)
     fieldsets = (
         (None, {"fields": ("internal_name", "slug", "public_title", "visibility", "form_version", "revision")}),
-        ("Content", {"fields": ("summary", "hero_image_url", "attention", "interest", "decision", "action", "learning_outcomes")}),
+        ("Content", {"fields": ("summary", "hero_image_url", "card_image_url", "attention", "interest", "decision", "action", "learning_outcomes")}),
         ("People and topics", {"fields": ("hosts", "topics")}),
         ("Registration button", {"fields": ("register_label", "confirm_label")}),
         ("Thank-you", {"fields": ("thank_you_mode", "thank_you_message", "thank_you_url")}),

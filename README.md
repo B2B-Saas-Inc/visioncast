@@ -146,12 +146,12 @@ Add sample events with `docker compose run --rm web manage seed_public_demo`. Th
 
 ### Use the published image
 
-Every `v<VERSION>` tag builds linux/amd64 and linux/arm64 images with an SBOM and provenance: the studio, and the live service, captions and slides images. The current release is **`0.4.7-pre`**; its digests are on the tag's release run in GitHub Actions. The packages are private for now, so pulling needs a GitHub token with `read:packages`.
+Every `v<VERSION>` tag builds linux/amd64 and linux/arm64 images with an SBOM and provenance: the studio, and the live service, captions and slides images. The current release is **`0.4.8-pre`**; its digests are on the tag's release run in GitHub Actions. The packages are private for now, so pulling needs a GitHub token with `read:packages`.
 
 ```sh
-docker pull ghcr.io/b2b-saas-inc/visioncast:0.4.7-pre
-# in .env:  WEBINAR_IMAGE=ghcr.io/b2b-saas-inc/visioncast:0.4.7-pre  and  WEBINAR_PULL_POLICY=never
-deploy/upgrade.sh --image ghcr.io/b2b-saas-inc/visioncast:0.4.7-pre   # first run: docker compose run --rm migrate && docker compose up -d
+docker pull ghcr.io/b2b-saas-inc/visioncast:0.4.8-pre
+# in .env:  WEBINAR_IMAGE=ghcr.io/b2b-saas-inc/visioncast:0.4.8-pre  and  WEBINAR_PULL_POLICY=never
+deploy/upgrade.sh --image ghcr.io/b2b-saas-inc/visioncast:0.4.8-pre   # first run: docker compose run --rm migrate && docker compose up -d
 ```
 
 ## Deploy to production
@@ -160,8 +160,8 @@ On any provider, the simplest route is [`deploy/quickstart/install.sh`](deploy/q
 
 ```sh
 deploy/production/provision.sh --apply                      # creates the droplet (dry run without --apply)
-deploy/production/package-release.sh v0.4.7-pre             # source tarball from a tag
-deploy/production/update.sh --host <ip> --tarball dist/visioncast-0.4.7-pre.tar --upload-only
+deploy/production/package-release.sh v0.4.8-pre             # source tarball from a tag
+deploy/production/update.sh --host <ip> --tarball dist/visioncast-0.4.8-pre.tar --upload-only
 # on the droplet: bootstrap.sh (see deploy/production/README.md)
 deploy/production/verify.sh --domain events.example.com --expect-access
 ```
@@ -246,11 +246,11 @@ No scope implies another. VisionCast stores keys hashed and shows each one once.
 
 ## Status
 
-VisionCast is a pre-release. Here is exactly where it stands on **0.4.7-pre** (2026-11-03). [docs/validation.md](docs/validation.md) records every run with its date; [docs/remaining-gaps.md](docs/remaining-gaps.md) and [docs/release-checklist.md](docs/release-checklist.md) list what's left.
+VisionCast is a pre-release. Here is exactly where it stands on **0.4.8-pre** (2026-11-03). [docs/validation.md](docs/validation.md) records every run with its date; [docs/remaining-gaps.md](docs/remaining-gaps.md) and [docs/release-checklist.md](docs/release-checklist.md) list what's left.
 
 **Proven**
 
-* 2,552 automated tests pass on Python 3.12 and PostgreSQL 16 at this release, with lint, system and migration checks clean, plus 90 for the live service.
+* 2,554 automated tests pass on Python 3.12 and PostgreSQL 16 at this release, with lint, system and migration checks clean, plus 90 for the live service.
 * A real-browser walkthrough of the studio passes 13 of 13 steps, plus browser suites for the form script, Google Tag Manager tag and Riverside flow.
 * An end-to-end acceptance test covers create, provision, register, pay, check in, record attendance and deliver.
 * Images build for amd64 and arm64 and publish to GHCR on every tag; backup, restore, in-place upgrade and rollback have been rehearsed.

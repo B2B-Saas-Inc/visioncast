@@ -66,7 +66,7 @@ Responses never contain:
 
 The public `/api/v1/events` projection is unchanged. Draft events stay 404 there.
 
-**Event:** `id, revision, internalName, slug, publicTitle, summary, heroImageUrl, attention, interest, decision, action, learningOutcomes[], hosts[] (slugs), topics[] (slugs), visibility, formVersion, thankYouMode, thankYouUrl, thankYouMessage, createdAt, updatedAt, occurrences[]`.
+**Event:** `id, revision, internalName, slug, publicTitle, summary, heroImageUrl, cardImageUrl, cardImageId, attention, interest, decision, action, learningOutcomes[], hosts[] (slugs), topics[] (slugs), visibility, formVersion, thankYouMode, thankYouUrl, thankYouMessage, createdAt, updatedAt, occurrences[]`.
 
 **Occurrence:** `id, eventId, seriesId, timezone, localStart (wall clock, YYYY-MM-DDTHH:MM:SS), dstFold, durationMinutes, startsAt, endsAt (UTC, Z), status, registrationOpen, hasJoinUrl, hasWaitingRoomUrl, recordingUrl (null until published), recordingPublishedAt, icsSequence, scheduleGeneration, cancelledAt`.
 
@@ -84,7 +84,7 @@ The public `/api/v1/events` projection is unchanged. Draft events stay 404 there
 
 **POST** (create):
 
-- Writable keys: `internalName, slug, publicTitle, summary, heroImageUrl, attention, interest, decision, action, learningOutcomes, hosts, topics, visibility, formVersion, thankYouMode ("message"|"redirect"), thankYouUrl, thankYouMessage`.
+- Writable keys: `internalName, slug, publicTitle, summary, heroImageUrl, cardImageUrl, attention, interest, decision, action, learningOutcomes, hosts, topics, visibility, formVersion, thankYouMode ("message"|"redirect"), thankYouUrl, thankYouMessage`.
 - Required: `internalName, slug, publicTitle, formVersion`.
 - `hosts` and `topics` are lists of existing slugs. `formVersion` is an existing version string.
 - Draft first: `visibility` may only be omitted or `"draft"`.

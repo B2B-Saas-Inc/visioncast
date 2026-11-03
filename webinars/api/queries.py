@@ -38,7 +38,7 @@ class QueryError(ValueError):
 
 def event_queryset():
     """Events with everything the public projection needs prefetched."""
-    return Event.objects.select_related("form_version", "cover_image").prefetch_related(
+    return Event.objects.select_related("form_version", "cover_image", "card_image").prefetch_related(
         "hosts", "topics", Prefetch("occurrences", queryset=Occurrence.objects.order_by("starts_at"))
     )
 

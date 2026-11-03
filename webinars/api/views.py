@@ -168,6 +168,7 @@ def serialize_event(event):
         "title": event.public_title,
         "summary": event.summary,
         "heroImageUrl": event.hero_url or None,
+        "cardImageUrl": event.card_url or None,
         "aida": {
             "attention": event.attention,
             "interest": event.interest,

@@ -302,6 +302,7 @@ def set_event_cover(args, key):
     event = _get(Event, pk=args["eventId"])
     if ("imageBase64" in args) == bool(args.get("remove")):
         raise ToolError(400, "validation_error", "Pass exactly one of imageBase64 or remove=true.")
+    slot = args.get("slot", "cover")
     try:
         with transaction.atomic():
             cover = None
@@ -317,8 +318,11 @@ def set_event_cover(args, key):
                                                   byte_size=len(encoded), sha256=hashlib.sha256(encoded).hexdigest())
             data = event_form_data(event)
             if cover is not None:
-                data["hero_image_url"] = ""
-            save_event(data, api_key=key, instance=event, cover=cover)
+                data["card_image_url" if slot == "card" else "hero_image_url"] = ""
+            if slot == "card":
+                save_event(data, api_key=key, instance=event, card=cover)
+            else:
+                save_event(data, api_key=key, instance=event, cover=cover)
     except FormErrors as exc:
         raise _validation(exc)
     except ValidationError as exc:
@@ -1274,9 +1278,13 @@ TOOLS = [
                              "confirmLabel": {"type": "string", "maxLength": 60}}, ["eventId"])},
     {"name": "set_event_cover", "scopes": CONTENT, "handler": set_event_cover,
      "description": "Attach an uploaded cover (PNG/JPEG/WebP, base64, ≤40 KB; re-encoded, metadata stripped) "
-                    "or remove it (remove=true). Use heroImageUrl via update_event for hosted images.",
+                    "or remove it (remove=true). slot=card does the same for the listing card image. Use "
+                    "heroImageUrl / cardImageUrl via update_event for hosted images.",
      "inputSchema": _schema({"eventId": _UUID, "imageBase64": {"type": "string", "maxLength": 56000},
-                             "remove": {"type": "boolean"}}, ["eventId"])},
+                             "remove": {"type": "boolean"},
+                             "slot": {"type": "string", "enum": ["cover", "card"], "default": "cover",
+                                      "description": "cover: the wide event-page image (default). card: the listing image."}},
+                            ["eventId"])},
     {"name": "create_series", "scopes": CONTENT, "handler": create_series,
      "description": "Create a named series for an event (groups explicit recurring sessions).",
      "inputSchema": _schema({"eventId": _UUID, "name": {"type": "string", "minLength": 1, "maxLength": 200},

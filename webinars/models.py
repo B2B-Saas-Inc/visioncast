@@ -134,6 +134,11 @@ class Event(TimestampedModel):
     hero_image_url = models.URLField(max_length=1000, blank=True)
     # Uploaded alternative to hero_image_url (never both); see ``hero_url``.
     cover_image = models.ForeignKey(CoverImage, null=True, blank=True, on_delete=models.PROTECT, related_name="events")
+    # The card image: a second, smaller picture for listings (an events index, a grid), kept
+    # apart from the cover so each can be made for its own shape. Same rules: a URL or an
+    # upload, never both; see ``card_url``.
+    card_image_url = models.URLField(max_length=1000, blank=True)
+    card_image = models.ForeignKey(CoverImage, null=True, blank=True, on_delete=models.PROTECT, related_name="card_events")
     attention = models.TextField(blank=True)
     interest = models.TextField(blank=True)
     decision = models.TextField(blank=True)
@@ -180,6 +185,14 @@ class Event(TimestampedModel):
         if self.cover_image_id:
             return self.cover_image.public_url
         return self.hero_image_url
+
+    @property
+    def card_url(self):
+        """Public card image URL: the uploaded card image when present, otherwise ``card_image_url``.
+        Blank when the event has neither; listings decide what to show instead."""
+        if self.card_image_id:
+            return self.card_image.public_url
+        return self.card_image_url
 
     @property
     def cta(self):

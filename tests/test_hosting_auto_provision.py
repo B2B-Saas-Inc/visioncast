@@ -181,3 +181,65 @@ def test_studio_deletes_a_session_and_an_event(django_user_model):
     assert b"Delete event" in page.content and b"Cancel their sessions instead" in page.content
     c.post(f"/studio/events/{event.pk}/delete")
     assert Event.objects.filter(pk=event.pk).exists()
+
+
+# ---- the card image: a second picture for listings -------------------------------------------
+
+
+def test_card_image_is_separate_from_the_cover(client):
+    import base64
+    import io
+
+    from PIL import Image
+
+    from tests.conftest import make_api_key
+    from tests.test_mcp_config import run
+
+    event = make_event(make_form(version="card-v1"), slug="card-ev", visibility="public")
+    key = make_api_key(("content_write",))
+    buf = io.BytesIO()
+    Image.new("RGB", (400, 300), (255, 107, 74)).save(buf, "PNG")
+    done = run(client, key, "set_event_cover", {"eventId": str(event.pk), "slot": "card",
+                                                 "imageBase64": base64.b64encode(buf.getvalue()).decode()})
+    assert not done["isError"], done
+    event.refresh_from_db()
+    assert event.card_image_id and not event.cover_image_id
+    assert event.card_url.endswith(".png") and event.hero_url == ""
+    public = client.get(f"/api/v1/events/{event.slug}").json()
+    assert public["cardImageUrl"] == event.card_url and public["heroImageUrl"] is None
+    assert client.get(event.card_image.path).status_code == 200
+    # A URL can't be set while an upload is attached; removing the upload frees it.
+    data = services.event_form_data(event)
+    with pytest.raises(services.FormErrors):
+        services.save_event({**data, "card_image_url": "https://cdn.example.com/card.jpg"}, instance=event)
+    services.save_event(data, instance=event, card=None)
+    saved, changed = services.save_event({**data, "card_image_url": "https://cdn.example.com/card.jpg"}, instance=event)
+    assert "card_image_url" in changed and saved.card_url == "https://cdn.example.com/card.jpg"
+    assert client.get(f"/api/v1/events/{event.slug}").json()["cardImageUrl"] == "https://cdn.example.com/card.jpg"
+
+
+def test_studio_saves_a_card_upload_next_to_the_cover(django_user_model):
+    import io
+
+    from django.test import Client
+    from PIL import Image
+
+    from tests.test_studio_rbac import make_user
+
+    admin = make_user(django_user_model, "admin-card", "Administrator")
+    c = Client()
+    c.force_login(admin)
+    event = make_event(make_form(version="card-v2"), slug="card-studio", visibility="draft")
+    page = c.get(f"/studio/events/{event.pk}/")
+    assert b"Card image" in page.content and b'name="card_upload"' in page.content
+    values = {k: v for k, v in services.event_form_data(event).items() if k not in ("hosts", "topics")}
+    values["learning_outcomes"] = ""
+    values["form_version"] = event.form_version_id
+    buf = io.BytesIO()
+    Image.new("RGB", (400, 300), (124, 92, 246)).save(buf, "PNG")
+    buf.seek(0)
+    buf.name = "card.png"
+    resp = c.post(f"/studio/events/{event.pk}/", {**values, "card_upload": buf})
+    assert resp.status_code == 302, resp.content[:300]
+    event.refresh_from_db()
+    assert event.card_image_id and event.card_image.width == 400 and not event.cover_image_id

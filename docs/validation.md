@@ -2,6 +2,11 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Card image: a second picture for listings — 2026-11-03
+
+- `Event.card_image_url` and `Event.card_image` (migration `0016_event_card_image`), kept apart from the cover so each is made for its own shape (the cover wide for the event page and link previews, the card 4:3 for an events index). Same rules as the cover: an upload or a URL, never both. Studio editor gets a "Card image" fieldset with its own upload, URL and remove box; public API and webhooks carry `cardImageUrl`; management API `cardImageUrl`/`cardImageId`; MCP `set_event_cover slot=card`; `sdk/kits/headless/webinar-events.mjs` reads it.
+- Two new tests (MCP upload to the card slot, public API, the URL-versus-upload rule, and a studio upload next to an empty cover). Full suite: 2,554 passed, 1 skipped, lint clean, `makemigrations --check` clean.
+
 ## Automatic rooms and full delete for events and sessions — 2026-11-03
 
 - A hosting account can be marked `auto_provision` (studio switch "Create a room for every new session"; `autoProvision` in the API and MCP). Every new session, from the studio, the API or MCP, then gets its provider session on commit and its hosted waiting room switched on, so the lobby link is live at once; a reschedule of such a session is sent on instead of sitting `out_of_date`. One account at a time; it must be enabled and able to create. Provider failures land on the hosted session as before and never block the save.

@@ -57,6 +57,7 @@ def event_form_data(event):
         "public_title": event.public_title,
         "summary": event.summary,
         "hero_image_url": event.hero_image_url,
+        "card_image_url": event.card_image_url,
         "attention": event.attention,
         "interest": event.interest,
         "decision": event.decision,
@@ -86,18 +87,20 @@ def _prepare(data):
     return data
 
 
-def save_event(data, *, user=None, api_key=None, instance=None, cover=UNCHANGED):
+def save_event(data, *, user=None, api_key=None, instance=None, cover=UNCHANGED, card=UNCHANGED):
     """Create (``instance=None``) or update an event. Returns ``(event, changed_fields)``.
 
     ``data`` uses model field names; ``learning_outcomes`` may be a list of strings and
     ``hosts``/``topics`` lists of primary keys. ``cover`` is a saved ``CoverImage`` to
-    attach, ``None`` to remove the uploaded cover, or ``UNCHANGED``. Raises ``FormErrors``.
+    attach, ``None`` to remove the uploaded cover, or ``UNCHANGED``; ``card`` the same for
+    the card image. Raises ``FormErrors``.
     """
     data = _prepare(data)
-    changed_cover = [] if cover is UNCHANGED else ["cover_image"]
+    changed_cover = ([] if cover is UNCHANGED else ["cover_image"]) + ([] if card is UNCHANGED else ["card_image"])
     with transaction.atomic():
         if instance is None:
-            form = EventForm(data=data, instance=Event(cover_image=None if cover is UNCHANGED else cover))
+            form = EventForm(data=data, instance=Event(cover_image=None if cover is UNCHANGED else cover,
+                                                       card_image=None if card is UNCHANGED else card))
             if not form.is_valid():
                 raise FormErrors(form)
             event = form.save(commit=False)
@@ -110,6 +113,8 @@ def save_event(data, *, user=None, api_key=None, instance=None, cover=UNCHANGED)
         before = event_snapshot(event)
         if cover is not UNCHANGED:
             event.cover_image = cover
+        if card is not UNCHANGED:
+            event.card_image = card
         form = EventForm(data=data, instance=event)
         if not form.is_valid():
             raise FormErrors(form)
@@ -118,7 +123,8 @@ def save_event(data, *, user=None, api_key=None, instance=None, cover=UNCHANGED)
         after["topics"] = sorted(t.slug for t in form.cleaned_data["topics"])
         if after == before:
             return event, []
-        changed = form.changed_data + (changed_cover if after["coverImageId"] != before["coverImageId"] else [])
+        changed = form.changed_data + (["cover_image"] if after["coverImageId"] != before["coverImageId"] else []) \
+            + (["card_image"] if after["cardImageId"] != before["cardImageId"] else [])
         event = form.save(commit=False)
         event.revision += 1
         event.save()

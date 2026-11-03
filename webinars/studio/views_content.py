@@ -81,6 +81,8 @@ EVENT_LABELS = {
     "summary": "Summary",
     "hero_image_url": "Hero image URL",
     "cover_upload": "Upload a cover image",
+    "card_image_url": "Card image URL",
+    "card_upload": "Upload a card image",
     "register_label": "Button text",
     "confirm_label": "Button text for returning visitors",
     "attention": "Attention",
@@ -475,7 +477,7 @@ def _event_values_from_event(event):
 
 def _event_values_from_post(post, event):
     fields = (
-        "internal_name", "slug", "public_title", "summary", "hero_image_url", "attention", "interest",
+        "internal_name", "slug", "public_title", "summary", "hero_image_url", "card_image_url", "attention", "interest",
         "decision", "action", "form_version", "thank_you_mode", "thank_you_url", "thank_you_message",
         "register_label", "confirm_label",
     )
@@ -558,6 +560,7 @@ def _render_editor(request, event, *, values=None, errors=None, session_values=N
             "timezones": _timezones(session_values.get("timezone")),
             "api_path": f"/api/v1/events/{event.slug}",
             "cover": event.cover_image,
+            "card": event.card_image,
             "cover_max_mb": covers.MAX_UPLOAD_BYTES // (1024 * 1024),
             "cover_max_side": covers.MAX_DIMENSION,
             "default_register_label": DEFAULT_REGISTER_LABEL,
@@ -569,33 +572,40 @@ def _render_editor(request, event, *, values=None, errors=None, session_values=N
 
 @studio_view(perm="webinars.view_event", write_perm="webinars.change_event")
 def event_edit(request, pk):
-    event = get_object_or_404(Event.objects.select_related("form_version", "cover_image"), pk=pk)
+    event = get_object_or_404(Event.objects.select_related("form_version", "cover_image", "card_image"), pk=pk)
     if request.method == "GET":
         return _render_editor(request, event)
     values = _event_values_from_post(request.POST, event)
-    upload = request.FILES.get("cover_upload")
-    remove_cover = "remove_cover" in request.POST
-    cover_error = None
-    if getattr(request, "upload_too_large", False):
-        cover_error = f"Images must be {covers.MAX_UPLOAD_BYTES // (1024 * 1024)} MB or smaller."
-    elif upload and values["hero_image_url"].strip():
-        cover_error = "Choose one: upload an image or paste an image URL. Clear the URL to use the upload."
-    elif upload and remove_cover:
-        cover_error = "Choose one: upload a new image or remove the current one."
-    if cover_error:
-        return _render_editor(request, event, values=values, errors={"cover_upload": [cover_error]}, status=400)
+    # The cover and the card image follow the same rules, each with its own upload, URL and remove box.
+    slots = (("cover_upload", "remove_cover", "hero_image_url"), ("card_upload", "remove_card", "card_image_url"))
+    too_large = getattr(request, "upload_too_large_field", "cover_upload") if getattr(request, "upload_too_large", False) else ""
+    for upload_name, remove_name, url_name in slots:
+        upload = request.FILES.get(upload_name)
+        error = None
+        if too_large == upload_name:
+            error = f"Images must be {covers.MAX_UPLOAD_BYTES // (1024 * 1024)} MB or smaller."
+        elif upload and values[url_name].strip():
+            error = "Choose one: upload an image or paste an image URL. Clear the URL to use the upload."
+        elif upload and remove_name in request.POST:
+            error = "Choose one: upload a new image or remove the current one."
+        if error:
+            return _render_editor(request, event, values=values, errors={upload_name: [error]}, status=400)
     try:
-        # One transaction: a cover row is only kept if the event save that uses it succeeds.
+        # One transaction: an image row is only kept if the event save that uses it succeeds.
         with transaction.atomic():
-            cover = services.UNCHANGED
-            if upload:
-                try:
-                    cover = covers.create_cover(upload, user=request.user)
-                except ValidationError as exc:
-                    raise ValidationError({"cover_upload": exc.messages})
-            elif remove_cover:
-                cover = None
-            event, changed = services.save_event(values, user=request.user, instance=event, cover=cover)
+            images = {}
+            for upload_name, remove_name, _url in slots:
+                upload = request.FILES.get(upload_name)
+                images[upload_name] = services.UNCHANGED
+                if upload:
+                    try:
+                        images[upload_name] = covers.create_cover(upload, user=request.user)
+                    except ValidationError as exc:
+                        raise ValidationError({upload_name: exc.messages})
+                elif remove_name in request.POST:
+                    images[upload_name] = None
+            event, changed = services.save_event(values, user=request.user, instance=event,
+                                                 cover=images["cover_upload"], card=images["card_upload"])
     except ValidationError as exc:
         return _render_editor(request, event, values=values, errors=_errors(exc), status=400)
     if changed:

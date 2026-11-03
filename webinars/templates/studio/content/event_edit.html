@@ -42,6 +42,24 @@
           {% endif %}
           {% include "studio/content/_field.html" with name="hero_image_url" label="…or an image URL" kind="url" value=values.hero_image_url error=errors.hero_image_url readonly=readonly optional=True help="An https:// image at least 1600px wide. Use either an upload or a URL, not both." %}
         </fieldset>
+        <fieldset class="fieldset" style="margin-top:var(--s-4)" id="id_card_upload-group">
+          <legend>Card image <span class="optional muted small">(optional)</span></legend>
+          <p class="help">A second, smaller picture for listings such as an events index. Made for a 4:3 shape; the cover stays the wide image on the event page and in link previews.</p>
+          {% if card %}
+            <p class="help">Current upload ({{ card.width }}×{{ card.height }}):</p>
+            <img src="{{ card.path }}" alt="Current card image" style="max-width:100%;max-height:200px;border-radius:var(--r-md)">
+            {% if not readonly %}<label class="choice"><input type="checkbox" name="remove_card"> Remove the uploaded image</label>{% endif %}
+          {% endif %}
+          {% if not readonly %}
+            <div class="field">
+              <label class="label" for="id_card_upload">Upload a card image</label>
+              <p class="help" id="id_card_upload-help">PNG, JPEG or WebP, up to {{ cover_max_mb }} MB and {{ cover_max_side }}px per side. SVG isn't accepted. Images are re-encoded and their metadata (such as location) is removed.</p>
+              <input class="input" type="file" id="id_card_upload" name="card_upload" accept="image/png,image/jpeg,image/webp" aria-describedby="id_card_upload-help{% if errors.card_upload %} id_card_upload-error{% endif %}"{% if errors.card_upload %} aria-invalid="true"{% endif %}>
+              {% if errors.card_upload %}<p class="field-error" id="id_card_upload-error">{{ errors.card_upload|join:" " }}</p>{% endif %}
+            </div>
+          {% endif %}
+          {% include "studio/content/_field.html" with name="card_image_url" label="…or an image URL" kind="url" value=values.card_image_url error=errors.card_image_url readonly=readonly optional=True help="An https:// image, 4:3, at least 1200px wide. Use either an upload or a URL, not both." %}
+        </fieldset>
       </div>
     </section>
 

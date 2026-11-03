@@ -6,7 +6,7 @@ Full install of VisionCast (web + worker + PostgreSQL under Docker Compose, ngin
 the host, encrypted backups, retention cron) on one DigitalOcean droplet (Ubuntu 24.04, 2 GB) behind
 Cloudflare (proxied DNS, Access in front of the studio and admin). This tooling installed
 events.growthcast.app on 0.3.0-pre (2026-10-28) and has upgraded it in place since; the live install
-runs 0.4.7-pre. Each run is recorded in [docs/validation.md](../../docs/validation.md).
+runs 0.4.8-pre. Each run is recorded in [docs/validation.md](../../docs/validation.md).
 
 | File | Runs where | Purpose |
 |---|---|---|

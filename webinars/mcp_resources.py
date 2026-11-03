@@ -38,7 +38,8 @@ webinar://guides/implementation-guide for the end-to-end website rollout.
    read-only over MCP: change them in the deployment environment and restart web+worker.
 2. Forms: read webinar://docs/field-dictionary, then create_form_version with canonical keys.
 3. Catalogue: create_host / create_topic (tags) / update_host / update_topic.
-4. Event: create_event (draft, AIDA copy), set_event_cta, set_event_cover or heroImageUrl.
+4. Event: create_event (draft, AIDA copy), set_event_cta, set_event_cover or heroImageUrl; the
+   listing card image (4:3) is separate: set_event_cover slot=card, or cardImageUrl.
 5. Schedule: schedule_session, or create_series + schedule_recurring_sessions (explicit starts,
    never RRULE expansion). Join links are write-only. With a hosting account marked
    autoProvision (step 13), each new session gets its provider session and lobby link
