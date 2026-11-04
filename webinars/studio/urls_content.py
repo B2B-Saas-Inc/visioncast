@@ -8,6 +8,7 @@ urlpatterns = [
     path("login/", v.login_view, name="login"),
     path("logout/", v.logout_view, name="logout"),
     path("", v.dashboard, name="dashboard"),
+    path("setup-checklist/", v.dashboard_checklist, name="dashboard-checklist"),
     path("events/", v.events, name="events"),
     path("events/new/", v.event_new, name="event-new"),
     path("events/<uuid:pk>/", v.event_edit, name="event-edit"),

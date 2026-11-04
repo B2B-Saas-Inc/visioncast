@@ -2,6 +2,11 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Dashboard setup checklist: hide, and dismissed when done — 2026-11-04
+
+- New `StudioPreference` (migration `0017_studio_preference`, one row per user). The dashboard checklist gets a Hide button (per user, with a "Show it" line while steps remain), and disappears on its own once every step is done, saying so once.
+- `tests/test_studio_setup_checklist.py` (3 tests: hide and show per user, only hide or show by POST, dismissed and noted once on completion). Full suite: 2,557 passed, 1 skipped, lint clean, `makemigrations --check` clean.
+
 ## Live server: the brand logo is the tab icon — 2026-11-04
 
 - Every page the live service serves (room, sign-in, `/admin`, link-not-available) links its tab icon to `/brand/icon`: the brand logo once one is set, else the built-in mark. Before, only the room swapped it client-side and the other pages always showed the VisionCast mark. `/admin` shows the brand logo in its header too.

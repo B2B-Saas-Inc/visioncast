@@ -1079,3 +1079,18 @@ class StudioBrand(models.Model):
     font = models.BinaryField(null=True, blank=True)
     font_version = models.CharField(max_length=16, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class StudioPreference(models.Model):
+    """What one studio user has chosen about their own pages. Made the first time they choose
+    something; nothing here changes what anyone else sees."""
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="studio_preference")
+    # The dashboard's setup checklist, hidden by hand. It also goes once every step is done.
+    setup_checklist_hidden = models.BooleanField(default=False)
+    # When this user first saw every step done, so the checklist is dismissed once, with a note.
+    setup_checklist_completed_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Preferences of {self.user_id}"

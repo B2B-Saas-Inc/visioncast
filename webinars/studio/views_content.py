@@ -29,10 +29,10 @@ from webinars.admin import HostForm
 from webinars.audit import audit
 from webinars.forms_schema import CUSTOM_TYPES, DEFAULT_LABELS, public_schema, rows_for
 from webinars.models import (
-    DEFAULT_CONFIRM_LABEL,
-    DEFAULT_REGISTER_LABEL,
     ApiKey,
     CheckIn,
+    DEFAULT_CONFIRM_LABEL,
+    DEFAULT_REGISTER_LABEL,
     Destination,
     Event,
     FormVersion,
@@ -41,6 +41,7 @@ from webinars.models import (
     Occurrence,
     OutboxMessage,
     Registration,
+    StudioPreference,
     Topic,
 )
 from webinars.normalization import CANONICAL_FIELDS, CUSTOM_PREFIX
@@ -281,6 +282,7 @@ def dashboard(request):
         },
     ]
     done = sum(1 for s in steps if s["done"])
+    checklist = _checklist_state(request, done == len(steps))
     upcoming = list(
         Occurrence.objects.select_related("event")
         .filter(status=Occurrence.Status.SCHEDULED, ends_at__gt=now)
@@ -304,11 +306,40 @@ def dashboard(request):
             "steps": steps,
             "steps_done": done,
             "steps_total": len(steps),
+            "checklist": checklist,
             "upcoming": upcoming,
             "stats": stats,
             "can_add_event": can(user, "webinars.add_event"),
         },
     )
+
+
+def _checklist_state(request, complete):
+    """Whether the dashboard shows its setup checklist for this user: not once they've hidden it, and
+    not once every step is done. The first time it's done, that's noted once."""
+    pref = StudioPreference.objects.filter(user=request.user).first()
+    if complete:
+        if pref is None or pref.setup_checklist_completed_at is None:
+            pref = pref or StudioPreference(user=request.user)
+            pref.setup_checklist_completed_at = timezone.now()
+            pref.save()
+            messages.success(request, "Setup complete. The checklist has been dismissed.")
+        return {"shown": False, "hidden": False, "complete": True}
+    hidden = bool(pref and pref.setup_checklist_hidden)
+    return {"shown": not hidden, "hidden": hidden, "complete": False}
+
+
+@studio_view(methods=("POST",))
+def dashboard_checklist(request):
+    """Hides the setup checklist for the signed-in user, or shows it again (``action`` = hide | show)."""
+    action = request.POST.get("action", "")
+    if action not in ("hide", "show"):
+        return forbidden(request, "That action isn't available here.")
+    pref, _ = StudioPreference.objects.get_or_create(user=request.user)
+    pref.setup_checklist_hidden = action == "hide"
+    pref.save(update_fields=["setup_checklist_hidden", "updated_at"])
+    messages.success(request, "Setup checklist hidden. You can show it again from the dashboard." if action == "hide" else "Setup checklist shown.")
+    return redirect("studio:dashboard")
 
 
 # ---------------------------------------------------------------------------

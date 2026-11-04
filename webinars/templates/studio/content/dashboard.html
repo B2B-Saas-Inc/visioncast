@@ -21,7 +21,14 @@
   </div></div>
 </div>
 
-<div class="layout-split">
+{% if checklist.hidden %}
+  <form method="post" action="{% url 'studio:dashboard-checklist' %}" class="small muted" style="margin:calc(-1 * var(--s-4)) 0 var(--s-5)">
+    {% csrf_token %}<input type="hidden" name="action" value="show">
+    Setup checklist hidden ({{ steps_done }} of {{ steps_total }} done). <button class="link-button" type="submit">Show it</button>
+  </form>
+{% endif %}
+
+<div class="{% if checklist.shown %}layout-split{% endif %}">
   <section class="panel" aria-labelledby="upcoming-title">
     <div class="panel-head"><h2 id="upcoming-title">Upcoming sessions</h2></div>
     {% if upcoming %}
@@ -50,8 +57,18 @@
     {% endif %}
   </section>
 
+  {% if checklist.shown %}
   <aside class="panel" aria-labelledby="setup-title">
-    <div class="panel-head"><h2 id="setup-title">Setup checklist</h2><span class="badge badge-plain">{{ steps_done }} of {{ steps_total }}</span></div>
+    <div class="panel-head">
+      <h2 id="setup-title">Setup checklist</h2>
+      <div style="display:flex;align-items:center;gap:var(--s-2)">
+        <span class="badge badge-plain">{{ steps_done }} of {{ steps_total }}</span>
+        <form method="post" action="{% url 'studio:dashboard-checklist' %}">
+          {% csrf_token %}<input type="hidden" name="action" value="hide">
+          <button class="btn btn-ghost btn-sm" type="submit" aria-label="Hide the setup checklist">Hide</button>
+        </form>
+      </div>
+    </div>
     <div class="panel-body">
       <ol class="steps">
         {% for step in steps %}
@@ -65,5 +82,6 @@
       </ol>
     </div>
   </aside>
+  {% endif %}
 </div>
 {% endblock %}
