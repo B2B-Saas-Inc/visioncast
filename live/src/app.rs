@@ -175,6 +175,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/join/{ticket}/local/{id}", get(studio::local_download))
         .route("/program/{ticket}", get(program_page))
         .route("/brand/logo", get(broadcast::get_logo))
+        .route("/brand/icon", get(broadcast::get_icon))
         .route("/brand/font", get(broadcast::get_font))
         .route("/assets/stage.js", get(|| asset("text/javascript; charset=utf-8", include_str!("../assets/stage.js"))))
         .route("/assets/room.js", get(|| asset("text/javascript; charset=utf-8", include_str!("../assets/room.js"))))

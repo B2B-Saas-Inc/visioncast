@@ -899,10 +899,15 @@ async fn the_brand_reaches_every_room_and_a_session_can_override_it() {
     };
     assert_eq!(put(&c, b"<svg onload=x>").await, StatusCode::UNSUPPORTED_MEDIA_TYPE);
     assert_eq!(c.fetch("/brand/logo").await.0, StatusCode::NOT_FOUND);
+    // Until a logo is set, every page's tab icon is the built-in mark.
+    let (status, headers, _) = c.fetch("/brand/icon").await;
+    assert_eq!((status, headers[header::CONTENT_TYPE].to_str().unwrap()), (StatusCode::OK, "image/svg+xml"));
     let big = [PNG, &vec![0u8; 500 * 1024]].concat();
     assert_eq!(put(&c, &big).await, StatusCode::OK, "a real logo is bigger than an API body");
     let (status, headers, _) = c.fetch("/brand/logo").await;
     assert_eq!((status, headers[header::CONTENT_TYPE].to_str().unwrap()), (StatusCode::OK, "image/png"));
+    let (status, headers, _) = c.fetch("/brand/icon").await;
+    assert_eq!((status, headers[header::CONTENT_TYPE].to_str().unwrap()), (StatusCode::OK, "image/png"), "the logo becomes the tab icon too");
     assert_eq!(c.snapshot(&attendee, "x").await["state"]["brand"]["logo"], true);
     // A session's own colour sits alongside the brand; only the crew that runs the show can set it.
     let own = json!({"type":"set_theme","theme":{"accent":"#ff0000"}});

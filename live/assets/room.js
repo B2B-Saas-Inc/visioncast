@@ -364,8 +364,6 @@
     var logo = $("bar-logo");
     var wanted = t.logo || "/assets/mark.svg";
     if (logo.getAttribute("src") !== wanted) { logo.src = wanted; }
-    var icon = document.querySelector('link[rel="icon"]');
-    if (icon && icon.getAttribute("href") !== wanted) { icon.setAttribute("href", wanted); icon.setAttribute("type", t.logo ? "image/png" : "image/svg+xml"); }
   }
 
   // ---- LiveKit

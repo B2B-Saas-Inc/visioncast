@@ -684,3 +684,11 @@ pub async fn get_logo(State(app): State<Arc<AppState>>) -> Response {
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }
+
+/// The tab icon every page links: the brand's logo once one is set, else the built-in mark.
+pub async fn get_icon(State(app): State<Arc<AppState>>) -> Response {
+    match tokio::fs::read(logo_path(&app)).await {
+        Ok(bytes) => ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "public, max-age=60")], bytes).into_response(),
+        Err(_) => ([(header::CONTENT_TYPE, "image/svg+xml"), (header::CACHE_CONTROL, "public, max-age=60")], include_str!("../assets/mark.svg")).into_response(),
+    }
+}

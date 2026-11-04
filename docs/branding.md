@@ -46,7 +46,7 @@ Your public website is your own: it uses the API and doesn't carry any VisionCas
 
 **Rules.** Any colour works. On a light one, button text turns dark and links, eyebrows and badges use a deeper shade that reads on white, so a coral like `#ff6b4a` looks the way it does on a brand site. A font is one WOFF2, WOFF, TTF or OTF file of at most 2 MB, used for all text; a variable font covers every weight. Logos are PNGs of at most 2 MB. The studio decodes them and rebuilds them from their pixels. The live server checks their first bytes and serves them as images, under a strict policy. Fonts are checked by their first bytes. SVG isn't accepted anywhere, because it can run script.
 
-**What still says VisionCast.** With no name set, the studio does. So do code, documentation, image names and the `/developers` address. Nothing an attendee sees says it once you've set your logo: until then, the room's header and browser tab show the default mark.
+**What still says VisionCast.** With no name set, the studio does. So do code, documentation, image names and the `/developers` address. Nothing an attendee sees says it once you've set your logo: until then, the room's header and the browser tab of every page on the live server show the default mark. The tab icon is `/brand/icon` on the live server: the logo once one is set, else that mark.
 
 ## Backups and upgrades
 

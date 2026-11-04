@@ -2,6 +2,11 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Live server: the brand logo is the tab icon — 2026-11-04
+
+- Every page the live service serves (room, sign-in, `/admin`, link-not-available) links its tab icon to `/brand/icon`: the brand logo once one is set, else the built-in mark. Before, only the room swapped it client-side and the other pages always showed the VisionCast mark. `/admin` shows the brand logo in its header too.
+- `live/tests/http.rs` brand test asserts the icon before and after a logo upload. Live suite: 72 HTTP tests and 18 unit tests pass, clippy clean on the touched files. The deployment at live.growthcast.app needs `deploy/live/update.sh v0.4.9-pre` and the GrowthCast mark uploaded as the studio's brand logo.
+
 ## Card image: a second picture for listings — 2026-11-03
 
 - `Event.card_image_url` and `Event.card_image` (migration `0016_event_card_image`), kept apart from the cover so each is made for its own shape (the cover wide for the event page and link previews, the card 4:3 for an events index). Same rules as the cover: an upload or a URL, never both. Studio editor gets a "Card image" fieldset with its own upload, URL and remove box; public API and webhooks carry `cardImageUrl`; management API `cardImageUrl`/`cardImageId`; MCP `set_event_cover slot=card`; `sdk/kits/headless/webinar-events.mjs` reads it.
