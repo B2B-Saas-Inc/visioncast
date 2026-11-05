@@ -1,6 +1,6 @@
-# Cloudflare configuration for events.growthcast.app
+# Cloudflare configuration for the studio host
 
-Manual steps (dashboard) with `curl` equivalents for the owner of the `growthcast.app` zone.
+Manual steps (dashboard) with `curl` equivalents for the owner of the zone. `events.example.com` stands for the studio host below; substitute your own.
 Nothing here is automated by the scripts in this directory. Keep an API token in the
 `CF_API_TOKEN` environment variable for the `curl` calls (never on a command line); it needs
 `Zone:DNS:Edit`, `Zone:Zone Settings:Edit`, `Zone:Cache Rules:Edit`, `Zone:WAF:Edit` and, for
@@ -8,7 +8,7 @@ Access, `Access: Apps and Policies:Edit` on the account. `ZONE_ID` is the zone i
 zone overview page.
 
 Order: **1 → 2 (DNS only) → bootstrap.sh obtains the certificate → 2 (proxied) → 3 → 4 → 5 → 6 → 7**,
-then `deploy/production/verify.sh --domain events.growthcast.app --expect-access`.
+then `deploy/production/verify.sh --domain events.example.com --expect-access`.
 
 The origin (`bootstrap.sh`) assumes this setup: it restores the visitor address from
 `CF-Connecting-IP` only for Cloudflare's published ranges and returns **404 for `/admin/` and
@@ -22,7 +22,7 @@ talking to the droplet directly. Keep the proxy (orange cloud) on once the certi
 | SSL/TLS → Overview → encryption mode | **Full (strict)** | Cloudflare validates the Let's Encrypt certificate on the origin; "Flexible" would send plain HTTP to the origin and break `DJANGO_TRUST_X_FORWARDED_PROTO`. |
 | SSL/TLS → Edge Certificates → Always Use HTTPS | **On** (after the first certificate, see section 2) | HTTP → HTTPS at the edge; nginx also redirects. |
 | SSL/TLS → Edge Certificates → Minimum TLS Version | TLS 1.2 | Matches the origin. |
-| SSL/TLS → Edge Certificates → HSTS | leave **off** at the edge | Django already sends `Strict-Transport-Security: max-age=31536000` (`DJANGO_HSTS_SECONDS`). Enabling it at Cloudflare too is harmless; enabling `includeSubDomains`/preload is NOT (it would affect `growthcast.app`). |
+| SSL/TLS → Edge Certificates → HSTS | leave **off** at the edge | Django already sends `Strict-Transport-Security: max-age=31536000` (`DJANGO_HSTS_SECONDS`). Enabling it at Cloudflare too is harmless; enabling `includeSubDomains`/preload is NOT (it would affect `example.com`). |
 | Network → WebSockets | off | Not used. |
 | Speed → Optimization → Rocket Loader, Auto Minify, Mirage, Email Obfuscation | **off** | They rewrite HTML/JS; the studio and the GTM script must be served byte-for-byte. |
 | Scrape Shield → Email Address Obfuscation | off | Same reason. |
@@ -46,12 +46,12 @@ Create `A events → <droplet IPv4>` (from `provision.sh`). Two ways to get the 
 Let's Encrypt certificate with HTTP-01:
 
 **A. DNS only first (recommended, deterministic).** Create the record with the proxy **off**
-(grey cloud), wait until `dig +short events.growthcast.app` returns the droplet address, run
+(grey cloud), wait until `dig +short events.example.com` returns the droplet address, run
 `bootstrap.sh` (certbot talks to Let's Encrypt directly through port 80), then switch the record
 to **Proxied** and turn on "Always Use HTTPS".
 
 **B. Proxied from the start.** Works only while "Always Use HTTPS" is **off** and the SSL mode
-is Full (strict): Let's Encrypt reaches `http://events.growthcast.app/.well-known/acme-challenge/…`
+is Full (strict): Let's Encrypt reaches `http://events.example.com/.well-known/acme-challenge/…`
 through Cloudflare, which forwards it to the origin's port 80. If the redirect is already on,
 Cloudflare answers 301 → https → origin has no certificate yet → validation fails. Turn the
 redirect on after the certificate exists. Renewals (every 60 days, certbot's systemd timer)
@@ -61,7 +61,7 @@ blocks serve the challenge path.
 ```sh
 curl -sS -X POST "$API/zones/$ZONE_ID/dns_records" "${H[@]}" \
   --data '{"type":"A","name":"events","content":"<droplet IPv4>","ttl":1,"proxied":false,"comment":"visioncast-events droplet"}'
-# later, to proxy it (RECORD_ID from the response above or GET .../dns_records?name=events.growthcast.app):
+# later, to proxy it (RECORD_ID from the response above or GET .../dns_records?name=events.example.com):
 curl -sS -X PATCH "$API/zones/$ZONE_ID/dns_records/$RECORD_ID" "${H[@]}" --data '{"proxied":true}'
 ```
 
@@ -75,7 +75,7 @@ Zero Trust → Access → Applications → **Add an application → Self-hosted*
 |---|---|
 | Application name | VisionCast studio and admin |
 | Session duration | 24 hours (studio sessions themselves expire after 8 hours of Django session age) |
-| Application domain | `events.growthcast.app` path `admin` **and** a second domain entry `events.growthcast.app` path `studio` (one application, two public hostnames/paths; Access matches the path prefix, so `/admin/*` and `/studio/*` are covered) |
+| Application domain | `events.example.com` path `admin` **and** a second domain entry `events.example.com` path `studio` (one application, two public hostnames/paths; Access matches the path prefix, so `/admin/*` and `/studio/*` are covered) |
 | Identity providers | One-time PIN (built in; sends a code to the e-mail) and/or Google (Zero Trust → Settings → Authentication → Login methods → Google, with the GrowthCast Workspace client id/secret) |
 | Policy "Owner" | Action **Allow**; Include → **Emails** → the owner's address (and each marketer who gets a studio account). With Google as the only login method and "Require" → Login method → Google, the Google account's own MFA applies. |
 | Policy "Everyone else" | not needed: Access denies by default |
@@ -101,10 +101,10 @@ API (replace `$ACCOUNT_ID`):
 ```sh
 curl -sS -X POST "$API/accounts/$ACCOUNT_ID/access/apps" "${H[@]}" --data '{
   "name": "VisionCast studio and admin", "type": "self_hosted",
-  "self_hosted_domains": ["events.growthcast.app/admin", "events.growthcast.app/studio"],
+  "self_hosted_domains": ["events.example.com/admin", "events.example.com/studio"],
   "session_duration": "24h", "http_only_cookie_attribute": true, "enable_binding_cookie": true,
   "app_launcher_visible": false,
-  "policies": [{"name": "Owner", "decision": "allow", "include": [{"email": {"email": "owner@growthcast.app"}}]}]
+  "policies": [{"name": "Owner", "decision": "allow", "include": [{"email": {"email": "owner@example.com"}}]}]
 }'
 ```
 
@@ -114,7 +114,7 @@ Security → WAF → Rate limiting rules. These mirror the nginx zones in
 `nginx-site.conf.tmpl` (which stay in place as the second layer). Counting by IP; period 10 s
 (the only period on the Free plan); action **Block** for the duration shown.
 
-| # | Name | Expression (`http.host eq "events.growthcast.app" and …`) | Requests / 10 s per IP | Block for |
+| # | Name | Expression (`http.host eq "events.example.com" and …`) | Requests / 10 s per IP | Block for |
 |---|---|---|---|---|
 | 1 | registrations and reset | `(http.request.uri.path in {"/webinar-api/registrations" "/webinar-api/reset"} and http.request.method eq "POST")` | 10 | 1 min |
 | 2 | profile lookups | `(http.request.uri.path in {"/webinar-api/profile" "/webinar-api/my-registration" "/webinar-api/calendar.ics"})` | 30 | 1 min |
@@ -134,7 +134,7 @@ webhook out of it (Stripe retries, and nginx keeps its own generous zone). The
 curl -sS -X PUT "$API/zones/$ZONE_ID/rulesets/phases/http_ratelimit/entrypoint" "${H[@]}" --data '{
   "rules": [{
     "description": "visioncast visitor endpoints",
-    "expression": "(http.host eq \"events.growthcast.app\") and (starts_with(http.request.uri.path, \"/w/\") or http.request.uri.path in {\"/webinar-api/registrations\" \"/webinar-api/reset\" \"/webinar-api/profile\" \"/webinar-api/my-registration\" \"/webinar-api/calendar.ics\" \"/studio/login/\" \"/admin/login/\" \"/mcp\"})",
+    "expression": "(http.host eq \"events.example.com\") and (starts_with(http.request.uri.path, \"/w/\") or http.request.uri.path in {\"/webinar-api/registrations\" \"/webinar-api/reset\" \"/webinar-api/profile\" \"/webinar-api/my-registration\" \"/webinar-api/calendar.ics\" \"/studio/login/\" \"/admin/login/\" \"/mcp\"})",
     "action": "block",
     "ratelimit": {"characteristics": ["ip.src", "cf.colo.id"], "period": 10, "requests_per_period": 20, "mitigation_timeout": 60}
   }]
@@ -151,7 +151,7 @@ Caching → Cache Rules → create one rule **"visioncast bypass"**, action **By
 expression:
 
 ```
-(http.host eq "events.growthcast.app" and (
+(http.host eq "events.example.com" and (
   starts_with(http.request.uri.path, "/webinar-api/") or
   starts_with(http.request.uri.path, "/w/") or
   starts_with(http.request.uri.path, "/studio/") or
@@ -170,7 +170,7 @@ is optional.
 ```sh
 curl -sS -X PUT "$API/zones/$ZONE_ID/rulesets/phases/http_request_cache_settings/entrypoint" "${H[@]}" --data '{
   "rules": [{"description": "visioncast bypass", "action": "set_cache_settings", "action_parameters": {"cache": false},
-             "expression": "(http.host eq \"events.growthcast.app\" and (starts_with(http.request.uri.path, \"/webinar-api/\") or starts_with(http.request.uri.path, \"/w/\") or starts_with(http.request.uri.path, \"/studio/\") or starts_with(http.request.uri.path, \"/admin/\") or starts_with(http.request.uri.path, \"/api/\") or http.request.uri.path eq \"/mcp\" or http.request.uri.path eq \"/healthz\"))"}]
+             "expression": "(http.host eq \"events.example.com\" and (starts_with(http.request.uri.path, \"/webinar-api/\") or starts_with(http.request.uri.path, \"/w/\") or starts_with(http.request.uri.path, \"/studio/\") or starts_with(http.request.uri.path, \"/admin/\") or starts_with(http.request.uri.path, \"/api/\") or http.request.uri.path eq \"/mcp\" or http.request.uri.path eq \"/healthz\"))"}]
 }'
 ```
 
@@ -191,8 +191,8 @@ announces new ranges before the next run, `sudo /srv/visioncast/app/current/depl
 
 With the record permanently proxied, a Cloudflare **Origin CA** certificate (15 years, trusted
 only by Cloudflare) avoids ACME entirely: SSL/TLS → Origin Server → Create Certificate
-(RSA, hostname `events.growthcast.app`), save the certificate as
-`/etc/letsencrypt/live/events.growthcast.app/fullchain.pem` and the key as
+(RSA, hostname `events.example.com`), save the certificate as
+`/etc/letsencrypt/live/events.example.com/fullchain.pem` and the key as
 `privkey.pem` (mode 600) on the droplet, then
 `bootstrap.sh --steps nginx,status` (certbot step skipped because the files exist). Downsides:
 `verify.sh --origin <ip>` and any direct-to-origin curl then fail TLS verification (expected),

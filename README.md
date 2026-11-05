@@ -11,9 +11,9 @@
 [![Release](https://img.shields.io/github/v/release/B2B-Saas-Inc/visioncast?include_prereleases&label=release)](https://github.com/B2B-Saas-Inc/visioncast/releases)
 [![Status: pre-release](https://img.shields.io/badge/status-pre%20release-orange)](docs/remaining-gaps.md)
 
-[See it live](https://growthcast.app/events) · [Quick start](#quick-start) · [Implementation guide](docs/implementation-guide.md) · [Releases](https://github.com/B2B-Saas-Inc/visioncast/releases)
+[Quick start](#quick-start) · [Implementation guide](docs/implementation-guide.md) · [Releases](https://github.com/B2B-Saas-Inc/visioncast/releases)
 
-> **Pre-release.** VisionCast runs in production at growthcast.app, but it isn't certified for general production use yet. Read [Status](#status) before you depend on it.
+> **Pre-release.** VisionCast runs in production for its first customer, but it isn't certified for general production use yet. Read [Status](#status) before you depend on it.
 
 ## Why VisionCast
 
@@ -156,7 +156,7 @@ deploy/upgrade.sh --image ghcr.io/b2b-saas-inc/visioncast:0.4.10-pre   # first r
 
 ## Deploy to production
 
-On any provider, the simplest route is [`deploy/quickstart/install.sh`](deploy/quickstart/install.sh): see [docs/branding.md](docs/branding.md), and [choosing a provider](live/README.md#choosing-a-provider). What follows is how GrowthCast runs it, on DigitalOcean and Cloudflare, and it's specific to those: [`deploy/production/`](deploy/production/README.md) takes a fresh droplet to a working install: Docker Compose, nginx with Let's Encrypt, Cloudflare in front, nightly encrypted backups, retention, and a PASS/FAIL verifier. It's the tooling behind events.growthcast.app.
+On any provider, the simplest route is [`deploy/quickstart/install.sh`](deploy/quickstart/install.sh): see [docs/branding.md](docs/branding.md), and [choosing a provider](live/README.md#choosing-a-provider). What follows is how GrowthCast runs it, on DigitalOcean and Cloudflare, and it's specific to those: [`deploy/production/`](deploy/production/README.md) takes a fresh droplet to a working install: Docker Compose, nginx with Let's Encrypt, Cloudflare in front, nightly encrypted backups, retention, and a PASS/FAIL verifier. It's the tooling behind the production studio.
 
 ```sh
 deploy/production/provision.sh --apply                      # creates the droplet (dry run without --apply)
@@ -254,7 +254,7 @@ VisionCast is a pre-release. Here is exactly where it stands on **0.4.10-pre** (
 * A real-browser walkthrough of the studio passes 13 of 13 steps, plus browser suites for the form script, Google Tag Manager tag and Riverside flow.
 * An end-to-end acceptance test covers create, provision, register, pay, check in, record attendance and deliver.
 * Images build for amd64 and arm64 and publish to GHCR on every tag; backup, restore, in-place upgrade and rollback have been rehearsed.
-* VisionCast runs in production at [events.growthcast.app](https://events.growthcast.app/healthz) behind Cloudflare, serving [growthcast.app/events](https://growthcast.app/events), upgraded in place since its first install on 0.3.0-pre. Its email goes through PostHog transactional email, and real sends were delivered.
+* VisionCast runs in production behind Cloudflare, serving the events pages of a public marketing site, upgraded in place since its first install on 0.3.0-pre. Its email goes through PostHog transactional email, and real sends were delivered.
 
 **The live add-on** (released in 0.4.0-pre), on a real stack on one machine:
 
@@ -266,8 +266,8 @@ VisionCast is a pre-release. Here is exactly where it stands on **0.4.10-pre** (
 
 **Not yet proven**
 
-* Native integrations, Stripe and hosting providers have only been tested against mocked vendor APIs. Each needs a live sandbox run before you rely on it. LiveKit is the exception: it runs on a public server at live.growthcast.app, where video went through TURN over TLS on port 443 with nothing else allowed. It hasn't yet run a real session with people on phones, on Safari with a camera, or to a real streaming platform.
-* One website kit runs on a real production site: growthcast.app (Astro 7 on Vercel, https behind Vercel's CDN, the proxy as a Vercel route handler, the vendored form script) serves the events pages from the studio. The WordPress, Next, SvelteKit, Nuxt, static and CMS kits were installed fresh in Docker only.
+* Native integrations, Stripe and hosting providers have only been tested against mocked vendor APIs. Each needs a live sandbox run before you rely on it. LiveKit is the exception: it runs on a public server, where video went through TURN over TLS on port 443 with nothing else allowed. It hasn't yet run a real session with people on phones, on Safari with a camera, or to a real streaming platform.
+* One website kit runs on a real production site (Astro 7 on Vercel, https behind Vercel's CDN, the proxy as a Vercel route handler, the vendored form script) serves the events pages from the studio. The WordPress, Next, SvelteKit, Nuxt, static and CMS kits were installed fresh in Docker only.
 * Nobody independent has run a security audit. The core app has had no load test. The live add-on has had an adversarial code review, a repeatable attack suite and a load test, all on one machine ([docs/validation.md](docs/validation.md)).
 
 ## Development

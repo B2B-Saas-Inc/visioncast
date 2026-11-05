@@ -1,11 +1,11 @@
-# Production deployment: events.growthcast.app
+# Production deployment: one droplet behind Cloudflare
 
-This is how GrowthCast runs VisionCast, and it's specific to DigitalOcean and Cloudflare. On any other provider, use [deploy/quickstart](../quickstart/install.sh) and [docs/branding.md](../../docs/branding.md).
+This is how the first owner runs VisionCast, and it's specific to DigitalOcean and Cloudflare. On any other provider, use [deploy/quickstart](../quickstart/install.sh) and [docs/branding.md](../../docs/branding.md).
 
 Full install of VisionCast (web + worker + PostgreSQL under Docker Compose, nginx + Let's Encrypt on
 the host, encrypted backups, retention cron) on one DigitalOcean droplet (Ubuntu 24.04, 2 GB) behind
 Cloudflare (proxied DNS, Access in front of the studio and admin). This tooling installed
-events.growthcast.app on 0.3.0-pre (2026-10-28) and has upgraded it in place since; the live install
+that owner's studio on 0.3.0-pre (2026-10-28) and has upgraded it in place since; the live install
 runs 0.4.8-pre. Each run is recorded in [docs/validation.md](../../docs/validation.md).
 
 | File | Runs where | Purpose |
@@ -26,7 +26,7 @@ runs 0.4.8-pre. Each run is recorded in [docs/validation.md](../../docs/validati
 
 1. **DigitalOcean**: `doctl` authenticated (`doctl auth init`), SSH key id `60221334` present in
    the account (it is), the private key for it on the workstation.
-2. **Cloudflare**: admin access to the `growthcast.app` zone and to Zero Trust (Access, free up
+2. **Cloudflare**: admin access to the zone and to Zero Trust (Access, free up
    to 50 users); optionally an API token for the `curl` calls in `cloudflare.md`.
 3. **age recipient** for backup encryption: `age-keygen -o ~/visioncast-backups.key` on the
    workstation; the public key (`age1…`, printed as "Public key:") goes to the droplet, the
@@ -67,7 +67,7 @@ deploy/production/provision.sh --apply               # creates visioncast-events
 ssh root@<IP> cloud-init status --wait               # "done" after a few minutes (Docker, nginx, certbot, ufw, swap)
 
 # 1. Cloudflare DNS: A events -> <IP>, proxy OFF for now (cloudflare.md section 2, variant A).
-dig +short events.growthcast.app                     # must print <IP> before the next step
+dig +short events.example.com                     # must print <IP> before the next step
 
 # 2. Secrets the operator places on the droplet (values never typed on a command line):
 ssh root@<IP> 'umask 077; cat > /root/visioncast-secrets/smtp-password'   < ~/path/to/relay-password.txt
@@ -79,11 +79,11 @@ deploy/production/update.sh --host <IP> --tarball dist/visioncast-0.3.0.tar --up
 
 # 4. Bootstrap (dry run first, then apply). Parameters are environment variables or flags;
 #    they are saved on the droplet in /srv/visioncast/bootstrap.conf for later runs.
-ssh root@<IP> 'DOMAIN=events.growthcast.app ACME_EMAIL=ops@growthcast.app \
+ssh root@<IP> 'DOMAIN=events.example.com ACME_EMAIL=ops@example.com \
   AGE_RECIPIENT=age1... SMTP_HOST=smtp.example.com SMTP_USERNAME=... \
   WEBHOOK_HOST_ALLOWLIST=api.stripe.com,hooks.zapier.com bash -s -- --dry-run' \
   < deploy/production/bootstrap.sh
-ssh root@<IP> 'DOMAIN=events.growthcast.app ACME_EMAIL=ops@growthcast.app \
+ssh root@<IP> 'DOMAIN=events.example.com ACME_EMAIL=ops@example.com \
   AGE_RECIPIENT=age1... SMTP_HOST=smtp.example.com SMTP_USERNAME=... \
   WEBHOOK_HOST_ALLOWLIST=api.stripe.com,hooks.zapier.com bash -s' \
   < deploy/production/bootstrap.sh
@@ -94,8 +94,8 @@ ssh root@<IP> 'DOMAIN=events.growthcast.app ACME_EMAIL=ops@growthcast.app \
 #    (cloudflare.md sections 1-5).
 
 # 6. Verify from the workstation.
-deploy/production/verify.sh --domain events.growthcast.app --expect-version 0.3.0 --expect-access
-deploy/production/verify.sh --domain events.growthcast.app --origin <IP> --no-burst   # origin gate: /admin/ 404 direct
+deploy/production/verify.sh --domain events.example.com --expect-version 0.3.0 --expect-access
+deploy/production/verify.sh --domain events.example.com --origin <IP> --no-burst   # origin gate: /admin/ 404 direct
 ```
 
 `bootstrap.sh` steps, in order (`--steps` selects a subset; every step is idempotent):
@@ -108,7 +108,7 @@ deploy/production/verify.sh --domain events.growthcast.app --origin <IP> --no-bu
 `DJANGO_HSTS_SECONDS=31536000`, `WEBINAR_IMAGE` pinned, `WEBINAR_PULL_POLICY=never`; copy of
 the master key to `/root/visioncast-secrets/integration-master-key`) → `image` (build or pull)
 → `compose` (`migrate`, `manage check`, `sync_roles`, `bootstrap_admin` → `admin-password`,
-`create_api_key --name growthcast-site --scope proxy` → `proxy-api-key`, optional `agent` key,
+`create_api_key --name site-proxy --scope proxy` → `proxy-api-key`, optional `agent` key,
 `up -d`, wait healthy, loopback `/healthz`) → `cloudflare` (address ranges → nginx snippets) →
 `nginx` (port 80: ACME + redirect) → `certbot` (webroot HTTP-01) → `nginx` HTTPS server →
 `cron` (`/etc/cron.d/visioncast`, logrotate) → `status` (`/srv/visioncast/STATUS.md`) → `verify`
@@ -125,20 +125,20 @@ manager or pipe them straight into the consumer (`… | vercel env add VISIONCAS
 
 ## After bootstrap: studio steps
 
-1. Open `https://events.growthcast.app/studio/` — Cloudflare Access asks for the owner's e-mail
+1. Open `https://events.example.com/studio/` — Cloudflare Access asks for the owner's e-mail
    (one-time PIN or Google), then the studio login: user `admin` (or `--admin-username`),
    password from `/root/visioncast-secrets/admin-password`.
 2. **Change the password** immediately (studio profile / `manage changepassword`), then
    delete `admin-password` on the droplet.
 3. Invite marketers from the studio (teammate invitations use the SMTP relay); give them a role
    group, never superuser. Add their e-mails to the Access policy.
-4. The site proxy key (`growthcast-site`, scope `proxy`) is already in `proxy-api-key`; put it in
+4. The site proxy key (`site-proxy`, scope `proxy`) is already in `proxy-api-key`; put it in
    the marketing site's server-side secret store (`PROXY_API_KEY` of the first-party proxy,
    `docs/browser-integration.md`), never in GTM or page source. If it was not created
    (`--skip-admin` runs, lost file): studio → API keys → create, scope `proxy`, or
-   `cd /srv/visioncast/app/current && docker compose run --rm -T web manage create_api_key --name growthcast-site-2 --scope proxy`
+   `cd /srv/visioncast/app/current && docker compose run --rm -T web manage create_api_key --name site-proxy-2 --scope proxy`
    and revoke the old one.
-5. `PUBLIC_EVENT_URL_TEMPLATE` is already `https://growthcast.app/events/{slug}` (calendar links
+5. `PUBLIC_EVENT_URL_TEMPLATE` is already `https://www.example.com/events/{slug}` (calendar links
    point at the marketing site). Change it with
    `bootstrap.sh --public-event-url-template … --steps env,compose` (containers are recreated by
    `docker compose up -d` only when `.env` changed; run `docker compose up -d web worker` to be sure).
@@ -146,7 +146,7 @@ manager or pipe them straight into the consumer (`… | vercel env add VISIONCAS
    allowlist entry (their hosts are pinned in code); generic webhook receivers and self-hosted hosts
    must be in `WEBHOOK_HOST_ALLOWLIST` (`bootstrap.sh --webhook-host-allowlist a,b,c --steps env,compose`).
 7. Stripe (if used): account and prices in the studio, webhook endpoint
-   `https://events.growthcast.app/api/v1/payments/stripe/webhook` with the five events listed in
+   `https://events.example.com/api/v1/payments/stripe/webhook` with the five events listed in
    `docs/tickets.md` (checklist D8).
 8. Launch acceptance: `docs/implementation-guide.md` §11.1; record results in `docs/validation.md`.
 
@@ -155,7 +155,7 @@ manager or pipe them straight into the consumer (`… | vercel env add VISIONCAS
 | Task | Command (workstation unless noted) |
 |---|---|
 | Update to a new release | `deploy/production/package-release.sh v0.3.1 && deploy/production/update.sh --host <IP> --tarball dist/visioncast-0.3.1.tar [--image ghcr.io/b2b-saas-inc/visioncast:0.3.1]` (backup → migrate → restart → `sync_roles` → health → `manage check` → `current` switch → nginx/cron/STATUS refresh); `--dry-run` first |
-| Verify after anything | `deploy/production/verify.sh --domain events.growthcast.app --expect-access --expect-version <v>` |
+| Verify after anything | `deploy/production/verify.sh --domain events.example.com --expect-access --expect-version <v>` |
 | Logs (droplet) | `cd /srv/visioncast/app/current && docker compose logs --since 1h web worker`; nginx `/var/log/nginx/visioncast.access.log` (no query strings, cookies or user agents); cron `/var/log/visioncast/*.log` |
 | Backups | nightly 02:15 UTC → `/srv/visioncast/backups/webinars-<ts>.dump.age`, 14 kept. **Copy them off-host** (e.g. `rsync -a root@<IP>:/srv/visioncast/backups/ ~/visioncast-backups/`); nothing here uploads anywhere. Manual: `cd /srv/visioncast/app/current && deploy/backup.sh --encrypt-to age1… /srv/visioncast/backups` |
 | Backup verification (restore drill) | on the droplet: `age -d -i <identity> -o /root/restore.dump …dump.age` (identity copied over for the drill only, then shredded), then `cd /srv/visioncast/app/current && COMPOSE_PROJECT_NAME=wprod-drill deploy/restore.sh --no-start /root/restore.dump` (separate project, own volume), inspect with `COMPOSE_PROJECT_NAME=wprod-drill docker compose run --rm -T web manage showmigrations`, finish with `COMPOSE_PROJECT_NAME=wprod-drill docker compose down -v` and `shred -u /root/restore.dump`. Record the date in `docs/validation.md` (checklist D9). |
@@ -223,7 +223,7 @@ Still the operator's job (nothing here does it):
   credential on staff changes, keep `ghcr-token` short-lived or delete it after the pull.
 * **`WEBHOOK_HOST_ALLOWLIST`** discipline: only receivers you control or contract with.
 * **Monitoring/alerting**: DigitalOcean's monitoring agent is enabled, but no alert policy,
-  uptime check (`https://events.growthcast.app/healthz`) or log shipping is configured.
+  uptime check (`https://events.example.com/healthz`) or log shipping is configured.
 * **Capacity**: 1 vCPU / 2 GB with `WEB_CONCURRENCY=2` is sized for a marketing site's
   registration traffic, not for a launch spike; resize the droplet (`doctl compute droplet-action resize`)
   and raise `--web-concurrency` when needed. Building the image on the droplet takes a few
