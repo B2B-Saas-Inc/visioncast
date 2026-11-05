@@ -61,7 +61,7 @@ None is approved by this document. External calls need explicit approval and own
 | C3 | Hosting sandboxes: Zoom Webinars licence (provisioning and participant report), Wistia, Sequel, Riverside (attach, registrants, attendance) | R13 | Yes |
 | C4 | Real SMTP relay test to owner mailboxes (mandatory for paid tickets and invitations over SMTP). **GrowthCast:** done another way, email goes through PostHog with real sends delivered (2026-11-02); SES had one simulator send and was removed. The SMTP path itself is still untested | R14 | Yes |
 | C5 | Real webhook receiver test over the internet; import the Zapier, Make and n8n recipes on real accounts | R15 | Yes |
-| C6 | Kit compatibility on the owner's real sites and hosts (https hosts, CDN, Vercel, Webflow/Framer plans, paid sessions through a kit) | R16 | Yes (hosting / CMS / plan accounts) |
+| C6 | Kit compatibility on the owner's real sites and hosts. **Done for Astro on Vercel:** growthcast.app in production (https, CDN, route-handler proxy, vendored form script) since 2026-10-28. **Open:** paid sessions through a kit, Webflow/Framer, the other frameworks on a real host | R16 | Yes (hosting / CMS / plan accounts) |
 | C7 | Web calendar deep links against live Google/Outlook/Microsoft 365, or accept unverified | R17 | Yes (test calendars) |
 | C8 | Accept publication authority, confirmation-token, `config_read` draft-read, paid-flow, attendance-import, marketing-status (incl. the beehiiv subscription exception) and transactional-email policies | R18–R22, R27–R29 | No |
 | C9 | Accept residual behaviour (remaining-gaps §5) and the A7 digests | R23 | No |

@@ -4,7 +4,7 @@ Test evidence, newest first. Implemented with Claude Code orchestrators and boun
 
 ## Production on 0.4.10-pre, live server on v0.4.9-pre with the brand logo — 2026-11-05
 
-- Observed from the workstation after the owner's updates: `deploy/production/verify.sh --expect-version 0.4.10-pre --expect-access` against events.growthcast.app **12/12 PASS** (OpenAPI now 68 paths); `/healthz` reports 0.4.10-pre. live.growthcast.app checkout at `v0.4.9-pre`, `/brand/icon` and `/brand/logo` both answer `image/png`, so the GrowthCast mark is the tab icon on every live page. growthcast.app/events shows the new "Upcoming Events" heading.
+- Observed from the workstation after the owner's updates: `deploy/production/verify.sh --expect-version 0.4.10-pre --expect-access` against events.growthcast.app **12/12 PASS** (OpenAPI now 68 paths); `/healthz` reports 0.4.10-pre. live.growthcast.app checkout at `v0.4.9-pre`, `/brand/icon` and `/brand/logo` both answer `image/png`, so the GrowthCast mark is the tab icon on every live page. growthcast.app/events shows the new "Upcoming Events" heading. The site's `/webinar-api` proxy (a Vercel route handler) reaches the studio: `/webinar-api/profile` answers the backend's 400 `invalid_query`, and a registration POST without a browser origin gets the proxy's 403 `origin_not_allowed`. Whether anyone has registered through it is not recorded here.
 - Through the management MCP: one LiveKit hosting account, enabled, `autoProvision` still off; all nine upcoming sessions (eight public Mondays plus the unlisted 19 November session) have a join URL and a waiting room. Nothing else was changed.
 - [remaining-gaps.md](remaining-gaps.md) and [release-checklist.md](release-checklist.md) reconciled against this state.
 

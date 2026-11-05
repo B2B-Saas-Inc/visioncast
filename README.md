@@ -267,7 +267,7 @@ VisionCast is a pre-release. Here is exactly where it stands on **0.4.10-pre** (
 **Not yet proven**
 
 * Native integrations, Stripe and hosting providers have only been tested against mocked vendor APIs. Each needs a live sandbox run before you rely on it. LiveKit is the exception: it runs on a public server at live.growthcast.app, where video went through TURN over TLS on port 443 with nothing else allowed. It hasn't yet run a real session with people on phones, on Safari with a camera, or to a real streaming platform.
-* Website kits were installed fresh in Docker but not on a real production site.
+* One website kit runs on a real production site: growthcast.app (Astro 7 on Vercel, https behind Vercel's CDN, the proxy as a Vercel route handler, the vendored form script) serves the events pages from the studio. The WordPress, Next, SvelteKit, Nuxt, static and CMS kits were installed fresh in Docker only.
 * Nobody independent has run a security audit. The core app has had no load test. The live add-on has had an adversarial code review, a repeatable attack suite and a load test, all on one machine ([docs/validation.md](docs/validation.md)).
 
 ## Development
