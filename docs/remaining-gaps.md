@@ -61,21 +61,7 @@ Must be closed or explicitly accepted by the owner before production use.
 
 | # | Blocker |
 |---|---|
-| R1 | **Closed 2026-10-27:** 1,945 tests, checks and the restore probe pass under `tests/run-pg16.sh` (Python 3.12.16 / PostgreSQL 16.15) on the release tree. |
-| R2 | **Closed.** The release image (`0.2.0-pre`) was built for arm64 (saved with a recorded SHA-256) and, from the tagged tree, for amd64 under emulation; both passed the clean-server Compose first run (migrate, `sync_roles`, `bootstrap_admin`, `create_api_key`, seed, web + worker healthy, `/healthz` with version, OpenAPI, `/mcp`, studio login page, retention dry run, backup). The published multi-arch manifest is `sha256:c81ad8b1…`. |
-| R3 | **Closed:** SDK/kit tests, the actual-app Chromium journeys (studio 13/13, Riverside 8/8, GTM 10/10) and the mocked-backend SDK Chromium suite (11/11, now covering web calendar links and the paid-session 202 states) were rerun on the merged release tree. |
-| R4 | **Closed:** `PYTHON_IMAGE` and the Compose Postgres image are pinned by digest; refresh procedure in README "Supply chain notes". |
-| R5 | **Closed:** `pip-audit` on the hash lock reports no known vulnerabilities; the only finding was dev-only `pytest` (bumped to 9.0.3). |
-| R6 | **Closed locally:** retention dry run, offline receiver contract (`tests/test_verify_webhook_example.py`: valid, tampered, stale, duplicate, wrong secret, rotation), `nginx -t` plus routing and rate-limit checks on both nginx files (two routing bugs fixed). A receiver over the internet is C5. |
-| R24 | **Mostly closed:** `release.yml` has published amd64 + arm64 to GHCR on every tag through `v0.4.10-pre`; the amd64 first run passed under emulation from the tagged tree. **Open:** pull a published manifest (`read:packages` token or a public package) and run it on a real amd64 host. |
-
-### 2b. Known code defects and gaps still open
-
-| # | Blocker |
-|---|---|
-| R7–R10 | **Closed** (see validation.md 2026-10-26 entries): outbox delivery metadata, studio preview refusals, Riverside reconciliation and personal-link binding. |
-| R25 | **Closed 2026-10-27:** `sdk/kits/node/nginx-webinar-api.conf` used `location ^~`, which made every proxied kit route answer 404 behind nginx; `docker/nginx.conf.example` lacked locations for `my-registration`, `calendar.ics`, `/w/`, `/studio/login/`, `/mcp` and the Stripe webhook. Both fixed and verified with `nginx -t` and routing checks. |
-| R26 | **Closed 2026-10-27:** the WordPress plugin dropped Django's cookie-expiry `Set-Cookie` on reset and emitted a doubled subdirectory path for a self-hosted SDK; the Node proxy had the same quoted-cookie bug; the Next.js reference page did not build under Next 16 `cacheComponents`; the Svelte component did not compile under Svelte 5 runes. All fixed by fresh-install verification. |
+| R24 | Pull a published manifest from GHCR (`read:packages` token or a public package) and run it on a real amd64 host. Every tag is published amd64 + arm64; the amd64 first run has only passed under emulation. |
 
 ### 2c. Vendor contracts (owner accounts required)
 
@@ -128,17 +114,13 @@ Must be closed or explicitly accepted by the owner before production use.
 
 ## 4. Requested feature backlog
 
-Committed scope for this release is closed. What the owner asked for and is **not** built:
+Committed scope for this release is closed. Still **not** built:
 
 | Item | State |
 |---|---|
-| Salesforce, Pipedrive, ActiveCampaign, Mailchimp, **beehiiv** native adapters | **Built** (mock-tested; sandbox verification R11). Intercom, Loops and Marketo were explicitly skipped by the owner on 2026-10-27 and stay "roadmap" with HubSpot Marketing; nothing further is committed. |
-| Transactional email adapters | **Resend and Amazon SES built** (owner-approved scope change, R29). Postmark is not committed and stays "roadmap". |
-| Workflow automation (Zapier, Make, n8n) | **Built as destination presets plus verification recipes** over the signed webhook; recipes simulated in Node only (R15). |
-| Provider attendance import | **Built** for Zoom (documented endpoint), Riverside (unverified) and file import for every provider. Wistia and Sequel expose no attendance API this release; their reports go through the file import. |
 | Hosting update for Wistia/Sequel; Riverside create | Not built (Riverside create is undocumented by the vendor). |
-| Self-hosted live studio (LiveKit) | **Built and released** (0.4.0-pre). |
-| Brand colour and font, PostHog email, calendar waiting-room links, automatic rooms, delete at any visibility, card image, setup-checklist hide / auto-dismiss, live tab icon | **Built** (0.4.2-pre through 0.4.10-pre). |
+| Intercom, Loops, Marketo, HubSpot Marketing, Postmark adapters | Roadmap only; nothing committed. |
+| Wistia and Sequel attendance pull | No vendor attendance API this release; their reports go through the file import. |
 
 ## 5. Known residual behaviour (accepted or documented, not blockers)
 

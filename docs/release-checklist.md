@@ -2,7 +2,7 @@
 
 Status as of 2026-11-05 (release candidate `0.4.10-pre`, tag `v0.4.10-pre` at `8607c72`). Since `0.3.7-pre`: the self-hosted live studio on LiveKit (`0.4.0-pre`), brand colour and font (`0.4.2-pre`), email through PostHog (`0.4.3`–`0.4.4-pre`), calendar links to the waiting room (`0.4.5-pre`), live add-on update and backup scripts (`0.4.6-pre`), automatic rooms and delete at any visibility (`0.4.7-pre`), card images (`0.4.8-pre`), the live tab icon (`0.4.9-pre`) and the dashboard checklist (`0.4.10-pre`). Every tag published to GHCR by `release.yml`. **Nothing on
 this page is evidence.** Results are recorded only in [validation.md](validation.md); the
-gaps they close are in [remaining-gaps.md](remaining-gaps.md) (R1–R28). "Last recorded"
+gaps they close are in [remaining-gaps.md](remaining-gaps.md) (R-numbered). "Last recorded"
 quotes validation.md.
 
 - **A. Local checks** a release validator can run in disposable containers (no messages, no
@@ -41,14 +41,7 @@ accepted, and every D item is in place. Any code change (including B) re-opens A
 
 ## B. Code fixes required
 
-None open. Closed this cycle (retest covered by A):
-
-| # | Fix | Gap |
-|---|---|---|
-| B1–B4 | Closed 2026-10-26 (outbox metadata disproven, studio refusal UX, Riverside reconciliation, personal-link binding) | R7–R10 |
-| B5 | nginx kit snippet `^~` shadowing and missing example locations | R25 |
-| B6 | WordPress cookie-expiry/subdirectory SDK path, Node proxy quoted cookie, Next 16 build, Svelte 5 runes | R26 |
-| B7 | Hosting transport tests updated for native `GET`/`PATCH` lookups; `CREDENTIAL_HEADERS` extended (`api-token`, `x-api-token`) | — |
+None open.
 
 ## C. Owner accounts, approvals and decisions
 
@@ -68,7 +61,7 @@ None is approved by this document. External calls need explicit approval and own
 | C10 | Scope decisions recorded 2026-10-27: beehiiv, Resend, Amazon SES, Zapier, Make and n8n built; Intercom, Loops and Marketo skipped; Postmark and HubSpot Marketing not committed (remaining-gaps §4) | §4 | No |
 | C11 | Approve a staging host and run launch acceptance ([implementation-guide.md §11.1](implementation-guide.md#111-launch-acceptance-run-on-staging-record-results-in-validationmd)) | §3 | Yes (host) |
 | C12 | Approve a production deployment (`deploy/production/` or `deploy/quickstart/`) and record its first run and each upgrade in [validation.md](validation.md) | §3 | Yes (host) |
-| C13 | **Done:** every tag from `v0.2.0-pre` to `v0.4.10-pre` published to `ghcr.io/b2b-saas-inc/visioncast` (amd64 + arm64, private). **Remaining:** decide package visibility or grant deploy hosts a `read:packages` token, then run a published manifest on a real amd64 host | R24 | Yes (GitHub) |
+| C13 | Decide package visibility for `ghcr.io/b2b-saas-inc/visioncast` or grant deploy hosts a `read:packages` token, then run a published manifest on a real amd64 host | R24 | Yes (GitHub) |
 
 ## D. Operator tasks (target environment)
 
