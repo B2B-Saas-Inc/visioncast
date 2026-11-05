@@ -1,69 +1,18 @@
 # Remaining gaps
 
-Current release: `0.4.10-pre`, published to GHCR as a private package on every tag (`release.yml` has run on each tag from `v0.2.0-pre` through `v0.4.10-pre`). The sections below were reconciled on 2026-11-05 against `0.4.10-pre`. **What remains needs vendor accounts, an operator's decision, or a real event with real people.** Results from any particular deployment are recorded in [validation.md](validation.md) only; this page describes the project. This page separates what the code implements, what blocks a release, what the
-owner has requested but is not built yet, and what is optional or out of scope. Test evidence
-lives only in [validation.md](validation.md); nothing on this page is a test result. The
-ordered, tickable list is [release-checklist.md](release-checklist.md). Detailed behaviour is
-owned by [mcp.md](mcp.md), [native-integrations.md](native-integrations.md),
-[tickets.md](tickets.md), [hosting.md](hosting.md), [kits.md](kits.md) and
-[operations.md](operations.md); where they disagree with this page on detail, theirs win.
+What is still open on `0.4.10-pre`, reconciled 2026-11-05. **Everything here needs vendor accounts, an operator's decision, or a real event with real people.** Nothing implemented or already proven is listed; test evidence lives only in [validation.md](validation.md), and the ordered, tickable form of this page is [release-checklist.md](release-checklist.md). Detailed behaviour is owned by [mcp.md](mcp.md), [native-integrations.md](native-integrations.md), [tickets.md](tickets.md), [hosting.md](hosting.md), [kits.md](kits.md) and [operations.md](operations.md); where they disagree with this page on detail, theirs win.
 
-## 0. Current evidence (summary; validation.md is authoritative)
-
-| What | Latest recorded | Covers the release tree? |
-|---|---|---|
-| Python suite, Ruff, system check, migration drift, on PostgreSQL 16 | **2,557 passed, 1 skipped** (the LiveKit stack test), lint and `makemigrations --check` clean on `8607c72` = `v0.4.10-pre` (2026-11-04) | Yes |
-| `tests/run-pg16.sh` harness with the logical + application restore probe | 2,372 passed and the restore probe passed on `24e3493` (2026-10-27) | No: last run on the 0.3.0-pre tree; the suite has run on every tree since, the restore probe has not |
-| End-to-end acceptance (`tests/test_e2e_acceptance.py`): create → provision (Zoom) → register/pay → verify → attend → CRM follow-up | 2 scenarios, fake vendors; part of the suite above | Yes |
-| Live service (`live/`): HTTP and unit tests | **72 + 18 pass**, clippy clean on touched files (2026-11-04, `v0.4.9-pre`) | Yes |
-| Live service in real browsers on a real LiveKit stack: every role 36/36, newer features 24/24, Chromium/Firefox/WebKit/phone screens 8/8, attack suite 26/26, load 1,000 event streams + 100 media viewers, captions 11.2% WER | All on 2026-11-01 on branch `livekit-rust`, merged unchanged into `0.4.0-pre`; all on one machine | Yes for 0.4.0-pre; later live changes (brand font, clean addresses, tab icon) covered by the HTTP tests only |
-| Site (`site/`) tests, typecheck, production build | 51 passed (2026-10-27); the site's test count was refreshed for 0.4.7-pre | Partly: not re-recorded in validation.md since 2026-10-27 |
-| SDK unit, proxy, kit and automation-recipe tests; mocked-backend SDK Chromium (11/11); Riverside and GTM Chromium (8/8, 10/10); website kits from fresh vendor scaffolds | All passed 2026-10-27 on the 0.3.0-pre tree | No: not rerun since. The studio Chromium journey was rerun 13/13 on 2026-10-29 (0.3.7-pre) |
-| Versioned OCI image | Built and published by `release.yml` on every tag through `v0.4.10-pre` (run 41891908002, amd64 + arm64, SBOM + provenance) | Yes, but no published manifest has been pulled and run from here |
-| Clean-server Compose first run, backup/restore, retention dry run, offline receiver contract, `nginx -t` + routing, upgrade and rollback in Docker | All passed 2026-10-27 (0.3.0-pre tree) | No: not rerun since; migrations 0012–0017 were added after that run |
-| Base-image digest pins, `pip-audit` on the hash lock | Pinned; no known vulnerabilities (2026-10-27) | Not rerun since 2026-10-27 |
-| Real vendor traffic from this repository's test suites | **None.** Every vendor, Stripe, hosting-provider, SMTP, registry and receiver call is mocked or runs against a local stand-in. What an operator has exercised live on their own deployment is in [validation.md](validation.md) only | — |
-
-## 1. Implemented in code (gates in §2–§3)
-
-| Area | Where |
-|---|---|
-| Public read API, registration, idempotency, dedupe, progressive profile, reset, same-origin direct endpoints | `webinars/api/views.py`, `queries.py`, `registration.py`, `identity.py`; [api-reference.md](api-reference.md) |
-| Node first-party proxy with allowlisted projections and ICS rewrite | `sdk/proxy/server.js`; [browser-integration.md](browser-integration.md) |
-| Browser SDK (GTM, consent, attribution, SPA `init`, ICS + validated web calendar links, `payment_required` / `verification_required` handling) | `webinars/static/webinar-sdk/webinar-form.js` |
-| Management REST API with confirmation-token publication gates; `config_read` GET | `webinars/api/management.py`; [management-api.md](management-api.md) |
-| Scheduling, reminders, DST validation, recordings | `webinars/scheduling.py`, `timeutils.py` |
-| Signed outbox webhooks, retries, dead letters, SSRF policy, per-destination host pinning | `webinars/outbox.py`, `delivery.py`, `ssrf.py`; [webhooks.md](webhooks.md) |
-| Hosted waiting room, mailbox verification, check-in, finalization | `webinars/waiting_room*.py`; [waiting-room.md](waiting-room.md) |
-| Operational SMTP (room codes, invitations only) | `webinars/mail.py`; [email.md](email.md) |
-| Publication readiness on studio, REST, MCP and Django admin | `webinars/services.py`, `admin.py` |
-| Studio, admin, roles, audit, `purge_personal_data` | `webinars/studio/`, `admin.py`, `roles.py` |
-| MCP `/mcp` incl. ticket, hosting and attendance-import tools (gated where they mutate); `serverInfo.version` from `VERSION` | `webinars/mcp.py`, `mcp_config.py`; [mcp.md](mcp.md) |
-| **Seventeen native adapters**: PostHog, Customer.io, HubSpot, Attio, Segment, GA4, Amplitude, Mixpanel, RudderStack, Brevo, and (2026-10-27, one module each under `webinars/native_providers/`) **Salesforce, Pipedrive, ActiveCampaign, Mailchimp, beehiiv** (newsletter subscription with explicit acknowledgements), **Resend and Amazon SES** (transactional attendee email rendered by the platform; stdlib SigV4 for SES). Provider modules may declare their own event types and required groups. Contract points marked VERIFIED (official page fetched) or UNVERIFIED per adapter. **Mock-tested only** | `webinars/native_integrations.py`, `native_providers/`, `delivery.py`; [native-integrations.md](native-integrations.md), [email.md](email.md) |
-| **Workflow-automation presets** for Zapier, Make and n8n over the unchanged signed webhook (URL rules, pinned defaults, recipe links) plus importable verification recipes exercised by a Node simulation | `webinars/webhook_presets.py`, `sdk/kits/automation/`; [webhooks.md](webhooks.md) |
-| Capacity and Stripe Checkout tickets with mailbox verification before holds. **Stripe mocked only** | `webinars/capacity.py`, `payments.py`, `api/tickets.py`; [tickets.md](tickets.md) |
-| Hosting: Zoom create/update/attach; Wistia, Sequel create; Riverside attach + per-registrant links + reconciliation; StreamYard manual link. **No adapter sandbox-verified** | `webinars/hosting/`, `api/hosting.py`; [hosting.md](hosting.md) |
-| **Provider attendance import** (2026-10-27): authenticated Zoom participant pull (documented endpoint, paginated), Riverside registrant pull (UNVERIFIED constants), JSON/CSV file import for every provider; id-then-email matching, dedupe, ambiguity review, idempotent apply through `record_attendance` (`attendance.recorded` once per registration), separate confirmed no-show pass; REST, MCP and studio. Migration `0011` | `webinars/attendance_import.py`, `api/attendance_imports.py`; [hosting.md](hosting.md) "Attendance import" |
-| Website kits: WordPress plugin, framework/headless/proxy references, no-code and CMS schema references, fresh-install verification script | `sdk/kits/`; [kits.md](kits.md) |
-| Distribution: `VERSION`, `show_version`, `/healthz` version, OCI labels, `deploy/build-image.sh`, `backup.sh`, `restore.sh`, `upgrade.sh`, `WEBINAR_IMAGE` in Compose, GHCR release workflow (runs on every tag) | `deploy/`, `Dockerfile`, `compose.yaml`, `.github/workflows/release.yml`; [operations.md](operations.md) |
-| **Production deployment layout** for one DigitalOcean droplet behind Cloudflare: provision, bootstrap, package a tag, `update.sh` (backup → migrate → restart → `sync_roles` → health), `verify.sh`, nightly encrypted backups, retention cron | `deploy/production/`; [deploy/production/README.md](../deploy/production/README.md) |
-| **Live add-on** (0.4.0-pre): self-hosted LiveKit studio with roles, green room, personal links, engagement, captions, recordings, brand, RTMP out; its own update and backup scripts | `live/`, `deploy/live/`; [live/README.md](../live/README.md) |
-| **Brand** (0.4.2-pre): any colour and a brand font on the studio, waiting room and live rooms; pushed to the live add-on, whose tab icon follows it (0.4.9-pre) | `webinars/brand.py`, `live/src/broadcast.rs`; [branding.md](branding.md) |
-| **Email through PostHog** (0.4.3–0.4.4-pre): `EMAIL_DELIVERY=posthog` for the platform's own mail and a PostHog transactional-email destination for attendee mail | `webinars/mail.py`, `native_providers/`; [email.md](email.md) |
-| **Automatic rooms and full delete** (0.4.7-pre): a hosting account marked `auto_provision` gives every new session its room and waiting room on commit; events and sessions can be deleted at any visibility while nobody is registered | `webinars/hosting/`, `services.py`; [hosting.md](hosting.md) |
-| **Card image** (0.4.8-pre) and **dashboard setup checklist** hide / auto-dismiss (0.4.10-pre); calendars carry the waiting room link (0.4.5-pre) | `webinars/models.py`, `studio/views_content.py`; [studio.md](studio.md) |
-
-## 2. Release blockers
+## 1. Release blockers
 
 Must be closed or explicitly accepted by the owner before production use.
 
-### 2a. Evidence on the exact release tree and image
+### 1a. Evidence on the exact release tree and image
 
 | # | Blocker |
 |---|---|
 | R24 | Pull a published manifest from GHCR (`read:packages` token or a public package) and run it on a real amd64 host. Every tag is published amd64 + arm64; the amd64 first run has only passed under emulation. |
 
-### 2c. Vendor contracts (owner accounts required)
+### 1b. Vendor contracts (owner accounts required)
 
 | # | Blocker |
 |---|---|
@@ -75,7 +24,7 @@ Must be closed or explicitly accepted by the owner before production use.
 | R16 | **Kit compatibility on the owner's real sites.** Fresh-install verification covered WordPress 7.1 / PHP 8.2 (block, shortcode, WP Super Cache, `/blog/` subdirectory), Next 16 self-hosted, SvelteKit 3 / Svelte 5, Astro 7 (behind nginx), Nuxt 4 (behind nginx), a static snippet behind nginx, and the four CMS schemas with vendor packages. **Not verified here:** https hosts other than localhost, CDN caches in front of `/webinar-api`, Vercel route handlers, real Webflow/Framer hosting, paid sessions through a kit, Next 14/15, Nuxt 3, Svelte 4, Astro middleware mode, WordPress multisite. |
 | R17 | **Web calendar deep links** (Google/Outlook/Microsoft 365) against the live services, or accept unverified. |
 
-### 2d. Owner policy acceptances
+### 1c. Owner policy acceptances
 
 | # | Decision |
 |---|---|
@@ -84,12 +33,12 @@ Must be closed or explicitly accepted by the owner before production use.
 | R20 | `config_read` reads drafts over REST, or request a `content_read` scope (none exists). |
 | R21 | Direct-mode ICS rewrite default: Mode B edges must forward `/webinar-api/calendar.ics` (and `my-registration`) or set `WEBINAR_DIRECT_ICS_REWRITE=false`. |
 | R22 | Paid sessions require the waiting room and mail; join links sent to webhook destinations before a refund cannot be recalled. |
-| R23 | Residual behaviour in §5. |
+| R23 | Residual behaviour in §4. |
 | R27 | Attendance import never runs automatically and never guesses an ambiguous match; a Zoom pull is capped at 50 pages (5,000 participants) and marked incomplete beyond that; no-shows are a separate confirmed step. |
 | R28 | Marketing adapters never subscribe anyone: Mailchimp members default to `transactional` (pending double opt-in needs an explicit acknowledgement; `subscribed` is impossible), ActiveCampaign contacts are never added to lists or automations. **beehiiv is the deliberate exception**: its only record is the subscription, so it subscribes registrants (free tier, welcome email off and no double-opt-in override by default) behind an explicit `subscribe_ack`. Whether the vendor's own automations react to contact or tag changes is the operator's responsibility. |
-| R29 | **Transactional attendee email** (Resend, Amazon SES) is now sent by the platform when such a destination is enabled: confirmation, reminder, new time, cancellation, attended / no-show, recording, follow-up. Plain-text templates with an allowlisted placeholder set, HTML generated from the text, no operator HTML; the join link is the managed room URL, or the provider link only when private links are allowed, else the public event page. This reverses the earlier out-of-scope decision (§7); the ESP-via-webhooks path still works and the operational SMTP for room codes is unchanged. |
+| R29 | **Transactional attendee email** (Resend, Amazon SES) is now sent by the platform when such a destination is enabled: confirmation, reminder, new time, cancellation, attended / no-show, recording, follow-up. Plain-text templates with an allowlisted placeholder set, HTML generated from the text, no operator HTML; the join link is the managed room URL, or the provider link only when private links are allowed, else the public event page. This reverses the earlier out-of-scope decision (§6); the ESP-via-webhooks path still works and the operational SMTP for room codes is unchanged. |
 
-## 3. Operational gates (target environment; operator/owner)
+## 2. Operational gates (target environment; operator/owner)
 
 - A production host. Provisioning is the operator's job; `deploy/production/` is one complete
   layout (DigitalOcean droplet behind Cloudflare) and `deploy/quickstart/` the one-step installer.
@@ -112,7 +61,7 @@ Must be closed or explicitly accepted by the owner before production use.
   restart, `sync_roles`, health); with the `deploy/production/` layout, `update.sh`.
 - Launch acceptance in [implementation-guide.md §11.1](implementation-guide.md#111-launch-acceptance-run-on-staging-record-results-in-validationmd) on staging.
 
-## 4. Requested feature backlog
+## 3. Requested feature backlog
 
 Committed scope for this release is closed. Still **not** built:
 
@@ -122,7 +71,7 @@ Committed scope for this release is closed. Still **not** built:
 | Intercom, Loops, Marketo, HubSpot Marketing, Postmark adapters | Roadmap only; nothing committed. |
 | Wistia and Sequel attendance pull | No vendor attendance API this release; their reports go through the file import. |
 
-## 5. Known residual behaviour (accepted or documented, not blockers)
+## 4. Known residual behaviour (accepted or documented, not blockers)
 
 | Item | Notes |
 |---|---|
@@ -135,7 +84,7 @@ Committed scope for this release is closed. Still **not** built:
 | `__Host-webinar_csrf` on plain http | Stored only in a secure context (https, `localhost`, `127.0.0.1`); other http hosts get `403 csrf_failed` on POST ([kits.md](kits.md)). |
 | Native events are at-least-once | Mailchimp member events, Brevo and Customer.io events, Pipedrive activities beyond the 500-item dedupe scan can repeat on retry; consumers dedupe on the delivery ID. |
 
-## 6. Optional / not planned (no commitment)
+## 5. Optional / not planned (no commitment)
 
 | Item | Notes / workaround |
 |---|---|
@@ -154,7 +103,7 @@ Committed scope for this release is closed. Still **not** built:
 | MCP SSE/sessions/stdio | Stateless JSON over HTTP. |
 | Over MCP: environment settings, host provisioning, Administrators/superusers, secrets, join/invitation links, registrant PII | Excluded by design ([mcp.md](mcp.md)). |
 
-## 7. Out of scope by design (do not build)
+## 6. Out of scope by design (do not build)
 
 - Streaming, video/recording hosting, gating or view tracking in the core application: the
   optional `live/` add-on does this on its own server (section on it below). In the core app,

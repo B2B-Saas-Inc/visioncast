@@ -57,10 +57,10 @@ None is approved by this document. External calls need explicit approval and own
 | C6 | Kit compatibility on the operator's real sites and hosts (https hosts, CDN, Vercel, Webflow/Framer plans, paid sessions through a kit) | R16 | Yes (hosting / CMS / plan accounts) |
 | C7 | Web calendar deep links against live Google/Outlook/Microsoft 365, or accept unverified | R17 | Yes (test calendars) |
 | C8 | Accept publication authority, confirmation-token, `config_read` draft-read, paid-flow, attendance-import, marketing-status (incl. the beehiiv subscription exception) and transactional-email policies | R18–R22, R27–R29 | No |
-| C9 | Accept residual behaviour (remaining-gaps §5) and the A7 digests | R23 | No |
-| C10 | Scope decisions recorded 2026-10-27: beehiiv, Resend, Amazon SES, Zapier, Make and n8n built; Intercom, Loops and Marketo skipped; Postmark and HubSpot Marketing not committed (remaining-gaps §4) | §4 | No |
-| C11 | Approve a staging host and run launch acceptance ([implementation-guide.md §11.1](implementation-guide.md#111-launch-acceptance-run-on-staging-record-results-in-validationmd)) | §3 | Yes (host) |
-| C12 | Approve a production deployment (`deploy/production/` or `deploy/quickstart/`) and record its first run and each upgrade in [validation.md](validation.md) | §3 | Yes (host) |
+| C9 | Accept residual behaviour (remaining-gaps §4) and the A7 digests | R23 | No |
+| C10 | Scope decisions recorded 2026-10-27: Intercom, Loops and Marketo skipped; Postmark and HubSpot Marketing not committed (remaining-gaps §3) | §3 | No |
+| C11 | Approve a staging host and run launch acceptance ([implementation-guide.md §11.1](implementation-guide.md#111-launch-acceptance-run-on-staging-record-results-in-validationmd)) | §2 | Yes (host) |
+| C12 | Approve a production deployment (`deploy/production/` or `deploy/quickstart/`) and record its first run and each upgrade in [validation.md](validation.md) | §2 | Yes (host) |
 | C13 | Decide package visibility for `ghcr.io/b2b-saas-inc/visioncast` or grant deploy hosts a `read:packages` token, then run a published manifest on a real amd64 host | R24 | Yes (GitHub) |
 
 ## D. Operator tasks (target environment)
@@ -71,16 +71,16 @@ covers D1, D2, D5, D6, D9, D10, D12 and D13 with scripts and
 
 | # | Task | Gap |
 |---|---|---|
-| D1 | TLS with HTTP→HTTPS redirect | §3 |
-| D2 | Edge rate limits on `/webinar-api/*` (incl. proxy `my-registration`), `/w/`, `/mcp`, `/admin/`, `/studio/login/`, `/api/v1/payments/stripe/webhook` (`docker/nginx.conf.example`) | §3 |
-| D3 | MFA, SSO or VPN in front of `/admin/` and `/studio/` | §3 |
+| D1 | TLS with HTTP→HTTPS redirect | §2 |
+| D2 | Edge rate limits on `/webinar-api/*` (incl. proxy `my-registration`), `/w/`, `/mcp`, `/admin/`, `/studio/login/`, `/api/v1/payments/stripe/webhook` (`docker/nginx.conf.example`) | §2 |
+| D3 | MFA, SSO or VPN in front of `/admin/` and `/studio/` | §2 |
 | D4 | Mode B edges forward `/webinar-api/calendar.ics` (and `my-registration`), or set `WEBINAR_DIRECT_ICS_REWRITE=false` | R21 |
-| D5 | `RATE_LIMIT_TRUST_X_FORWARDED_FOR` only behind a trusted chain of matching depth | §3 |
-| D6 | Worker process running | §3 |
-| D7 | `WEBHOOK_HOST_ALLOWLIST` for generic webhook receivers, self-hosted RudderStack data planes and n8n hosts, `api.stripe.com`, hosting hosts (native vendor hosts are pinned in code and need no entry unless `NATIVE_VENDOR_HOSTS_IMPLICIT=0`); https `PUBLIC_BASE_URL`; `PUBLIC_EVENT_URL_TEMPLATE` | §3 |
-| D8 | Stripe webhook endpoint with the five events from [tickets.md](tickets.md) | §3 |
-| D9 | `INTEGRATION_MASTER_KEY` outside backups; scheduled `deploy/backup.sh --encrypt-to …`; restore drill with `deploy/restore.sh` on the target host | §3 |
-| D10 | Cron for `purge_personal_data` | §3 |
-| D11 | Existing deployments: `deploy/upgrade.sh --image <image>` (migrates through 0017, `sync_roles`); marketers to `/studio/` | §3 |
-| D12 | `manage.py check` on every deploy | §5 |
-| D13 | Pin `WEBINAR_IMAGE` to the exact published tag (or the locally built `<version>-<commit>` tag) in `.env`; never `latest` | §3 |
+| D5 | `RATE_LIMIT_TRUST_X_FORWARDED_FOR` only behind a trusted chain of matching depth | §2 |
+| D6 | Worker process running | §2 |
+| D7 | `WEBHOOK_HOST_ALLOWLIST` for generic webhook receivers, self-hosted RudderStack data planes and n8n hosts, `api.stripe.com`, hosting hosts (native vendor hosts are pinned in code and need no entry unless `NATIVE_VENDOR_HOSTS_IMPLICIT=0`); https `PUBLIC_BASE_URL`; `PUBLIC_EVENT_URL_TEMPLATE` | §2 |
+| D8 | Stripe webhook endpoint with the five events from [tickets.md](tickets.md) | §2 |
+| D9 | `INTEGRATION_MASTER_KEY` outside backups; scheduled `deploy/backup.sh --encrypt-to …`; restore drill with `deploy/restore.sh` on the target host | §2 |
+| D10 | Cron for `purge_personal_data` | §2 |
+| D11 | Existing deployments: `deploy/upgrade.sh --image <image>` (migrates through 0017, `sync_roles`); marketers to `/studio/` | §2 |
+| D12 | `manage.py check` on every deploy | §4 |
+| D13 | Pin `WEBINAR_IMAGE` to the exact published tag (or the locally built `<version>-<commit>` tag) in `.env`; never `latest` | §2 |
