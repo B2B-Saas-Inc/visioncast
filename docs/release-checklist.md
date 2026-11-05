@@ -1,6 +1,6 @@
 # Release checklist
 
-Status as of 2026-11-05 (release candidate `0.4.10-pre`, tag `v0.4.10-pre` at `8607c72`, in production on the owner's host). Since `0.3.7-pre`: the self-hosted live studio on LiveKit (`0.4.0-pre`, the owner's live server on `v0.4.9-pre`), brand colour and font (`0.4.2-pre`), email through PostHog (`0.4.3`–`0.4.4-pre`), calendar links to the waiting room (`0.4.5-pre`), live-server update and backup scripts (`0.4.6-pre`), automatic rooms and delete at any visibility (`0.4.7-pre`), card images (`0.4.8-pre`), the live tab icon (`0.4.9-pre`) and the dashboard checklist (`0.4.10-pre`). Every tag published to GHCR by `release.yml`. **Nothing on
+Status as of 2026-11-05 (release candidate `0.4.10-pre`, tag `v0.4.10-pre` at `8607c72`). Since `0.3.7-pre`: the self-hosted live studio on LiveKit (`0.4.0-pre`), brand colour and font (`0.4.2-pre`), email through PostHog (`0.4.3`–`0.4.4-pre`), calendar links to the waiting room (`0.4.5-pre`), live add-on update and backup scripts (`0.4.6-pre`), automatic rooms and delete at any visibility (`0.4.7-pre`), card images (`0.4.8-pre`), the live tab icon (`0.4.9-pre`) and the dashboard checklist (`0.4.10-pre`). Every tag published to GHCR by `release.yml`. **Nothing on
 this page is evidence.** Results are recorded only in [validation.md](validation.md); the
 gaps they close are in [remaining-gaps.md](remaining-gaps.md) (R1–R28). "Last recorded"
 quotes validation.md.
@@ -36,7 +36,7 @@ accepted, and every D item is in place. Any code change (including B) re-opens A
 | A15 | WordPress plugin lint and fresh install | `php -l`; `bash sdk/kits/test/fresh-install.sh` (WordPress 7.1 / PHP 8.2 in Docker, block + shortcode + cache + subdirectory) | **Passed** (2026-10-27) |
 | A16 | Framework and CMS kits from fresh scaffolds | `bash sdk/kits/test/fresh-install.sh` (Next 16, SvelteKit 3, Astro 7, Nuxt 4, static snippet, Sanity/Payload/Prismic/Contentful validation) | **Passed** (2026-10-27) |
 | A17 | End-to-end acceptance workflow | `tests/test_e2e_acceptance.py` (two scenarios: waiting-room attendance; Zoom attendance import + no-shows) | **Passed** (2026-10-27). Release tree |
-| A18 | In-place upgrade and rollback | `deploy/upgrade.sh --image …` from the previous release image; rollback by `WEBINAR_IMAGE` | **Passed** `da04cc7` → `3ec60ad` (no schema change, 2026-10-27). **Real host:** every release from 0.3.0-pre to 0.4.10-pre on the production host via `update.sh`, incl. migrations 0012–0017; `verify.sh --expect-access` **12/12** on 0.4.10-pre (2026-11-05). Rollback not exercised there (an accidental restart to 0.3.0-pre on 2026-11-02 was the only time an older version came back) |
+| A18 | In-place upgrade and rollback | `deploy/upgrade.sh --image …` from the previous release image; rollback by `WEBINAR_IMAGE` | **Passed** `da04cc7` → `3ec60ad` (no schema change, 2026-10-27). Not rerun since; migrations 0012–0017 postdate it. Rollback after a migrating upgrade never exercised |
 | A19 | Live service tests and clippy | `cd live && cargo test`; `cargo clippy` | **72 HTTP + 18 unit pass** on `v0.4.9-pre` (2026-11-04). Real-browser, cross-browser, attack and load runs: 2026-11-01 on the branch merged into 0.4.0-pre |
 
 ## B. Code fixes required
@@ -59,36 +59,35 @@ None is approved by this document. External calls need explicit approval and own
 | C1 | Native adapter sandboxes, one per adapter to be enabled (HubSpot, Attio, PostHog, Customer.io, Segment, GA4, Amplitude, Mixpanel, RudderStack, Brevo, Salesforce, Pipedrive, ActiveCampaign, Mailchimp, beehiiv, Resend, Amazon SES); otherwise keep disabled | R11 | Yes |
 | C2 | Stripe test-mode run of the full paid flow, webhooks, refunds, disputes | R12 | Yes (Stripe) |
 | C3 | Hosting sandboxes: Zoom Webinars licence (provisioning and participant report), Wistia, Sequel, Riverside (attach, registrants, attendance) | R13 | Yes |
-| C4 | Real SMTP relay test to owner mailboxes (mandatory for paid tickets and invitations over SMTP). **GrowthCast:** done another way, email goes through PostHog with real sends delivered (2026-11-02); SES had one simulator send and was removed. The SMTP path itself is still untested | R14 | Yes |
+| C4 | Real email delivery test to the operator's mailboxes: an SMTP relay, or PostHog transactional email (mandatory for paid tickets and invitations) | R14 | Yes |
 | C5 | Real webhook receiver test over the internet; import the Zapier, Make and n8n recipes on real accounts | R15 | Yes |
-| C6 | Kit compatibility on the owner's real sites and hosts. **Done for Astro on Vercel:** the owner's public site in production (https, CDN, route-handler proxy, vendored form script) since 2026-10-28. **Open:** paid sessions through a kit, Webflow/Framer, the other frameworks on a real host | R16 | Yes (hosting / CMS / plan accounts) |
+| C6 | Kit compatibility on the operator's real sites and hosts (https hosts, CDN, Vercel, Webflow/Framer plans, paid sessions through a kit) | R16 | Yes (hosting / CMS / plan accounts) |
 | C7 | Web calendar deep links against live Google/Outlook/Microsoft 365, or accept unverified | R17 | Yes (test calendars) |
 | C8 | Accept publication authority, confirmation-token, `config_read` draft-read, paid-flow, attendance-import, marketing-status (incl. the beehiiv subscription exception) and transactional-email policies | R18–R22, R27–R29 | No |
 | C9 | Accept residual behaviour (remaining-gaps §5) and the A7 digests | R23 | No |
 | C10 | Scope decisions recorded 2026-10-27: beehiiv, Resend, Amazon SES, Zapier, Make and n8n built; Intercom, Loops and Marketo skipped; Postmark and HubSpot Marketing not committed (remaining-gaps §4) | §4 | No |
 | C11 | Approve a staging host and run launch acceptance ([implementation-guide.md §11.1](implementation-guide.md#111-launch-acceptance-run-on-staging-record-results-in-validationmd)) | §3 | Yes (host) |
-| C12 | **Done.** Production since 2026-10-28, on 0.4.10-pre; the public site's events pages read it live (nine upcoming public sessions). The old live demo is retired | — | Yes |
-| C13 | **Done:** every tag from `v0.2.0-pre` to `v0.4.10-pre` published to `ghcr.io/b2b-saas-inc/visioncast` (amd64 + arm64, private). **Remaining:** decide package visibility or grant deploy hosts a `read:packages` token, then run a published manifest on a real amd64 host (production builds from source today) | R24 | Yes (GitHub) |
-| C14 | **GrowthCast owner-side items, none blocking:** tick "Create a room for every new session" on the GrowthCast live studio hosting account; change the studio `admin` and live-server admin passwords; run the studio cleanup command (old release folders, images, env backups); copies of backups and the age identity off both servers; revoke the unused personal PostHog `phx_` key; a recording bucket for the live server; a real session with attendees | §3 | Yes |
+| C12 | Approve a production deployment (`deploy/production/` or `deploy/quickstart/`) and record its first run and each upgrade in [validation.md](validation.md) | §3 | Yes (host) |
+| C13 | **Done:** every tag from `v0.2.0-pre` to `v0.4.10-pre` published to `ghcr.io/b2b-saas-inc/visioncast` (amd64 + arm64, private). **Remaining:** decide package visibility or grant deploy hosts a `read:packages` token, then run a published manifest on a real amd64 host | R24 | Yes (GitHub) |
 
 ## D. Operator tasks (target environment)
 
-For the owner's droplet install, [deploy/production/README.md](../deploy/production/README.md)
-covers D1, D2, D5, D6, D9, D10, D12 and D13 with scripts (rehearsed locally only) and
+For a DigitalOcean droplet behind Cloudflare, [deploy/production/README.md](../deploy/production/README.md)
+covers D1, D2, D5, D6, D9, D10, D12 and D13 with scripts and
 [deploy/production/cloudflare.md](../deploy/production/cloudflare.md) the Cloudflare part of D1–D3.
 
-| # | Task | Gap | State |
-|---|---|---|---|
-| D1 | TLS with HTTP→HTTPS redirect | §3 | **In place** (Let's Encrypt origin, Full strict + Always Use HTTPS at Cloudflare, 2026-10-29)
-| D2 | Edge rate limits on `/webinar-api/*` (incl. proxy `my-registration`), `/w/`, `/mcp`, `/admin/`, `/studio/login/`, `/api/v1/payments/stripe/webhook` (`docker/nginx.conf.example`) | §3 | **In place**: nginx zones plus one Cloudflare rate-limiting rule (Free plan), 2026-10-29
-| D3 | MFA, SSO or VPN in front of `/admin/` and `/studio/` | §3 | **In place**: Cloudflare Access (One-time PIN, owner policy), verify `--expect-access` 12/12, 2026-10-29
+| # | Task | Gap |
+|---|---|---|
+| D1 | TLS with HTTP→HTTPS redirect | §3 |
+| D2 | Edge rate limits on `/webinar-api/*` (incl. proxy `my-registration`), `/w/`, `/mcp`, `/admin/`, `/studio/login/`, `/api/v1/payments/stripe/webhook` (`docker/nginx.conf.example`) | §3 |
+| D3 | MFA, SSO or VPN in front of `/admin/` and `/studio/` | §3 |
 | D4 | Mode B edges forward `/webinar-api/calendar.ics` (and `my-registration`), or set `WEBINAR_DIRECT_ICS_REWRITE=false` | R21 |
 | D5 | `RATE_LIMIT_TRUST_X_FORWARDED_FOR` only behind a trusted chain of matching depth | §3 |
-| D6 | Worker process running | §3 | **In place** (Compose `worker`; its sends are what PostHog delivered on 2026-11-02)
+| D6 | Worker process running | §3 |
 | D7 | `WEBHOOK_HOST_ALLOWLIST` for generic webhook receivers, self-hosted RudderStack data planes and n8n hosts, `api.stripe.com`, hosting hosts (native vendor hosts are pinned in code and need no entry unless `NATIVE_VENDOR_HOSTS_IMPLICIT=0`); https `PUBLIC_BASE_URL`; `PUBLIC_EVENT_URL_TEMPLATE` | §3 |
 | D8 | Stripe webhook endpoint with the five events from [tickets.md](tickets.md) | §3 |
-| D9 | `INTEGRATION_MASTER_KEY` outside backups; scheduled `deploy/backup.sh --encrypt-to …`; restore drill with `deploy/restore.sh` on the target host | §3 | **Partly:** nightly age-encrypted backups on both servers; a live-server backup was decrypted and checked off-server (2026-11-02). No restore drill of the studio's backup on the target host yet
-| D10 | Cron for `purge_personal_data` | §3 | **In place** (bootstrap `cron.tmpl`, 30 days)
-| D11 | Existing deployments: `deploy/upgrade.sh --image <image>` (migrates through 0017, `sync_roles`); marketers to `/studio/` | §3 | **In place** through `update.sh`
-| D12 | `manage.py check` on every deploy | §5 | **In place** (`upgrade.sh`)
+| D9 | `INTEGRATION_MASTER_KEY` outside backups; scheduled `deploy/backup.sh --encrypt-to …`; restore drill with `deploy/restore.sh` on the target host | §3 |
+| D10 | Cron for `purge_personal_data` | §3 |
+| D11 | Existing deployments: `deploy/upgrade.sh --image <image>` (migrates through 0017, `sync_roles`); marketers to `/studio/` | §3 |
+| D12 | `manage.py check` on every deploy | §5 |
 | D13 | Pin `WEBINAR_IMAGE` to the exact published tag (or the locally built `<version>-<commit>` tag) in `.env`; never `latest` | §3 |

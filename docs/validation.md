@@ -4,7 +4,7 @@ Test evidence, newest first. Implemented with Claude Code orchestrators and boun
 
 ## Production studio on 0.4.10-pre, live server on v0.4.9-pre with the brand logo — 2026-11-05
 
-- Observed from the workstation after the owner's updates: `deploy/production/verify.sh --expect-version 0.4.10-pre --expect-access` against the production studio **12/12 PASS** (OpenAPI now 68 paths); `/healthz` reports 0.4.10-pre. The live server checkout at `v0.4.9-pre`, `/brand/icon` and `/brand/logo` both answer `image/png`, so the GrowthCast mark is the tab icon on every live page. The public site's events page shows the new "Upcoming Events" heading. The site's `/webinar-api` proxy (a Vercel route handler) reaches the studio: `/webinar-api/profile` answers the backend's 400 `invalid_query`, and a registration POST without a browser origin gets the proxy's 403 `origin_not_allowed`. Whether anyone has registered through it is not recorded here.
+- Observed from the workstation after the owner's updates: `deploy/production/verify.sh --expect-version 0.4.10-pre --expect-access` against the production studio **12/12 PASS** (OpenAPI now 68 paths); `/healthz` reports 0.4.10-pre. The live server checkout at `v0.4.9-pre`, `/brand/icon` and `/brand/logo` both answer `image/png`, so the brand mark is the tab icon on every live page. The public site's events page shows the new "Upcoming Events" heading. The site's `/webinar-api` proxy (a Vercel route handler) reaches the studio: `/webinar-api/profile` answers the backend's 400 `invalid_query`, and a registration POST without a browser origin gets the proxy's 403 `origin_not_allowed`. Whether anyone has registered through it is not recorded here.
 - Through the management MCP: one LiveKit hosting account, enabled, `autoProvision` still off; all nine upcoming sessions (eight public Mondays plus the unlisted 19 November session) have a join URL and a waiting room. Nothing else was changed.
 - [remaining-gaps.md](remaining-gaps.md) and [release-checklist.md](release-checklist.md) reconciled against this state.
 
@@ -16,7 +16,7 @@ Test evidence, newest first. Implemented with Claude Code orchestrators and boun
 ## Live server: the brand logo is the tab icon — 2026-11-04
 
 - Every page the live service serves (room, sign-in, `/admin`, link-not-available) links its tab icon to `/brand/icon`: the brand logo once one is set, else the built-in mark. Before, only the room swapped it client-side and the other pages always showed the VisionCast mark. `/admin` shows the brand logo in its header too.
-- `live/tests/http.rs` brand test asserts the icon before and after a logo upload. Live suite: 72 HTTP tests and 18 unit tests pass, clippy clean on the touched files. The owner's live server needs `deploy/live/update.sh v0.4.9-pre` and the GrowthCast mark uploaded as the studio's brand logo.
+- `live/tests/http.rs` brand test asserts the icon before and after a logo upload. Live suite: 72 HTTP tests and 18 unit tests pass, clippy clean on the touched files. The owner's live server needs `deploy/live/update.sh v0.4.9-pre` and the brand mark uploaded as the studio's brand logo.
 
 ## Card image: a second picture for listings — 2026-11-03
 
@@ -35,30 +35,30 @@ Test evidence, newest first. Implemented with Claude Code orchestrators and boun
 - `deploy/live/backup.sh` set up there (age 1.1.1, sqlite3 3.45, nightly at 02:30 UTC, the same age recipient as the studio's backups). First file 277 KB. Restore check off the server: decrypted with the owner's identity, the database passed `integrity_check` with 1 account and 3 rooms, and the brand logo and font were in it.
 - the production studio on `0.4.6-pre` through `update.sh`, ran to the end.
 
-## GrowthCast email through PostHog, live — 2026-11-02
+## Email through PostHog, live on an owner's deployment — 2026-11-02
 
-- PostHog project 589469 (GrowthCast, US Cloud): sender address on the owner's mail subdomain verified by the owner in the app. Two templates, made transactional with the owner's typed confirmation: *VisionCast: attendee email* (`01a19def-3d37-…`) and *VisionCast: sign-in codes and invitations* (`01a19def-7359-…`, **Protect sensitive data** on). Both: `{{ variables.subject }}`, `{{ variables.html | raw }}`, `{{ variables.text }}`, GrowthCast header, Manrope, coral links.
+- The owner's PostHog project (US Cloud): sender address on the owner's mail subdomain verified by the owner in the app. Two templates, made transactional with the owner's typed confirmation: *VisionCast: attendee email* (`01a19def-3d37-…`) and *VisionCast: sign-in codes and invitations* (`01a19def-7359-…`, **Protect sensitive data** on). Both: `{{ variables.subject }}`, `{{ variables.html | raw }}`, `{{ variables.text }}`, the brand header, font and link colour.
 - Production 0.4.4-pre: `EMAIL_DELIVERY=posthog` with a `phs_` key (Workflow: Write) kept in `/root/visioncast-secrets/posthog-email-key` and `.env`; destination *PostHog: attendee email* enabled for all seven attendee event types, send policy clear.
 - **Real sends, both `delivered`** per PostHog's status API within about 5 seconds: a platform message through `webinars.mail.posthog_send` and a Live Test confirmation through the attendee template with the destination's credentials. Not yet seen: a confirmation produced by a real registration through the outbox.
 - Found while testing: production first ran 0.4.3-pre, without the paragraph-spacing fix, so the first platform test arrived with its paragraphs run together; 0.4.4-pre fixed it.
 
-## GrowthCast moves from Amazon SES to PostHog transactional email — 2026-11-02
+## An owner's deployment moves from Amazon SES to PostHog transactional email — 2026-11-02
 
-- At the owner's request, GrowthCast's own deployment no longer uses SES. Removed: the SES domain and recipient identities, the IAM user `visioncast-events-ses-smtp` with its key and policy, the five DKIM and MAIL FROM records in Cloudflare, the SMTP settings in every release's `.env` and in `bootstrap.conf`, and the SMTP secret files (shredded). Production runs `EMAIL_DELIVERY=disabled` until PostHog is set up. The pending SES production-access request can't be withdrawn and is harmless.
+- At the owner's request, their deployment no longer uses SES. Removed: the SES domain and recipient identities, the IAM user `visioncast-events-ses-smtp` with its key and policy, the five DKIM and MAIL FROM records in Cloudflare, the SMTP settings in every release's `.env` and in `bootstrap.conf`, and the SMTP secret files (shredded). Production runs `EMAIL_DELIVERY=disabled` until PostHog is set up. The pending SES production-access request can't be withdrawn and is harmless.
 - VisionCast keeps SMTP and the SES and Resend destinations. New, optional: `EMAIL_DELIVERY=posthog` for the platform's own email and a **PostHog transactional email** destination for attendee email (docs/email.md). Tests mock-only: `tests/test_mail_posthog.py`, `tests/test_native_posthog_email.py`. Full suite 2,540 passed, 1 skipped.
 
-## GrowthCast production: 0.4.2-pre, brand colour and font — 2026-11-02
+## Owner's production: 0.4.2-pre, brand colour and font — 2026-11-02
 
 - `update.sh` ran end to end for the first time since 0.3.0-pre (the stdin fix): backup, migration `0014_studio_brand_font`, restart, `current` switched, host files refreshed. `verify.sh --expect-access` 0 failures.
 - Found: every update records its image in `bootstrap.conf`, and the next update reused it, so a new tree ran the previous release's locally built image (first attempt reported 0.4.0-pre). `host-update.sh` now ignores a recorded `webinar-platform:*` image and builds the new version; registry images are still kept.
 - Brand saved as `#ff6b4a` with variable Manrope (OFL, 164,700 bytes). `brand.css` sets `--on-accent:#1f1d1a`, a text shade `#ba4d36` (4.5:1 on white) and the font. The same font file is served by the live server. In Chromium the waiting room renders in Manrope, with charcoal text on coral buttons.
 - `/` redirects to `/studio/`; a draft event's room link shows the branded "This session isn't available" page.
 
-## GrowthCast production: 0.4.0-pre, SES email, and a public live server — 2026-11-02
+## Owner's production: 0.4.0-pre, SES email, and a public live server — 2026-11-02
 
 - **Studio.** the production studio updated to `0.4.0-pre` (the live studio). `verify.sh --expect-access` 0 failures. Found while doing it: every update since 0.3.0-pre had stopped after `deploy/upgrade.sh`, because `docker compose run --rm migrate` read the rest of `host-update.sh` from stdin, so `current` still pointed at 0.3.0-pre and the post-update steps never ran. Restarting from `current` brought 0.3.0-pre back for about 10 minutes. Fixed in `e3efd64`, `current` repointed, post-update steps run by hand.
 - **Email.** Amazon SES in us-east-1: the studio's domain verified, DKIM and a custom MAIL FROM on a `bounce.` subdomain both SUCCESS. SMTP user limited to the studio's domain. DigitalOcean blocks outgoing 587, so `SMTP_PORT=2587`. A message from the worker to `success@simulator.amazonses.com` was accepted. **Not yet:** the account is in the SES sandbox, and the first production-access request was denied (case 179363852100440), so only verified addresses receive mail.
-- **Live server.** DigitalOcean `s-4vcpu-8gb-amd`, nyc2, reserved IP, `v0.4.0-pre` built on the server. `verify-public.sh` all 16 checks pass (27 s from macOS after making its port probe use `-G`; before, about 75 s per closed port). `live/tests/turn/check.cjs` from a workstation: **video went through TURN over TLS on 443 with nothing else allowed**, first time on a public server. Connected to the studio as a LiveKit account with no warnings; the studio brand (GrowthCast, `#9e321b`, logo) pushed to it and served back byte for byte.
+- **Live server.** DigitalOcean `s-4vcpu-8gb-amd`, nyc2, reserved IP, `v0.4.0-pre` built on the server. `verify-public.sh` all 16 checks pass (27 s from macOS after making its port probe use `-G`; before, about 75 s per closed port). `live/tests/turn/check.cjs` from a workstation: **video went through TURN over TLS on 443 with nothing else allowed**, first time on a public server. Connected to the studio as a LiveKit account with no warnings; the studio brand (name, `#9e321b`, logo) pushed to it and served back byte for byte.
 - **Not yet:** a recording bucket, a real session with people on phones, and a resize up for an event.
 
 ## Screen sharing on Safari (`live/`, branch `livekit-rust`, not released) — 2026-11-01
@@ -227,7 +227,7 @@ Everything below ran on one Mac, in Docker, with real LiveKit, Egress, S3-compat
 
 ## the public site Events integration deployed (Astro) — 2026-10-28T17:45Z
 
-- **Site:** the `events-astro` port (three commits on the live Astro 7 site, repo `ejwhite7/growth-model`) was fast-forwarded onto `main` and pushed. Vercel's Git integration deployed it to production at once (deployment `dpl_FpwZsg48YLb8njmP6fQ6MJ2DdU89`), so the public site's `/events` and `/events/<slug>` are live. Local gate before the push: lint clean, 270 tests, production build, 30/30 browser flow, `vercel dev` checks.
+- **Site:** the `events-astro` port (three commits on the live Astro 7 site, the owner's site repository) was fast-forwarded onto `main` and pushed. Vercel's Git integration deployed it to production at once (deployment `dpl_FpwZsg48YLb8njmP6fQ6MJ2DdU89`), so the public site's `/events` and `/events/<slug>` are live. Local gate before the push: lint clean, 270 tests, production build, 30/30 browser flow, `vercel dev` checks.
 - **Production state (variables not yet set):** `/events` 200 with the designed "Coming soon" unavailable state, `/api/events` 503 `not_configured`, `/events/<unknown>` 200 through the fallback rewrite. No other page changed.
 - **Preview with the backend origin supplied inline** (`vercel deploy --build-env/--env WEBINAR_API_BASE=<studio origin>`, deployment-protected, probed with `vercel curl`): `/api/events` 200 `{"upcoming":[],"recorded":[]}` from the live studio, `/events` 200, `/api/events/<unknown>` 404 `not_found`, `/events/<unknown>` 200 fallback, `/api/webinar-api/csrf` 503 `proxy_not_configured` (clean refusal without `WEBINAR_PROXY_KEY`), sitemap lists `/events/` only (nothing prerendered because the studio has no published events).
 - **Not verified yet:** an event card, an event page with real data and a registration through the proxy. The studio catalogue is empty; seeding it (`seed_public_demo`) and setting the two Vercel variables were refused by this session's permission classifier (remote writes, shared resources). Both are owner steps listed in the release checklist (C6, C12).

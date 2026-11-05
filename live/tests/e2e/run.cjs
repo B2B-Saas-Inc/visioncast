@@ -109,7 +109,7 @@ const audioFrom = (page) => page.evaluate(() => Array.from(document.querySelecto
       await v1('PUT', `/rooms/${ROOM}`, { title: 'Launch webinar', startsAt: new Date(now + 600000).toISOString(), endsAt: new Date(now + 4200000).toISOString(), slug: SLUG, entryUrl: 'https://events.example.com/w/abc/' });
       const person = async (role, name, title = '') => (await v1('POST', `/rooms/${ROOM}/crew`, { role, name, title })).url;
       links = {
-        hostUrl: await person('host', 'Maya Host', 'CEO, GrowthCast'),
+        hostUrl: await person('host', 'Maya Host', 'CEO, Acme Events'),
         producerUrl: await person('producer', 'Pat Producer'),
         guestUrl: await person('guest', 'Gus Guest', 'VP Marketing, Acme'),
         probeProducer: await person('producer', 'Probe Producer'),
@@ -131,8 +131,8 @@ const audioFrom = (page) => page.evaluate(() => Array.from(document.querySelecto
       await shot(hostP, '01-device-check');
       assert.equal(addressOf(hostP), `/${SLUG}/green-room`, 'the signed link is out of the address bar');
       assert.equal(await hostP.inputValue('#name'), 'Maya Host', 'the crew member\'s name is ready');
-      assert.equal(await hostP.inputValue('#job-title'), 'CEO, GrowthCast');
-      await enter(hostP, 'Maya Host', 'CEO, GrowthCast');
+      assert.equal(await hostP.inputValue('#job-title'), 'CEO, Acme Events');
+      await enter(hostP, 'Maya Host', 'CEO, Acme Events');
       prodP = await open(browser, local(links.producerUrl), 'producer', errors);
       await enter(prodP, 'Pat Producer');
       guestP = await open(guestBrowser, local(links.guestUrl), 'guest', errors);
@@ -270,18 +270,18 @@ const audioFrom = (page) => page.evaluate(() => Array.from(document.querySelecto
       await prodP.$eval('#frame-inset', (el) => { el.value = '7'; el.dispatchEvent(new Event('change')); });
       await until('windows inside the frame', () => viewP.$$eval('.stile:not([hidden])', (els) => els.every((e) => parseFloat(e.style.left) >= 6.9)));
       await prodP.fill('#lt-title', 'Maya Host');
-      await prodP.fill('#lt-sub', 'CEO, GrowthCast');
+      await prodP.fill('#lt-sub', 'CEO, Acme Events');
       await prodP.click('#lt-title >> xpath=ancestor::div[contains(@class,"box")][1] >> text=Show');
       await prodP.fill('#ticker-text', 'Ask your questions in the Q&A tab');
       await prodP.click('#ticker-text >> xpath=ancestor::div[contains(@class,"box")][1] >> text=Show');
       await prodP.fill('#cta-title', 'See the launch');
       await prodP.fill('#cta-label', 'Open');
-      await prodP.fill('#cta-url', 'https://growthcast.app/events');
+      await prodP.fill('#cta-url', 'https://www.example.com/events');
       await prodP.click('#cta-title >> xpath=ancestor::div[contains(@class,"box")][1] >> text=Show');
       await viewP.waitForSelector('.pic-cta:not([hidden])');
       assert.equal(await viewP.textContent('.pic-third strong'), 'Maya Host');
       assert.match(await viewP.textContent('.pic-ticker'), /Q&A/);
-      assert.equal(await viewP.getAttribute('.pic-cta', 'href'), 'https://growthcast.app/events');
+      assert.equal(await viewP.getAttribute('.pic-cta', 'href'), 'https://www.example.com/events');
       await shot(viewP, '07-attendee-frame-overlays');
       await shot(prodP, '08-producer-look-panel');
     });
@@ -641,7 +641,7 @@ const audioFrom = (page) => page.evaluate(() => Array.from(document.querySelecto
 
     await step('someone on stage who reloads comes straight back on stage', async () => {
       await hostP.reload();
-      await enter(hostP, 'Maya Host', 'CEO, GrowthCast');
+      await enter(hostP, 'Maya Host', 'CEO, Acme Events');
       await until('host back on stage for the audience', async () => (await tileNames(view2P)).includes('Maya Host') && (await stageVideos(view2P)) >= 1);
       assert.match(await hostP.textContent('#notice'), /on air/);
       await hostP.click('[data-channel="event"]').catch(() => {});

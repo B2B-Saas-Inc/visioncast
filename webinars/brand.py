@@ -28,7 +28,7 @@ MAX_LOGO_BYTES = 2 * 1024 * 1024
 MAX_LOGO_SIDE = 1024
 MAX_LOGO_PIXELS = 16_000_000
 MAX_FONT_BYTES = 2 * 1024 * 1024
-# Text on the accent: white, or this when white would be hard to read (GrowthCast-style coral).
+# Text on the accent: white, or this when white would be hard to read (a coral accent, for example).
 DARK_TEXT = "#1f1d1a"
 CACHE_KEY = "studio-brand"
 _COLOUR = re.compile(r"^#[0-9a-fA-F]{6}$")

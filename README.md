@@ -11,7 +11,7 @@
 [![Release](https://img.shields.io/github/v/release/B2B-Saas-Inc/visioncast?include_prereleases&label=release)](https://github.com/B2B-Saas-Inc/visioncast/releases)
 [![Status: pre-release](https://img.shields.io/badge/status-pre%20release-orange)](docs/remaining-gaps.md)
 
-[Quick start](#quick-start) · [Implementation guide](docs/implementation-guide.md) · [Releases](https://github.com/B2B-Saas-Inc/visioncast/releases)
+[See it live](https://growthcast.app/events) · [Quick start](#quick-start) · [Implementation guide](docs/implementation-guide.md) · [Releases](https://github.com/B2B-Saas-Inc/visioncast/releases)
 
 > **Pre-release.** VisionCast runs in production for its first customer, but it isn't certified for general production use yet. Read [Status](#status) before you depend on it.
 
@@ -103,7 +103,7 @@ flowchart LR
 ### For whoever runs it
 
 * **One image.** Django 5.2 LTS, PostgreSQL 16 and a background worker ship in a single Docker image for linux/amd64 and linux/arm64, published to GHCR on every release.
-* **Production tooling.** The one-step installer works anywhere. GrowthCast's own scripts, for DigitalOcean and Cloudflare, add TLS, rate limits, Access, nightly encrypted backups and in-place upgrades with a backup first. [deploy/production/README.md](deploy/production/README.md)
+* **Production tooling.** The one-step installer works anywhere. The included production scripts, for DigitalOcean and Cloudflare, add TLS, rate limits, Access, nightly encrypted backups and in-place upgrades with a backup first. [deploy/production/README.md](deploy/production/README.md)
 * **Sized for the event, not the year.** The live server can stay small between events and be sized up for them. `size-check.sh` tells you whether it's big enough for the audience you expect, and the room warns hosts if it isn't. [Capacity](live/README.md#capacity)
 * **Privacy controls.** A retention and erasure command, a personal-data-free audit log, encrypted credentials, and outbound requests restricted to approved hosts.
 
@@ -156,7 +156,7 @@ deploy/upgrade.sh --image ghcr.io/b2b-saas-inc/visioncast:0.4.10-pre   # first r
 
 ## Deploy to production
 
-On any provider, the simplest route is [`deploy/quickstart/install.sh`](deploy/quickstart/install.sh): see [docs/branding.md](docs/branding.md), and [choosing a provider](live/README.md#choosing-a-provider). What follows is how GrowthCast runs it, on DigitalOcean and Cloudflare, and it's specific to those: [`deploy/production/`](deploy/production/README.md) takes a fresh droplet to a working install: Docker Compose, nginx with Let's Encrypt, Cloudflare in front, nightly encrypted backups, retention, and a PASS/FAIL verifier. It's the tooling behind the production studio.
+On any provider, the simplest route is [`deploy/quickstart/install.sh`](deploy/quickstart/install.sh): see [docs/branding.md](docs/branding.md), and [choosing a provider](live/README.md#choosing-a-provider). What follows is a full production layout on DigitalOcean and Cloudflare, and it's specific to those: [`deploy/production/`](deploy/production/README.md) takes a fresh droplet to a working install: Docker Compose, nginx with Let's Encrypt, Cloudflare in front, nightly encrypted backups, retention, and a PASS/FAIL verifier. It's the tooling behind the production studio.
 
 ```sh
 deploy/production/provision.sh --apply                      # creates the droplet (dry run without --apply)
@@ -315,7 +315,7 @@ Issues and pull requests are welcome. Please include a test with every behaviour
 | Document | Contents |
 |---|---|
 | [docs/implementation-guide.md](docs/implementation-guide.md) | **Start here.** Deployment, pages, forms, proxy, waiting room, calendars, webhooks, launch checks |
-| [deploy/production/README.md](deploy/production/README.md) | GrowthCast's production install on DigitalOcean behind Cloudflare, upgrades, verification |
+| [deploy/production/README.md](deploy/production/README.md) | A production install on DigitalOcean behind Cloudflare, upgrades, verification |
 | [docs/studio.md](docs/studio.md) | The marketer studio |
 | [docs/kits.md](docs/kits.md), [docs/browser-integration.md](docs/browser-integration.md), [docs/integration.md](docs/integration.md) | Website kits, form script, consent, first-party proxy, Google Tag Manager |
 | [live/README.md](live/README.md) | Your own video: the studio, roles, addresses, `/admin`, captions, graphics, broadcasting, capacity, choosing a provider, and the service's API |

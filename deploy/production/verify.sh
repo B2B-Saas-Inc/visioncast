@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # External verification of a production deployment, run from the workstation.
 #
-#   deploy/production/verify.sh --domain events.growthcast.app
-#   deploy/production/verify.sh --domain events.growthcast.app --expect-access --expect-version 0.3.0-pre
-#   deploy/production/verify.sh --domain events.growthcast.app --origin 203.0.113.10   # bypass Cloudflare
+#   deploy/production/verify.sh --domain events.example.com
+#   deploy/production/verify.sh --domain events.example.com --expect-access --expect-version 0.3.0-pre
+#   deploy/production/verify.sh --domain events.example.com --origin 203.0.113.10   # bypass Cloudflare
 #
 # Options:
 #   --domain HOST        the platform host (required)

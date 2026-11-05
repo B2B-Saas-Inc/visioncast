@@ -1,12 +1,10 @@
 # Production deployment: one droplet behind Cloudflare
 
-This is how the first owner runs VisionCast, and it's specific to DigitalOcean and Cloudflare. On any other provider, use [deploy/quickstart](../quickstart/install.sh) and [docs/branding.md](../../docs/branding.md).
+This is a full production layout for VisionCast, and it's specific to DigitalOcean and Cloudflare. On any other provider, use [deploy/quickstart](../quickstart/install.sh) and [docs/branding.md](../../docs/branding.md).
 
 Full install of VisionCast (web + worker + PostgreSQL under Docker Compose, nginx + Let's Encrypt on
 the host, encrypted backups, retention cron) on one DigitalOcean droplet (Ubuntu 24.04, 2 GB) behind
-Cloudflare (proxied DNS, Access in front of the studio and admin). This tooling installed
-that owner's studio on 0.3.0-pre (2026-10-28) and has upgraded it in place since; the live install
-runs 0.4.8-pre. Each run is recorded in [docs/validation.md](../../docs/validation.md).
+Cloudflare (proxied DNS, Access in front of the studio and admin). This tooling has installed a studio on 0.3.0-pre (2026-10-28) and upgraded it in place through every release since. Each run is recorded in [docs/validation.md](../../docs/validation.md).
 
 | File | Runs where | Purpose |
 |---|---|---|

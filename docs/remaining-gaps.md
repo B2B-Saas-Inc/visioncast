@@ -1,6 +1,6 @@
 # Remaining gaps
 
-Current release: `0.4.10-pre`, published to GHCR as a private package on every tag (`release.yml` has run on each tag from `v0.2.0-pre` through `v0.4.10-pre`). It runs in production for its first owner, upgraded in place since 0.3.0-pre, and the live add-on (released in `0.4.0-pre`) runs on that owner's own live server on `v0.4.9-pre`. The sections below were reconciled on 2026-11-05 against `0.4.10-pre`. **What remains needs owner-held accounts, an owner decision, or a real event with real people.** This page separates what the code implements, what blocks a release, what the
+Current release: `0.4.10-pre`, published to GHCR as a private package on every tag (`release.yml` has run on each tag from `v0.2.0-pre` through `v0.4.10-pre`). The sections below were reconciled on 2026-11-05 against `0.4.10-pre`. **What remains needs vendor accounts, an operator's decision, or a real event with real people.** Results from any particular deployment are recorded in [validation.md](validation.md) only; this page describes the project. This page separates what the code implements, what blocks a release, what the
 owner has requested but is not built yet, and what is optional or out of scope. Test evidence
 lives only in [validation.md](validation.md); nothing on this page is a test result. The
 ordered, tickable list is [release-checklist.md](release-checklist.md). Detailed behaviour is
@@ -16,16 +16,13 @@ owned by [mcp.md](mcp.md), [native-integrations.md](native-integrations.md),
 | `tests/run-pg16.sh` harness with the logical + application restore probe | 2,372 passed and the restore probe passed on `24e3493` (2026-10-27) | No: last run on the 0.3.0-pre tree; the suite has run on every tree since, the restore probe has not |
 | End-to-end acceptance (`tests/test_e2e_acceptance.py`): create → provision (Zoom) → register/pay → verify → attend → CRM follow-up | 2 scenarios, fake vendors; part of the suite above | Yes |
 | Live service (`live/`): HTTP and unit tests | **72 + 18 pass**, clippy clean on touched files (2026-11-04, `v0.4.9-pre`) | Yes |
-| Live service in real browsers on a real LiveKit stack: every role 36/36, newer features 24/24, Chromium/Firefox/WebKit/phone screens 8/8, attack suite 26/26, load 1,000 event streams + 100 media viewers, captions 11.2% WER | All on 2026-11-01 on branch `livekit-rust`, merged unchanged into `0.4.0-pre` | Yes for 0.4.0-pre; later live changes (brand font, clean addresses, tab icon) covered by the HTTP tests only |
+| Live service in real browsers on a real LiveKit stack: every role 36/36, newer features 24/24, Chromium/Firefox/WebKit/phone screens 8/8, attack suite 26/26, load 1,000 event streams + 100 media viewers, captions 11.2% WER | All on 2026-11-01 on branch `livekit-rust`, merged unchanged into `0.4.0-pre`; all on one machine | Yes for 0.4.0-pre; later live changes (brand font, clean addresses, tab icon) covered by the HTTP tests only |
 | Site (`site/`) tests, typecheck, production build | 51 passed (2026-10-27); the site's test count was refreshed for 0.4.7-pre | Partly: not re-recorded in validation.md since 2026-10-27 |
 | SDK unit, proxy, kit and automation-recipe tests; mocked-backend SDK Chromium (11/11); Riverside and GTM Chromium (8/8, 10/10); website kits from fresh vendor scaffolds | All passed 2026-10-27 on the 0.3.0-pre tree | No: not rerun since. The studio Chromium journey was rerun 13/13 on 2026-10-29 (0.3.7-pre) |
-| A website kit on a real production site | The owner's public site (Astro 7 on Vercel, https, Vercel route-handler proxy, vendored form script) serves the events pages from the production studio; its own gate was 270 tests and a 30/30 browser flow (2026-10-28) | Yes (the site tracks the studio's SDK; last vendored 0.3.5-pre's script on 2026-10-30) |
-| Versioned OCI image | Built and published by `release.yml` on every tag through `v0.4.10-pre` (run 41891908002, amd64 + arm64, SBOM + provenance). Production builds its own image from the packaged source on the droplet instead | Yes, but no published manifest has been pulled and run from here |
-| Clean-server Compose first run, backup/restore, retention dry run, offline receiver contract, `nginx -t` + routing, upgrade and rollback in Docker | All passed 2026-10-27 (0.3.0-pre tree) | Upgrade evidence since then is on the real host (next row) |
-| In-place upgrade on a real host | The production studio upgraded through every release from 0.3.0-pre to **0.4.10-pre** with `deploy/production/update.sh` (backup, migrations 0012–0017, restart, `sync_roles`); `verify.sh --expect-access` **12/12** on 0.4.10-pre (2026-11-05). Rollback never exercised there | Yes |
+| Versioned OCI image | Built and published by `release.yml` on every tag through `v0.4.10-pre` (run 41891908002, amd64 + arm64, SBOM + provenance) | Yes, but no published manifest has been pulled and run from here |
+| Clean-server Compose first run, backup/restore, retention dry run, offline receiver contract, `nginx -t` + routing, upgrade and rollback in Docker | All passed 2026-10-27 (0.3.0-pre tree) | No: not rerun since; migrations 0012–0017 were added after that run |
 | Base-image digest pins, `pip-audit` on the hash lock | Pinned; no known vulnerabilities (2026-10-27) | Not rerun since 2026-10-27 |
-| Production | The studio on `0.4.10-pre` behind Cloudflare (Full strict, Access on `/studio/` and `/admin/`, rate limits), web + worker, nightly encrypted backups; the owner's public site reads it live with nine upcoming public sessions, each with a LiveKit room and a waiting room. The live server on `v0.4.9-pre`, brand logo and font pushed from the studio, nightly encrypted backups, one restore checked off-server | Yes |
-| Real vendor traffic | **PostHog transactional email:** two real sends `delivered` (2026-11-02). **Amazon SES:** one simulator send accepted from production, then SES removed from GrowthCast (2026-11-02); the adapter stays. **LiveKit:** public server, TURN over TLS on 443 proven, no real session with attendees yet. Everything else (CRM and analytics adapters, Stripe, Zoom/Wistia/Sequel/Riverside, an SMTP relay, webhook receivers, Zapier/Make/n8n, calendar deep links): **none** | — |
+| Real vendor traffic from this repository's test suites | **None.** Every vendor, Stripe, hosting-provider, SMTP, registry and receiver call is mocked or runs against a local stand-in. What an operator has exercised live on their own deployment is in [validation.md](validation.md) only | — |
 
 ## 1. Implemented in code (gates in §2–§3)
 
@@ -49,9 +46,9 @@ owned by [mcp.md](mcp.md), [native-integrations.md](native-integrations.md),
 | **Provider attendance import** (2026-10-27): authenticated Zoom participant pull (documented endpoint, paginated), Riverside registrant pull (UNVERIFIED constants), JSON/CSV file import for every provider; id-then-email matching, dedupe, ambiguity review, idempotent apply through `record_attendance` (`attendance.recorded` once per registration), separate confirmed no-show pass; REST, MCP and studio. Migration `0011` | `webinars/attendance_import.py`, `api/attendance_imports.py`; [hosting.md](hosting.md) "Attendance import" |
 | Website kits: WordPress plugin, framework/headless/proxy references, no-code and CMS schema references, fresh-install verification script | `sdk/kits/`; [kits.md](kits.md) |
 | Distribution: `VERSION`, `show_version`, `/healthz` version, OCI labels, `deploy/build-image.sh`, `backup.sh`, `restore.sh`, `upgrade.sh`, `WEBINAR_IMAGE` in Compose, GHCR release workflow (runs on every tag) | `deploy/`, `Dockerfile`, `compose.yaml`, `.github/workflows/release.yml`; [operations.md](operations.md) |
-| **Production deployment tooling** for one droplet behind Cloudflare: provision, bootstrap, package a tag, `update.sh` (backup → migrate → restart → `sync_roles` → health), `verify.sh`, nightly encrypted backups, retention cron | `deploy/production/`; [deploy/production/README.md](../deploy/production/README.md) |
+| **Production deployment layout** for one DigitalOcean droplet behind Cloudflare: provision, bootstrap, package a tag, `update.sh` (backup → migrate → restart → `sync_roles` → health), `verify.sh`, nightly encrypted backups, retention cron | `deploy/production/`; [deploy/production/README.md](../deploy/production/README.md) |
 | **Live add-on** (0.4.0-pre): self-hosted LiveKit studio with roles, green room, personal links, engagement, captions, recordings, brand, RTMP out; its own update and backup scripts | `live/`, `deploy/live/`; [live/README.md](../live/README.md) |
-| **Brand** (0.4.2-pre): any colour and a brand font on the studio, waiting room and live rooms; pushed to the live server, whose tab icon follows it (0.4.9-pre) | `webinars/brand.py`, `live/src/broadcast.rs`; [branding.md](branding.md) |
+| **Brand** (0.4.2-pre): any colour and a brand font on the studio, waiting room and live rooms; pushed to the live add-on, whose tab icon follows it (0.4.9-pre) | `webinars/brand.py`, `live/src/broadcast.rs`; [branding.md](branding.md) |
 | **Email through PostHog** (0.4.3–0.4.4-pre): `EMAIL_DELIVERY=posthog` for the platform's own mail and a PostHog transactional-email destination for attendee mail | `webinars/mail.py`, `native_providers/`; [email.md](email.md) |
 | **Automatic rooms and full delete** (0.4.7-pre): a hosting account marked `auto_provision` gives every new session its room and waiting room on commit; events and sessions can be deleted at any visibility while nobody is registered | `webinars/hosting/`, `services.py`; [hosting.md](hosting.md) |
 | **Card image** (0.4.8-pre) and **dashboard setup checklist** hide / auto-dismiss (0.4.10-pre); calendars carry the waiting room link (0.4.5-pre) | `webinars/models.py`, `studio/views_content.py`; [studio.md](studio.md) |
@@ -70,7 +67,7 @@ Must be closed or explicitly accepted by the owner before production use.
 | R4 | **Closed:** `PYTHON_IMAGE` and the Compose Postgres image are pinned by digest; refresh procedure in README "Supply chain notes". |
 | R5 | **Closed:** `pip-audit` on the hash lock reports no known vulnerabilities; the only finding was dev-only `pytest` (bumped to 9.0.3). |
 | R6 | **Closed locally:** retention dry run, offline receiver contract (`tests/test_verify_webhook_example.py`: valid, tampered, stale, duplicate, wrong secret, rotation), `nginx -t` plus routing and rate-limit checks on both nginx files (two routing bugs fixed). A receiver over the internet is C5. |
-| R24 | **Mostly closed:** `release.yml` has published amd64 + arm64 to GHCR on every tag through `v0.4.10-pre`; the release tree runs on a real amd64 host (the production studio), built there from the packaged source. **Open:** nobody has pulled a published manifest and run it (production builds its own image; the package is private and no host holds a `read:packages` token). |
+| R24 | **Mostly closed:** `release.yml` has published amd64 + arm64 to GHCR on every tag through `v0.4.10-pre`; the amd64 first run passed under emulation from the tagged tree. **Open:** pull a published manifest (`read:packages` token or a public package) and run it on a real amd64 host. |
 
 ### 2b. Known code defects and gaps still open
 
@@ -84,12 +81,12 @@ Must be closed or explicitly accepted by the owner before production use.
 
 | # | Blocker |
 |---|---|
-| R11 | **PostHog transactional email is the one adapter checked live:** two real sends delivered from production (2026-11-02). **Every other native adapter stays disabled** until it is checked in an owner-approved sandbox: HubSpot (409 on email collision), Attio (`matching_attribute`, list entries), PostHog and Customer.io dedupe, Segment, GA4, Amplitude, Mixpanel, RudderStack (auth ambiguity, regional hosts), Brevo (campaign-eligible contacts under vendor defaults), **Salesforce** (client-credentials token flow unreadable in docs; composite upsert by External ID; `v62.0`), **Pipedrive** (v2 API; rate limits; `due_time` zone; activity dedupe scan limited to 500), **ActiveCampaign** (date custom-field format; regional hosts other than `api-us1.com`; account automations may fire), **Mailchimp** (`<dc>.api.mailchimp.com` form; whether API-created `pending` members get the opt-in mail; unknown merge tags), **beehiiv** (what a create returns for an existing email; tag re-add idempotency; API-key page unreadable), **Resend** (text/html size limits; 409 after a template change), **Amazon SES** (signer proven only against the AWS test vectors; non-ASCII subjects; sandbox/quotas; no idempotency, so a retry after a timeout can send twice). Vendor writes are never recalled; no vendor-side erasure. |
+| R11 | **Native adapters stay disabled** until each is checked in a sandbox the operator approves (any adapter already exercised live is noted in [validation.md](validation.md)): HubSpot (409 on email collision), Attio (`matching_attribute`, list entries), PostHog and Customer.io dedupe, Segment, GA4, Amplitude, Mixpanel, RudderStack (auth ambiguity, regional hosts), Brevo (campaign-eligible contacts under vendor defaults), **Salesforce** (client-credentials token flow unreadable in docs; composite upsert by External ID; `v62.0`), **Pipedrive** (v2 API; rate limits; `due_time` zone; activity dedupe scan limited to 500), **ActiveCampaign** (date custom-field format; regional hosts other than `api-us1.com`; account automations may fire), **Mailchimp** (`<dc>.api.mailchimp.com` form; whether API-created `pending` members get the opt-in mail; unknown merge tags), **beehiiv** (what a create returns for an existing email; tag re-add idempotency; API-key page unreadable), **Resend** (text/html size limits; 409 after a template change), **Amazon SES** (signer proven only against the AWS test vectors; non-ASCII subjects; sandbox/quotas; no idempotency, so a retry after a timeout can send twice). Vendor writes are never recalled; no vendor-side erasure. |
 | R12 | **Stripe test mode** for the full paid flow: Checkout create, `expires_at` minimum, idempotency replay, expire endpoint, all five webhook events, refunds and disputes. Mocked only. |
-| R13 | **Hosting provider sandboxes:** Zoom Webinars (create/update/attach **and** `past_webinars/{id}/participants` attendance pull), Wistia, Sequel, Riverside (attach, registrants, attendance: paths are our best reading). **LiveKit (self-hosted) is proven** on the owner's live server: rooms created from the studio for all nine upcoming sessions, brand pushed, TURN over TLS; what it still lacks is a real session with attendees (see the live add-on section). |
-| R14 | **Real SMTP relay** — required, not optional, for any install that sells paid tickets (mailbox verification) or sends invitations / room codes over SMTP. GrowthCast's own install sends all of that through PostHog instead (`EMAIL_DELIVERY=posthog`, real sends delivered 2026-11-02); the SMTP path has only had one simulator send through Amazon SES (2026-11-02, since removed). |
+| R13 | **Hosting provider sandboxes:** Zoom Webinars (create/update/attach **and** `past_webinars/{id}/participants` attendance pull), Wistia, Sequel, Riverside (attach, registrants, attendance: paths are our best reading). **LiveKit (self-hosted)** is covered by the live add-on's own tests against a real LiveKit stack; what it still lacks is in the live add-on section below. |
+| R14 | **Real email delivery** — required, not optional, if paid tickets are sold (mailbox verification) or invitations / room codes are sent: an SMTP relay, or `EMAIL_DELIVERY=posthog` with a PostHog project. Both are mock-tested only in this repository. |
 | R15 | **Real webhook receiver(s)** the owner will use (the receiver contract is verified offline only). The **Zapier, Make and n8n recipes** ran only as a Node simulation on backend-signed fixtures: import each on a real account/instance (Make blueprint structure and n8n node parameter names are the likeliest to need adjustment). |
-| R16 | **Kit compatibility on the owner's real sites.** Fresh-install verification covered WordPress 7.1 / PHP 8.2 (block, shortcode, WP Super Cache, `/blog/` subdirectory), Next 16 self-hosted, SvelteKit 3 / Svelte 5, Astro 7 (behind nginx), Nuxt 4 (behind nginx), a static snippet behind nginx, and the four CMS schemas with vendor packages. **Verified on a real production site:** the owner's public site, Astro 7 on Vercel (https behind Vercel's CDN, the `/webinar-api` proxy as a Vercel route handler, the vendored form script), has served the events pages from the studio since 2026-10-28 and the form script since 2026-10-30. **Not verified:** a paid session through a kit, real Webflow/Framer hosting, the other frameworks on a real host, Next 14/15, Nuxt 3, Svelte 4, Astro middleware mode, WordPress multisite. |
+| R16 | **Kit compatibility on the owner's real sites.** Fresh-install verification covered WordPress 7.1 / PHP 8.2 (block, shortcode, WP Super Cache, `/blog/` subdirectory), Next 16 self-hosted, SvelteKit 3 / Svelte 5, Astro 7 (behind nginx), Nuxt 4 (behind nginx), a static snippet behind nginx, and the four CMS schemas with vendor packages. **Not verified here:** https hosts other than localhost, CDN caches in front of `/webinar-api`, Vercel route handlers, real Webflow/Framer hosting, paid sessions through a kit, Next 14/15, Nuxt 3, Svelte 4, Astro middleware mode, WordPress multisite. |
 | R17 | **Web calendar deep links** (Google/Outlook/Microsoft 365) against the live services, or accept unverified. |
 
 ### 2d. Owner policy acceptances
@@ -108,9 +105,8 @@ Must be closed or explicitly accepted by the owner before production use.
 
 ## 3. Operational gates (target environment; operator/owner)
 
-- A production host. GrowthCast has one (DigitalOcean + Cloudflare,
-  web + worker, since 2026-10-28); the state of each gate there is in
-  [release-checklist.md](release-checklist.md) section D. Any other install provisions its own.
+- A production host. Provisioning is the operator's job; `deploy/production/` is one complete
+  layout (DigitalOcean droplet behind Cloudflare) and `deploy/quickstart/` the one-step installer.
 - TLS, HTTP→HTTPS redirect, edge rate limits on `/webinar-api/*` (incl. the proxy's
   `my-registration`), `/w/`, `/mcp`, `/admin/`, `/studio/login/`, `/api/v1/payments/stripe/webhook`
   (`docker/nginx.conf.example` now covers all of them); MFA/SSO/VPN in front of `/admin/` and
@@ -127,15 +123,8 @@ Must be closed or explicitly accepted by the owner before production use.
 - Stripe webhook endpoint registered with the five events in [tickets.md](tickets.md).
 - Cron for `purge_personal_data` (now also blanks attendance-import rows).
 - Existing deployments: `deploy/upgrade.sh --image <image>` (backup, `migrate` through 0017,
-  restart, `sync_roles`, health); on the GrowthCast droplet, `deploy/production/update.sh`.
+  restart, `sync_roles`, health); with the `deploy/production/` layout, `update.sh`.
 - Launch acceptance in [implementation-guide.md §11.1](implementation-guide.md#111-launch-acceptance-run-on-staging-record-results-in-validationmd) on staging.
-- Still owner-side on the GrowthCast install (none blocks a release): tick "Create a room for
-  every new session" on the GrowthCast live studio hosting account (every existing upcoming
-  session already has its room, so this only matters for sessions created from now on); change
-  the studio `admin` password and the live server's generated admin password; run the studio
-  cleanup command (old release folders and images, three env backups); keep a copy of the
-  backups and the age identity off both servers; revoke the unused personal PostHog `phx_` key;
-  a recording bucket for the live server.
 
 ## 4. Requested feature backlog
 
@@ -148,9 +137,8 @@ Committed scope for this release is closed. What the owner asked for and is **no
 | Workflow automation (Zapier, Make, n8n) | **Built as destination presets plus verification recipes** over the signed webhook; recipes simulated in Node only (R15). |
 | Provider attendance import | **Built** for Zoom (documented endpoint), Riverside (unverified) and file import for every provider. Wistia and Sequel expose no attendance API this release; their reports go through the file import. |
 | Hosting update for Wistia/Sequel; Riverside create | Not built (Riverside create is undocumented by the vendor). |
-| Live demo backend upgrade to the release tree | Superseded: the demo was replaced by the production install (0.3.0-pre on 2026-10-28, now 0.4.10-pre). |
-| Self-hosted live studio (LiveKit) | **Built and released** (0.4.0-pre), running on the owner's live server. Not yet used for a real session. |
-| Brand colour and font, PostHog email, calendar waiting-room links, automatic rooms, delete at any visibility, card image, setup-checklist hide / auto-dismiss, live tab icon | **Built** (0.4.2-pre through 0.4.10-pre, all deployed). |
+| Self-hosted live studio (LiveKit) | **Built and released** (0.4.0-pre). |
+| Brand colour and font, PostHog email, calendar waiting-room links, automatic rooms, delete at any visibility, card image, setup-checklist hide / auto-dismiss, live tab icon | **Built** (0.4.2-pre through 0.4.10-pre). |
 
 ## 5. Known residual behaviour (accepted or documented, not blockers)
 
@@ -197,16 +185,17 @@ Committed scope for this release is closed. What the owner asked for and is **no
 
 ## Your own live server (LiveKit add-on)
 
-Released in 0.4.0-pre. Tested on a real LiveKit stack in real browsers ([validation.md](validation.md)), and running on the owner's public server on `v0.4.9-pre` (2026-11-04).
+Released in 0.4.0-pre. Tested on a real LiveKit stack in real browsers, on one machine ([validation.md](validation.md)).
 
-**Proven on the public server** (2026-11-02 onwards): certificates, firewall and `verify-public.sh` 16/16; video through a TURN relay over TLS on port 443 with nothing else allowed (`live/tests/turn/check.cjs`); the studio talking to it by its public name, with the brand (colour, logo, font) pushed and served back; `deploy/live/update.sh` and nightly `backup.sh`, with one backup decrypted and checked off the server; a room for each of the nine upcoming sessions.
+**Needs a public server, a real event, or your own accounts.** Each has a script or a checklist:
 
-**Still needs a real event or your own accounts.** Each has a script or a checklist:
-
-- A real session with real attendees. Nobody outside the test team has joined a room on the public server yet.
+- Certificates, firewalls and real networks: `deploy/live/verify-public.sh`.
+- People on networks that only allow port 443: `live/tests/turn/check.cjs` against your server (a TURN relay over TLS on 443 through Traefik, with LiveKit's credentials).
+- The studio talking to a live server by its public name and certificate; locally it's only been exercised over the test transport.
+- A real session with real attendees.
 - A real stream to YouTube, Meta, X and LinkedIn. So far only a local RTMP server has received one, over RTMP and RTMPS.
 - A real bucket. A local S3-compatible server that checks every signature has taken recordings and captions, but Amazon S3 and DigitalOcean Spaces haven't.
-- A load test on your own server: `live/tests/load/run.sh`. So far, on a laptop sharing its CPU with the load: 1,000 event streams and 100 simulated media viewers ([validation.md](validation.md)). No real browsers at that scale, no recording under load, and the public server (4 vCPU, 8 GB) hasn't been resized up for an event.
+- A load test on your own server: `live/tests/load/run.sh`. So far, on a laptop sharing its CPU with the load: 1,000 event streams and 100 simulated media viewers ([validation.md](validation.md)). No real browsers at that scale, and no recording under load.
 - Safari itself, and real phones. So far: Playwright's WebKit build, including screen sharing, and phone screens in desktop browsers. Publishing a camera or microphone from Safari, and a transparent WebM graphic on a Safari viewer's screen, haven't been checked.
 - Caption accuracy with your own speakers, names and jargon.
 

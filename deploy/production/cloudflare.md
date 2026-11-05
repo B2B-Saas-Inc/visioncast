@@ -76,7 +76,7 @@ Zero Trust → Access → Applications → **Add an application → Self-hosted*
 | Application name | VisionCast studio and admin |
 | Session duration | 24 hours (studio sessions themselves expire after 8 hours of Django session age) |
 | Application domain | `events.example.com` path `admin` **and** a second domain entry `events.example.com` path `studio` (one application, two public hostnames/paths; Access matches the path prefix, so `/admin/*` and `/studio/*` are covered) |
-| Identity providers | One-time PIN (built in; sends a code to the e-mail) and/or Google (Zero Trust → Settings → Authentication → Login methods → Google, with the GrowthCast Workspace client id/secret) |
+| Identity providers | One-time PIN (built in; sends a code to the e-mail) and/or Google (Zero Trust → Settings → Authentication → Login methods → Google, with your Google Workspace client id/secret) |
 | Policy "Owner" | Action **Allow**; Include → **Emails** → the owner's address (and each marketer who gets a studio account). With Google as the only login method and "Require" → Login method → Google, the Google account's own MFA applies. |
 | Policy "Everyone else" | not needed: Access denies by default |
 | App Launcher visibility | off |

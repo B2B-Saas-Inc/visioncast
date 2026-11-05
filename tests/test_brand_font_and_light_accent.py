@@ -17,7 +17,7 @@ def fresh_cache():
 
 
 def test_a_light_brand_colour_is_accepted_with_dark_button_text_and_a_readable_text_shade(admin_client, client):
-    assert admin_client.post("/studio/brand/", {"name": "GrowthCast", "accent": "#ff6b4a"}).status_code == 200
+    assert admin_client.post("/studio/brand/", {"name": "Acme Events", "accent": "#ff6b4a"}).status_code == 200
     css = client.get("/brand/brand.css").content.decode()
     assert "--coral:#ff6b4a" in css and f"--on-accent:{brand.DARK_TEXT}" in css
     dark = css.split("--coral-dark:")[1].split(";")[0]

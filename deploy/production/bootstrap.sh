@@ -4,14 +4,14 @@
 #
 #   bootstrap.sh --dry-run [params]        print every step and the rendered files (secrets redacted)
 #   bootstrap.sh [params]                  apply (run as root on the host)
-#   ssh root@<ip> 'DOMAIN=events.growthcast.app ACME_EMAIL=... AGE_RECIPIENT=age1... bash -s' < bootstrap.sh
+#   ssh root@<ip> 'DOMAIN=events.example.com ACME_EMAIL=... AGE_RECIPIENT=age1... bash -s' < bootstrap.sh
 #
 # Parameters (flag, or environment variable of the same name; non-secret values are saved
 # to /srv/visioncast/bootstrap.conf and reused by later runs, so a re-run needs none):
-#   --domain DOMAIN                     platform host (required), e.g. events.growthcast.app
+#   --domain DOMAIN                     platform host (required), e.g. events.example.com
 #   --site-origins LIST                 WEBINAR_ALLOWED_ORIGINS; THANK_YOU_REDIRECT_HOSTS derives from it
-#                                       (default https://growthcast.app,https://www.growthcast.app)
-#   --public-event-url-template URL     PUBLIC_EVENT_URL_TEMPLATE (default https://growthcast.app/events/{slug})
+#                                       (default https://example.com,https://www.example.com)
+#   --public-event-url-template URL     PUBLIC_EVENT_URL_TEMPLATE (default https://example.com/events/{slug})
 #   --image REF                         WEBINAR_IMAGE: empty = build webinar-platform:<version> from the
 #                                       uploaded release source; ghcr.io/... = pull with the token in
 #                                       <secrets>/ghcr-token; any other ref must already exist locally
@@ -62,8 +62,8 @@ if [[ -r $BASE/bootstrap.conf ]]; then
         [[ $ENV_SET == *" $k "* ]] || printf -v "$k" '%s' "$v"
     done < <(grep -E '^[A-Z_]+=' "$BASE/bootstrap.conf")
 fi
-: "${SITE_ORIGINS:=https://growthcast.app,https://www.growthcast.app}"
-[[ -n $PUBLIC_EVENT_URL_TEMPLATE ]] || PUBLIC_EVENT_URL_TEMPLATE='https://growthcast.app/events/{slug}'   # braces: not via ${:=}
+: "${SITE_ORIGINS:=https://example.com,https://www.example.com}"
+[[ -n $PUBLIC_EVENT_URL_TEMPLATE ]] || PUBLIC_EVENT_URL_TEMPLATE='https://example.com/events/{slug}'   # braces: not via ${:=}
 : "${GHCR_USERNAME:=visioncast-deploy}"
 : "${SMTP_PORT:=587}"
 : "${SMTP_STARTTLS:=1}"
@@ -90,7 +90,7 @@ LOGROTATE_FILE=${LOGROTATE_FILE:-/etc/logrotate.d/visioncast}
 LOG_DIR=${LOG_DIR:-/var/log/visioncast}
 ACME_ROOT=${ACME_ROOT:-/var/www/visioncast-acme}
 LETSENCRYPT_DIR=${LETSENCRYPT_DIR:-/etc/letsencrypt}
-PROXY_KEY_NAME=growthcast-site
+PROXY_KEY_NAME=site-proxy
 AGENT_KEY_NAME=agent
 
 usage() { sed -n '2,52p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
