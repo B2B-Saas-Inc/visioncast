@@ -2,6 +2,12 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Production on 0.4.10-pre, live server on v0.4.9-pre with the brand logo — 2026-11-05
+
+- Observed from the workstation after the owner's updates: `deploy/production/verify.sh --expect-version 0.4.10-pre --expect-access` against events.growthcast.app **12/12 PASS** (OpenAPI now 68 paths); `/healthz` reports 0.4.10-pre. live.growthcast.app checkout at `v0.4.9-pre`, `/brand/icon` and `/brand/logo` both answer `image/png`, so the GrowthCast mark is the tab icon on every live page. growthcast.app/events shows the new "Upcoming Events" heading.
+- Through the management MCP: one LiveKit hosting account, enabled, `autoProvision` still off; all nine upcoming sessions (eight public Mondays plus the unlisted 19 November session) have a join URL and a waiting room. Nothing else was changed.
+- [remaining-gaps.md](remaining-gaps.md) and [release-checklist.md](release-checklist.md) reconciled against this state.
+
 ## Dashboard setup checklist: hide, and dismissed when done — 2026-11-04
 
 - New `StudioPreference` (migration `0017_studio_preference`, one row per user). The dashboard checklist gets a Hide button (per user, with a "Show it" line while steps remain), and disappears on its own once every step is done, saying so once.
@@ -500,13 +506,6 @@ Supersedes the earlier `pi-build-98e4075a-f43c-45b8-ba37-5514e2c791c3` archive. 
 
 ## Remaining release gates
 
-- Compose startup and built-image runtime smoke testing remain unexercised. Tests used PostgreSQL 15; Compose targets PostgreSQL 16.
-- Dependencies have direct pins, not a complete transitive hash lock. Vulnerability review and digest-pinned base images remain release gates.
-- TLS, distributed edge rate limits and administrator MFA/SSO/VPN remain operator responsibilities. The nginx example is untested.
-- No real CRM/email receiver, SMTP provider delivery, backup/restore rehearsal or production deployment tested.
-- Waiting-room email verification and teammate invitations require configured SMTP. Preview uses only a local test mailbox; ordinary registration cookies are device recognition, not proof of mailbox ownership. See `waiting-room.md` for explicit identity and admission limits.
-- Check-in measures admission, not video viewing. A redirect reveals the viewing URL to the attendee; provider authentication is needed to prevent sharing.
-- Existing deployments must migrate and run `sync_roles`; the marketer entry point is `/studio/`, not `/admin/`.
-- No new persistent preview was started as part of this verification. Prior one-hour preview authorization is not renewed.
+The list that stood here was written on 2026-10-23, before the PostgreSQL 16 harness, the hash lock, the digest pins, the backup/restore rehearsal and the production install, and is kept only in history. The current list is [remaining-gaps.md](remaining-gaps.md) sections 2 and 3, with the tickable form in [release-checklist.md](release-checklist.md). In short, as of 2026-11-05: every vendor integration except PostHog email and the self-hosted LiveKit studio is mock-tested only; the website kits, SDK and browser suites were last run on the 0.3.0-pre tree; the restore probe, `pip-audit` and the base-image pins date from 2026-10-27; and the live studio has not yet hosted a session with real attendees.
 
-Treat this as a tested preview, not production certification or a measured minutes-to-deploy guarantee.
+Treat this as a tested pre-release running in production for one owner, not production certification.
