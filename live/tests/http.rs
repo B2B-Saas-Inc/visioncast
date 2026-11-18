@@ -1957,3 +1957,122 @@ async fn the_bare_domain_goes_to_admin_which_sends_anyone_signed_out_to_login() 
     assert_eq!(status, StatusCode::TEMPORARY_REDIRECT);
     assert_eq!(headers.get("location").unwrap(), "/admin");
 }
+
+#[tokio::test]
+async fn a_session_deleted_on_the_settings_page_is_gone_and_visioncast_can_tell() {
+    let c = ctx(false);
+    let crew = c.crew().await;
+    let attendee = c.attendee_path("p1").await;
+    let cookie = c.sign_in().await;
+    let path = format!("/rooms/{ROOM}");
+    assert_eq!(c.admin("DELETE", &path, None, None).await.0, StatusCode::UNAUTHORIZED);
+    assert_ne!(c.v1("DELETE", &format!("/v1/rooms/{ROOM}"), None).await.0, StatusCode::OK, "VisionCast never deletes a room");
+    assert_eq!(c.v1("GET", "/v1/deleted-rooms", None).await.1["rooms"], json!([]));
+    let (status, body) = c.admin("DELETE", &path, Some(&cookie), None).await;
+    assert_eq!((status, body["ok"].as_bool()), (StatusCode::OK, Some(true)), "{body}");
+    // VisionCast asks after the room and is told it was deleted, not that it never was.
+    let (status, body) = c.v1("GET", &format!("/v1/rooms/{ROOM}"), None).await;
+    assert_eq!((status, body["error"].as_str()), (StatusCode::GONE, Some("deleted")));
+    assert!(body["deletedAt"].as_str().is_some());
+    let (_, deleted) = c.v1("GET", "/v1/deleted-rooms", None).await;
+    assert_eq!(deleted["rooms"][0]["id"], ROOM);
+    assert_eq!(c.v1("GET", "/v1/rooms/never-was", None).await.0, StatusCode::NOT_FOUND);
+    // Its links are dead, everyone is put out, and it's off the list.
+    for link in [&crew.host, &attendee] {
+        assert_eq!(c.call("GET", &format!("{link}/info"), None, None).await.0, StatusCode::NOT_FOUND, "{link}");
+    }
+    assert!(c.fake.calls.lock().unwrap().contains(&format!("close:{ROOM}")));
+    assert_eq!(c.admin("GET", "/rooms", Some(&cookie), None).await.1["rooms"], json!([]));
+    assert_eq!(c.admin("DELETE", &path, Some(&cookie), None).await.0, StatusCode::NOT_FOUND);
+    let (_, activity) = c.admin("GET", "/activity", Some(&cookie), None).await;
+    assert!(activity["activity"].as_array().unwrap().iter().any(|a| a["action"] == "session.deleted" && a["actor"] == "owner@example.com"));
+    // Linked again from VisionCast, it's back, and no longer listed as deleted.
+    c.room(1).await;
+    assert_eq!(c.v1("GET", &format!("/v1/rooms/{ROOM}"), None).await.0, StatusCode::OK);
+    assert_eq!(c.v1("GET", "/v1/deleted-rooms", None).await.1["rooms"], json!([]));
+    assert_eq!(c.call("GET", &format!("{}/info", crew.host), None, None).await.0, StatusCode::NOT_FOUND, "the old crew is gone with it");
+}
+
+#[tokio::test]
+async fn a_session_on_the_air_is_not_deleted_and_one_with_recordings_asks_about_them() {
+    let c = ctx(true);
+    let crew = c.crew().await;
+    let cookie = c.sign_in().await;
+    let path = format!("/rooms/{ROOM}");
+    c.enter(&crew.host, "Maya", CLIENT).await;
+    assert_eq!(c.act(&crew.host, CLIENT, json!({"type":"go_live"})).await.0, StatusCode::OK);
+    assert_eq!(c.admin("DELETE", &path, Some(&cookie), None).await.1["error"], "on_air");
+    c.act(&crew.host, CLIENT, json!({"type":"end_session"})).await;
+    assert_eq!(c.webhook(egress_done("d1", "EG_9", &format!("recordings/{ROOM}/a.mp4"))).await, StatusCode::OK);
+    assert_eq!(c.admin("DELETE", &path, Some(&cookie), None).await.1["error"], "recordings_choice_needed");
+    assert_eq!(c.admin("DELETE", &path, Some(&cookie), Some(json!({"recordings":"maybe"}))).await.0, StatusCode::BAD_REQUEST);
+    assert_eq!(c.v1("GET", &format!("/v1/rooms/{ROOM}"), None).await.0, StatusCode::OK, "still there");
+    let (status, body) = c.admin("DELETE", &path, Some(&cookie), Some(json!({"recordings":"keep"}))).await;
+    assert_eq!((status, body["filesDeleted"].as_u64()), (StatusCode::OK, Some(0)), "{body}");
+    let (_, activity) = c.admin("GET", "/activity", Some(&cookie), None).await;
+    let row = activity["activity"].as_array().unwrap().iter().find(|a| a["action"] == "session.deleted").cloned().unwrap();
+    assert!(row["detail"].as_str().unwrap().contains(&format!("recordings kept in recordings/{ROOM}/")), "{row}");
+}
+
+/// Just enough of a bucket to list a prefix and delete from it.
+async fn fake_bucket(keys: Vec<String>) -> (String, Arc<Mutex<Vec<String>>>) {
+    use axum::{extract::Path as P, routing::get};
+    let deleted = Arc::new(Mutex::new(vec![]));
+    let gone = deleted.clone();
+    let list = move || {
+        let keys = keys.clone();
+        async move {
+            let items: String = keys.iter().map(|k| format!("<Contents><Key>{k}</Key><LastModified>2026-01-01T00:00:00.000Z</LastModified><ETag>\"e\"</ETag><Size>1</Size><StorageClass>STANDARD</StorageClass></Contents>")).collect();
+            format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult><Name>b</Name><Prefix></Prefix><KeyCount>{}</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated>{items}</ListBucketResult>", keys.len())
+        }
+    };
+    let app = Router::new().route("/b", get(list.clone())).route("/b/", get(list)).route(
+        "/b/{*key}",
+        axum::routing::delete(move |P(key): P<String>| {
+            let gone = gone.clone();
+            async move {
+                gone.lock().unwrap().push(key);
+                StatusCode::NO_CONTENT
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (address, deleted)
+}
+
+fn ctx_bucket_at(endpoint: &str) -> Ctx {
+    let mut c = config(true);
+    if let Some(r) = c.recording.as_mut() {
+        r.public_base_url = None;
+        r.endpoint = endpoint.into();
+        r.force_path_style = true;
+    }
+    ctx_with(c)
+}
+
+#[tokio::test]
+async fn deleting_a_session_can_delete_its_recordings_and_does_nothing_if_the_bucket_says_no() {
+    // A bucket that can't be reached: nothing is deleted, the session included.
+    let c = ctx_bucket_at("http://127.0.0.1:1");
+    c.room(1).await;
+    let cookie = c.sign_in().await;
+    c.webhook(egress_done("d1", "EG_9", &format!("recordings/{ROOM}/a.mp4"))).await;
+    let (status, body) = c.admin("DELETE", &format!("/rooms/{ROOM}"), Some(&cookie), Some(json!({"recordings":"delete"}))).await;
+    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_GATEWAY, Some("bucket_unavailable")));
+    assert_eq!(c.v1("GET", &format!("/v1/rooms/{ROOM}"), None).await.0, StatusCode::OK);
+
+    let keys = vec![format!("recordings/{ROOM}/a.mp4"), format!("recordings/{ROOM}/a.srt"), format!("recordings/{ROOM}/speakers/x-maya.mp4"), "recordings/other/b.mp4".to_string()];
+    let (endpoint, deleted) = fake_bucket(keys).await;
+    let c = ctx_bucket_at(&endpoint);
+    c.room(1).await;
+    let cookie = c.sign_in().await;
+    c.webhook(egress_done("d1", "EG_9", &format!("recordings/{ROOM}/a.mp4"))).await;
+    let (status, body) = c.admin("DELETE", &format!("/rooms/{ROOM}"), Some(&cookie), Some(json!({"recordings":"delete"}))).await;
+    assert_eq!((status, body["filesDeleted"].as_u64()), (StatusCode::OK, Some(3)), "{body}");
+    let mut gone = deleted.lock().unwrap().clone();
+    gone.sort();
+    assert_eq!(gone, vec![format!("recordings/{ROOM}/a.mp4"), format!("recordings/{ROOM}/a.srt"), format!("recordings/{ROOM}/speakers/x-maya.mp4")], "only this session's files");
+    assert_eq!(c.v1("GET", &format!("/v1/rooms/{ROOM}"), None).await.0, StatusCode::GONE);
+}

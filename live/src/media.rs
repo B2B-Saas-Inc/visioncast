@@ -341,6 +341,39 @@ pub fn upload_local(app: Arc<AppState>, room: String, id: String) {
     });
 }
 
+/// Deletes everything a session has in the bucket: its recordings, their captions and the
+/// speakers' own copies, all kept under `recordings/{room}/`. Returns how many files went.
+pub async fn delete_room_files(app: &AppState, room: &str) -> Result<usize, String> {
+    let Some((bucket, credentials)) = bucket(app, true) else { return Ok(0) };
+    let prefix = format!("recordings/{room}/");
+    let signed = |d: u64| Duration::from_secs(d);
+    let mut deleted = 0;
+    let mut next: Option<String> = None;
+    loop {
+        let mut list = bucket.list_objects_v2(Some(&credentials));
+        list.with_prefix(prefix.as_str());
+        if let Some(token) = next.as_deref() {
+            list.with_continuation_token(token.to_string());
+        }
+        let res = app.http.get(list.sign(signed(300))).send().await.map_err(|e| e.to_string())?;
+        if !res.status().is_success() {
+            return Err(format!("list: http {}", res.status()));
+        }
+        let page = rusty_s3::actions::ListObjectsV2::parse_response(&res.text().await.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        for object in page.contents.iter().filter(|o| o.key.starts_with(&prefix)) {
+            let res = app.http.delete(bucket.delete_object(Some(&credentials), &object.key).sign(signed(300))).send().await.map_err(|e| e.to_string())?;
+            if !res.status().is_success() && res.status() != StatusCode::NOT_FOUND {
+                return Err(format!("delete: http {}", res.status()));
+            }
+            deleted += 1;
+        }
+        match page.next_continuation_token {
+            Some(token) if !token.is_empty() => next = Some(token),
+            _ => return Ok(deleted),
+        }
+    }
+}
+
 async fn put_file(app: &AppState, room: &str, rec: &crate::studio::LocalRecording, key: &str) -> Result<(), String> {
     use tokio::io::AsyncReadExt;
     let (bucket, credentials) = bucket(app, true).ok_or("no storage")?;

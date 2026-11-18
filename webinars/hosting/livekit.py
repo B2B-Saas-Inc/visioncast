@@ -17,6 +17,7 @@ import re
 from datetime import timedelta
 
 from django.db.models import Q
+from django.utils.dateparse import parse_datetime
 
 from webinars.native_integrations import _HOSTNAME, destination_host_problem
 
@@ -367,11 +368,33 @@ class LiveKitAdapter(Adapter):
         try:
             data = self._call(transport, config, secrets, "room", "GET", f"/rooms/{external_id}")
         except _Stop as stop:
+            # Deleted on the live server's settings page: the link is gone, not broken.
+            if stop.outcome.status_code == 410:
+                return Outcome("succeeded", external_id=external_id, data={"phase": "", "deleted": True})
             return stop.outcome
         phase = data.get("phase")
         if phase not in PHASES:
             return Outcome("failed", "room: response_unexpected")
         return Outcome("succeeded", external_id=external_id, data={"phase": phase})
+
+    def fetch_deleted_rooms(self, config, secrets, *, transport):
+        """Read-only: rooms deleted on the live server. ``data`` is ``{"rooms": [{"id", "deletedAt"}]}``,
+        ``deletedAt`` an aware datetime; entries that don't parse are left out."""
+        try:
+            data = self._call(transport, config, secrets, "deleted", "GET", "/deleted-rooms")
+        except _Stop as stop:
+            return stop.outcome
+        rows = data.get("rooms")
+        if not isinstance(rows, list):
+            return Outcome("failed", "deleted: response_unexpected")
+        rooms = []
+        for row in rows[:1000]:
+            if not isinstance(row, dict) or not self.valid_external_id(str(row.get("id") or "")):
+                continue
+            at = parse_datetime(str(row.get("deletedAt") or ""))
+            if at is not None and at.tzinfo is not None:
+                rooms.append({"id": str(row["id"]), "deletedAt": at})
+        return Outcome("succeeded", data={"rooms": rooms})
 
     def reopen_room(self, config, secrets, external_id, *, transport):
         """An ended room back to "not live", for a session ended too early (a rehearsal, a mistake)."""

@@ -33,9 +33,9 @@ main { flex: 1 1 auto; display: flex; min-height: 0; }
 .row select { flex: 1 1 10rem; min-width: 0; }
 .error { color: #e0654f; font-weight: 600; margin: 0.5rem 0 0; }
 body:not(.dark) .error { color: var(--danger); }
-input:not([type=checkbox]):not([type=file]), select { font: inherit; color: var(--text); padding: 0.45rem 0.6rem; border: 1px solid var(--fieldline); border-radius: 8px; background: var(--field); width: 100%; }
+input:not([type=checkbox]):not([type=radio]):not([type=file]), select { font: inherit; color: var(--text); padding: 0.45rem 0.6rem; border: 1px solid var(--fieldline); border-radius: 8px; background: var(--field); width: 100%; }
 select { appearance: none; -webkit-appearance: none; padding-right: 2rem; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23888' stroke-width='1.6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.65rem center; }
-input:not([type=checkbox]):not([type=file]):not([type=color]):not([type=range]), select { min-height: 2.45rem; box-sizing: border-box; }
+input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]):not([type=range]), select { min-height: 2.45rem; box-sizing: border-box; }
 input:focus-visible, select:focus-visible, .btn:focus-visible, .seg:focus-visible, .tab:focus-visible, .mini:focus-visible { outline: 3px solid #f0a690; outline-offset: 1px; }
 
 .btn { font: inherit; font-weight: 600; padding: 0.42rem 0.8rem; border-radius: 8px; border: 1px solid var(--fieldline); background: var(--seg); color: var(--text); cursor: pointer; white-space: nowrap; }
@@ -323,3 +323,6 @@ body.in-breakout .stage-wrap, body.in-breakout #layouts, body.in-breakout #my-co
 .stile.editing, .pic-layer.editing { touch-action: none; }
 .pic-cta { font-size: max(0.8rem, 1.6cqw); }
 .pic-cta b { min-height: 2.4rem; display: inline-flex; align-items: center; }
+.delete-choice { border: 0; padding: 0; margin: 0 0 0.75rem; display: grid; gap: 0.35rem; }
+.delete-choice legend { padding: 0; margin-bottom: 0.35rem; }
+.delete-choice label.check { white-space: normal; align-items: flex-start; }

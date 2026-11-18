@@ -126,7 +126,8 @@
   document.addEventListener("pointerup", pointerUp, true);
   document.addEventListener("pointercancel", pointerUp, true);
   function schedule() {
-    if (scheduled) { return; }
+    // Out of the session: nothing is drawn again behind the note.
+    if (scheduled || leaving) { return; }
     scheduled = true;
     requestAnimationFrame(function () {
       scheduled = false;
@@ -214,6 +215,7 @@
     });
     on("demoted", function (d) { if (S.me && d.identity === S.me.identity) { sessionStorage.setItem("vc-rejoin", "1"); window.location.reload(); } });
     on("removed", function (d) { if (S.me && d.identity === S.me.identity) { leave("You've been removed from this session."); } });
+    on("session_deleted", function () { leave("This session has been deleted.", true); });
     on("invite_result", function () {});
     source.onerror = function () {
       if (source && source.readyState === EventSource.CLOSED) { reopenEvents(); }
@@ -2078,7 +2080,7 @@
 
   // ---- entering and leaving
 
-  function leave(note) {
+  function leave(note, final) {
     leaving = true;
     if (source) { source.close(); source = null; }
     if (stage) { stage.stopMedia(); }
@@ -2093,7 +2095,7 @@
     show($("join-form"), false);
     $("gate-title").textContent = note ? "You're out of the session" : "You've left the session";
     $("gate-note").textContent = note || "";
-    $("gate").appendChild(h("button", { class: "btn btn-primary", type: "button", text: "Join again", onclick: function () { window.location.reload(); } }));
+    if (!final) { $("gate").appendChild(h("button", { class: "btn btn-primary", type: "button", text: "Join again", onclick: function () { window.location.reload(); } })); }
     ["go-live", "end", "reopen", "record", "audience-view", "viewers-pill", "phase-pill", "rec-pill", "role-pill"].forEach(function (id) { show($(id), false); });
   }
   $("leave").addEventListener("click", function () { leave(); });

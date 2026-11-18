@@ -2,6 +2,13 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Live server and studio: deleting a session at `/admin` unlinks its event — 2026-11-18
+
+- Live: `DELETE /admin/api/rooms/{room}` (signed-in accounts only; VisionCast's secret can't delete) removes the session and everything kept with it, closes its LiveKit room, tells anyone still connected (`session_deleted`), drops its uploads and records `session.deleted`. Refused while live (`on_air`) or recording (`recording_in_progress`). With recordings it needs `{"recordings":"keep"|"delete"}`; `delete` lists and deletes everything under `recordings/{room}/` first, and a bucket that refuses (`bucket_unavailable`, 502) leaves the session untouched. A deleted room answers `410 deleted` on `GET /v1/rooms/{room}` and is listed by `GET /v1/deleted-rooms` until `PUT` makes it again.
+- Studio: `room_status.sweep` asks each enabled LiveKit account for deleted rooms every 2 minutes and unlinks matching sessions (state detached, a note on the Hosting page, `hosting.room_deleted`), unless the session was linked again after the deletion; the Hosting page notices at once from the `410`. Occurrence status and registrations don't change; **Create a new provider session** links it again.
+- Tests: `a_session_deleted_on_the_settings_page_is_gone_and_visioncast_can_tell`, `a_session_on_the_air_is_not_deleted_and_one_with_recordings_asks_about_them`, `deleting_a_session_can_delete_its_recordings_and_does_nothing_if_the_bucket_says_no` (against a fake bucket); live suite 81 HTTP and 20 unit tests pass, no new clippy warnings. Studio: four tests in `tests/test_hosting_live_room_sync.py`; full suite 2578 passed, 1 skipped; ruff clean.
+- Local preview (LiveKit, SeaweedFS bucket, linked studio, Chromium): a host in the green room, a recording on the session and three files under its prefix; the owner chose "Delete them too" and confirmed. All three files went (another room's file stayed), the host saw "This session has been deleted." with no way back in, `GET /v1/rooms` answered 410, and the studio's Hosting page showed the session detached with the note and offered a new room.
+
 ## Live server: full-quality recordings, speakers' copies in the bucket — 2026-11-18
 
 - Before: the owner's test recording measured 1080p30 H.264 **Main** at 3.96 Mbps with 121 kbps **Opus** (LiveKit's default composite, 4.5 Mbps), made from cameras sending 3 Mbps and screens at 2.5 Mbps / 15 fps.

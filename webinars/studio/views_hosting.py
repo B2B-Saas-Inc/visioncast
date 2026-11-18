@@ -233,6 +233,9 @@ def session_hosting(request, pk):
         if room_status.try_sync(occ) is not None:
             occ.refresh_from_db()
             session = service.session_for(occ)
+            # A room deleted on the live server has just been unlinked.
+            ctx["session"] = service.serialize_session(session)
+            ctx["room_ready"] = ctx["session"]["state"] in ("linked", "out_of_date")
     if ctx["room_ready"]:
         from webinars.hosting import room_status
 
