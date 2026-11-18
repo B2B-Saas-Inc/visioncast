@@ -20,6 +20,11 @@ def allowlisted(settings):
     settings.WEBHOOK_HOST_ALLOWLIST = [HOST]
 
 
+@pytest.fixture(autouse=True)
+def fresh_deleted_poll():
+    room_status._deleted_next.clear()
+
+
 class Live(Service):
     """The fake service, plus the room's phase, Reopen and publishing recordings."""
 
@@ -28,10 +33,17 @@ class Live(Service):
         self.phase = "not_live"
         self.local = []
         self.published = {}
+        self.deleted = {}  # room id -> deletedAt (ISO)
 
     def __call__(self, method, url, body, headers, *, allowed_hosts):
         path = url.split(HOST, 1)[1] if HOST in url else ""
         parts = path.split("/")
+        if self.fail is None and method == "GET" and path.endswith("/deleted-rooms"):
+            self.calls.append({"method": method, "url": url})
+            return 200, json.dumps({"rooms": [{"id": k, "deletedAt": v} for k, v in self.deleted.items()]}).encode(), None, False
+        if self.fail is None and method == "GET" and len(parts) == 4 and parts[2] == "rooms" and parts[3] in self.deleted:
+            self.calls.append({"method": method, "url": url})
+            return 410, json.dumps({"error": "deleted", "deletedAt": self.deleted[parts[3]]}).encode(), None, False
         if self.fail is None and method == "GET" and len(parts) == 4 and parts[2] == "rooms":
             self.calls.append({"method": method, "url": url})
             return 200, json.dumps({"id": parts[3], "slug": "s", "phase": self.phase, "liveSince": None}).encode(), None, False
@@ -296,3 +308,73 @@ def test_a_live_room_whose_account_is_off_is_not_ready():
     account.enabled = False
     account.save()
     assert service.uses_personal_links(occ) and not service.has_join_destination(occ)
+
+
+# ---- a room deleted on the live server unlinks its session
+
+
+def _iso(at):
+    return at.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_a_room_deleted_on_the_live_server_unlinks_its_session_and_a_new_room_can_be_made():
+    occ, session = _session()
+    live = Live()
+    live.deleted[session.external_id] = _iso(timezone.now())
+    assert room_status.sync(occ, transport=live) == {"phase": "", "status": "scheduled", "changed": "unlinked"}
+    session.refresh_from_db()
+    assert session.state == HostedSession.State.DETACHED and session.room_phase == ""
+    assert "deleted on the live server" in session.last_error
+    occ.refresh_from_db()
+    assert occ.status == Occurrence.Status.SCHEDULED, "the event's session stays as it was"
+    assert AuditLog.objects.filter(action="hosting.room_deleted").count() == 1
+    assert not any(c["method"] not in ("GET",) for c in live.calls), "nothing on the live server is changed"
+    # The Hosting page offers a new room, and creating it links the session again.
+    service.execute(occ, session.account, "create", transport=live)
+    session.refresh_from_db()
+    assert session.state == HostedSession.State.LINKED
+
+
+def test_the_worker_unlinks_deleted_rooms_far_ahead_too_but_not_a_room_linked_again_since():
+    near, near_session = _session()
+    far, far_session = _session(starts_in=timedelta(days=30))
+    again, again_session = _session(starts_in=timedelta(days=30))
+    kept, kept_session = _session(starts_in=timedelta(days=30))
+    live = Live()
+    now = timezone.now()
+    live.deleted = {
+        # Deleted on the live server after they were linked here.
+        near_session.external_id: _iso(now + timedelta(seconds=2)),
+        far_session.external_id: _iso(now + timedelta(seconds=2)),
+        # Deleted, then linked again from here: a new room with the same address.
+        again_session.external_id: _iso(now - timedelta(days=1)),
+        "vc-not-ours": _iso(now),
+    }
+    assert room_status.sweep(transport=live) == 2
+    states = {s.pk: s.state for s in HostedSession.objects.all()}
+    assert states[near_session.pk] == states[far_session.pk] == HostedSession.State.DETACHED
+    assert states[again_session.pk] == states[kept_session.pk] == HostedSession.State.LINKED
+    # Asked again only every couple of minutes.
+    asked = sum(1 for c in live.calls if c["url"].endswith("/deleted-rooms"))
+    room_status.sweep(transport=live)
+    assert sum(1 for c in live.calls if c["url"].endswith("/deleted-rooms")) == asked
+
+
+def test_a_live_server_that_cant_list_deleted_rooms_changes_nothing():
+    _occ, session = _session(starts_in=timedelta(days=30))
+    live = Live()
+    live.fail = TimeoutError()
+    assert room_status.sweep(transport=live) == 0
+    assert HostedSession.objects.get(pk=session.pk).state == HostedSession.State.LINKED
+
+
+def test_the_hosting_page_says_the_room_was_deleted_and_offers_a_new_one(admin_client, monkeypatch):
+    occ, session = _session()
+    live = Live()
+    live.deleted[session.external_id] = _iso(timezone.now())
+    monkeypatch.setattr(base, "default_transport", live)
+    page = admin_client.get(_url(occ))
+    assert page.status_code == 200
+    assert b"The room was deleted on the live server" in page.content
+    assert b"Reopen the live room" not in page.content
+    assert HostedSession.objects.get(pk=session.pk).state == HostedSession.State.DETACHED

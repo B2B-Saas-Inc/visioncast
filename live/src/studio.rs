@@ -624,7 +624,10 @@ impl AppState {
                 if idle >= HUB_IDLE_SECONDS {
                     let mut hubs = app.hubs.lock().unwrap_or_else(|e| e.into_inner());
                     if ticking.tx.receiver_count() == 0 {
-                        hubs.remove(&ticking.room);
+                        // Only this one: a session deleted and made again has a new hub.
+                        if hubs.get(&ticking.room).is_some_and(|h| Arc::ptr_eq(h, &ticking)) {
+                            hubs.remove(&ticking.room);
+                        }
                         break;
                     }
                 }
@@ -2391,6 +2394,15 @@ pub async fn delete_inputs(app: &AppState, room: &str) {
             tracing::warn!(error = %err.0, "could not delete an RTMP input");
         }
         let _ = app.store.del_doc(room, "ingress", id);
+    }
+}
+
+/// A deleted session: everyone still connected is told, and its hub is let go.
+pub fn forget_room(app: &AppState, hub: &Hub) {
+    hub.send(Audience::Everyone, "session_deleted", json!({}));
+    let mut hubs = app.hubs.lock().unwrap_or_else(|e| e.into_inner());
+    if hubs.get(&hub.room).is_some_and(|h| std::ptr::eq(Arc::as_ptr(h), hub)) {
+        hubs.remove(&hub.room);
     }
 }
 

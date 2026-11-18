@@ -132,11 +132,12 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/rooms/{room}/tickets", post(create_ticket))
         .route("/rooms/{room}/attendance", get(get_attendance))
         .route("/rooms/{room}/recordings", get(get_recordings))
+        .route("/deleted-rooms", get(deleted_rooms))
         .route("/admin-link", post(admin::create_link))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_service_secret));
     let settings = settings_routes()
         .route("/rooms", get(admin::list_rooms))
-        .route("/rooms/{room}", get(admin::room_detail))
+        .route("/rooms/{room}", get(admin::room_detail).delete(delete_room))
         .route("/me", get(admin::me))
         .route("/me/password", post(admin::change_password))
         .route("/accounts", get(admin::list_accounts).post(admin::add_account))
@@ -281,13 +282,82 @@ async fn put_room(State(state): State<Arc<AppState>>, Path(room): Path<String>, 
     Ok(Json(json!({ "id": room, "slug": slug })))
 }
 
-async fn get_room(State(state): State<Arc<AppState>>, Path(room): Path<String>) -> ApiResult<Json<serde_json::Value>> {
-    let room = state.store.room(&room)?.ok_or(ApiError(StatusCode::NOT_FOUND, "not_found"))?;
+async fn get_room(State(state): State<Arc<AppState>>, Path(room): Path<String>) -> ApiResult<Response> {
+    let Some(room) = state.store.room(&room)? else {
+        // Deleted on the settings page: VisionCast unlinks the event when it hears this.
+        if let Some(at) = state.store.room_deleted_at(&room)? {
+            return Ok((StatusCode::GONE, Json(json!({ "error": "deleted", "deletedAt": iso(at) }))).into_response());
+        }
+        return Err(ApiError(StatusCode::NOT_FOUND, "not_found"));
+    };
     let studio = studio::saved_state(&state, &room.id)?;
     Ok(Json(json!({
         "id": room.id, "slug": room.slug, "startsAt": iso(room.starts_at), "endsAt": iso(room.ends_at), "autoRecord": room.auto_record,
         "phase": studio.phase, "liveSince": studio.live_since.map(iso),
-    })))
+    }))
+    .into_response())
+}
+
+/// Sessions deleted on the settings page, newest first, so VisionCast can unlink their events.
+async fn deleted_rooms(State(state): State<Arc<AppState>>) -> ApiResult<Json<serde_json::Value>> {
+    let rooms: Vec<_> = state.store.deleted_rooms()?.into_iter().map(|(id, at)| json!({ "id": id, "deletedAt": iso(at) })).collect();
+    Ok(Json(json!({ "rooms": rooms })))
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct DeleteRoom {
+    /// "keep" leaves its files in the bucket, "delete" removes them too. Asked for when it has any.
+    #[serde(default)]
+    recordings: String,
+}
+
+/// Deletes a session: its links stop working, people still in it are put out, and VisionCast
+/// unlinks its event. Not while it's on the air or recording. Its recordings stay in the
+/// bucket unless deleting them is asked for, and then the session goes only if they could.
+async fn delete_room(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(actor): axum::Extension<admin::Actor>,
+    Path(room): Path<String>,
+    body: Option<Json<DeleteRoom>>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let found = state.store.room(&room)?.ok_or(ApiError(StatusCode::NOT_FOUND, "not_found"))?;
+    let choice = body.map(|b| b.0.recordings).unwrap_or_default();
+    if !["", "keep", "delete"].contains(&choice.as_str()) {
+        return Err(ApiError(StatusCode::BAD_REQUEST, "invalid_input"));
+    }
+    let hub = state.hub(&room)?;
+    let _show = hub.show_lock.lock().await;
+    if hub.state().phase == "live" {
+        return Err(ApiError(StatusCode::CONFLICT, "on_air"));
+    }
+    if state.store.active_recording(&room)?.is_some() {
+        return Err(ApiError(StatusCode::CONFLICT, "recording_in_progress"));
+    }
+    let recordings = state.store.recordings(&room)?.len() + studio::local_recordings(&state, &room)?.iter().filter(|r| r.bucket_key.is_some()).count();
+    if recordings > 0 && choice.is_empty() {
+        return Err(ApiError(StatusCode::CONFLICT, "recordings_choice_needed"));
+    }
+    let files = if choice == "delete" {
+        crate::media::delete_room_files(&state, &room).await.map_err(|err| {
+            tracing::warn!(error = %err, "could not delete a session's recordings");
+            ApiError(StatusCode::BAD_GATEWAY, "bucket_unavailable")
+        })?
+    } else {
+        0
+    };
+    studio::delete_inputs(&state, &room).await;
+    if !state.store.delete_room(&room, now())? {
+        return Err(ApiError(StatusCode::NOT_FOUND, "not_found"));
+    }
+    studio::forget_room(&state, &hub);
+    if let Err(err) = state.backend.close_room(&room).await {
+        tracing::warn!(error = %err.0, "could not close a deleted session's room");
+    }
+    let _ = tokio::fs::remove_dir_all(std::path::Path::new(&state.config.upload_dir).join(&room)).await;
+    let kept = if choice == "delete" { String::new() } else if recordings > 0 { format!(", recordings kept in recordings/{room}/") } else { String::new() };
+    admin::record(&state, Some(&actor), "session.deleted", &format!("{} ({}){kept}", found.title, found.slug));
+    Ok(Json(json!({ "ok": true, "filesDeleted": files })))
 }
 
 /// Opens an ended session again, not live. Nothing changes for one that isn't ended; one on the air is refused.

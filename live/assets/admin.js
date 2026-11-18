@@ -58,7 +58,11 @@
     invalid_destination: "Check the server: it has to start rtmp:// or rtmps://. A platform that's turned on needs a server and a key.",
     invalid_input: "Check what you entered and try again.",
     file_type_not_allowed: "Use a PNG.",
-    file_too_large: "That file is over 2 MB."
+    file_too_large: "That file is over 2 MB.",
+    on_air: "It's live now. End it in the room first.",
+    recording_in_progress: "It's still recording. Stop the recording first.",
+    recordings_choice_needed: "Choose whether to keep its recordings.",
+    bucket_unavailable: "The recordings couldn't be deleted from the bucket, so nothing was deleted. Try again, or keep the recordings."
   };
 
   function api(path, method, body, raw) {
@@ -163,7 +167,36 @@
         h("p", { class: "muted small", text: "Turned-on platforms start when you go live, from one encode. A platform that fails doesn't affect the others or your audience. Hosts and producers see each one's status in the room's Broadcast tab." }), form));
 
       page.appendChild(recordingsBox(id, d));
+      page.appendChild(deleteBox(id, d));
     }).catch(function (err) { sessions(); fail(err); });
+  }
+
+  function deleteBox(id, d) {
+    var box = h("div", { class: "box admin-box", id: "delete-session" }, h("h3", { text: "Delete this session" }),
+      h("p", { class: "muted small", text: "Its attendee and crew links stop working, and anyone still in it is put out. If it's linked to an event in VisionCast, the event is unlinked from it within a few minutes; the event and its registrations stay, and you can link it to a new room." }));
+    if (d.phase === "live") {
+      box.appendChild(h("p", { class: "small", text: "It's live now. End it in the room first." }));
+      return box;
+    }
+    var count = d.recordings.length + d.local.filter(function (f) { return f.inBucket; }).length;
+    var keep = null;
+    if (count) {
+      keep = h("input", { type: "radio", name: "delete-recordings", value: "keep", checked: true });
+      var drop = h("input", { type: "radio", name: "delete-recordings", value: "delete" });
+      box.appendChild(h("fieldset", { class: "delete-choice" },
+        h("legend", { class: "small", text: count === 1 ? "It has 1 recording." : "It has " + count + " recordings." }),
+        h("label", { class: "check" }, keep, document.createTextNode(" Keep the files in the bucket, under recordings/" + id + "/")),
+        h("label", { class: "check" }, drop, document.createTextNode(" Delete them too. This can't be undone."))));
+    }
+    box.appendChild(armed("Delete session", function () {
+      var body = keep ? { recordings: keep.checked ? "keep" : "delete" } : {};
+      api("/rooms/" + encodeURIComponent(id), "DELETE", body).then(function (r) {
+        window.location.hash = "";
+        sessions();
+        saved("Deleted " + d.title + "." + (r.filesDeleted ? " " + r.filesDeleted + (r.filesDeleted === 1 ? " file" : " files") + " removed from the bucket." : ""));
+      }).catch(fail);
+    }, "danger"));
+    return box;
   }
 
   function megabytes(bytes) { return bytes >= 1e9 ? (bytes / 1e9).toFixed(1) + " GB" : Math.max(1, Math.round(bytes / 1e6)) + " MB"; }

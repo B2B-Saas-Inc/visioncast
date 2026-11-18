@@ -194,6 +194,10 @@ impl Store {
                blocked INTEGER NOT NULL DEFAULT 0,
                removed INTEGER NOT NULL DEFAULT 0,
                PRIMARY KEY (room, identity)
+             );
+             CREATE TABLE IF NOT EXISTS deleted_rooms (
+               id TEXT PRIMARY KEY,
+               deleted_at INTEGER NOT NULL
              );",
         )?;
         Ok(Self { conn: Mutex::new(conn) })
@@ -211,7 +215,33 @@ impl Store {
                auto_record=excluded.auto_record, slug=excluded.slug, entry_url=excluded.entry_url, updated_at=excluded.updated_at",
             params![room.id, room.title, room.starts_at, room.ends_at, room.auto_record, room.slug, room.entry_url, now],
         )?;
+        // Made again after being deleted (VisionCast linking the session again): it's back.
+        self.db().execute("DELETE FROM deleted_rooms WHERE id=?1", [&room.id])?;
         Ok(())
+    }
+
+    /// Deletes a session and everything kept with it, and remembers that it was deleted, so
+    /// VisionCast can unlink its event. Returns false if there was no such session.
+    pub fn delete_room(&self, id: &str, now: i64) -> rusqlite::Result<bool> {
+        let mut db = self.db();
+        let tx = db.transaction()?;
+        let removed = tx.execute("DELETE FROM rooms WHERE id=?1", [id])? == 1;
+        if removed {
+            tx.execute("INSERT INTO deleted_rooms (id, deleted_at) VALUES (?1,?2) ON CONFLICT(id) DO UPDATE SET deleted_at=excluded.deleted_at", params![id, now])?;
+        }
+        tx.commit()?;
+        Ok(removed)
+    }
+
+    pub fn room_deleted_at(&self, id: &str) -> rusqlite::Result<Option<i64>> {
+        self.db().query_row("SELECT deleted_at FROM deleted_rooms WHERE id=?1", [id], |r| r.get(0)).optional()
+    }
+
+    pub fn deleted_rooms(&self) -> rusqlite::Result<Vec<(String, i64)>> {
+        let db = self.db();
+        let mut stmt = db.prepare("SELECT id, deleted_at FROM deleted_rooms ORDER BY deleted_at DESC LIMIT 1000")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect()
     }
 
     fn room_where(&self, clause: &str, value: &str) -> rusqlite::Result<Option<Room>> {
@@ -647,6 +677,7 @@ impl Store {
         db.execute("DELETE FROM webhook_events WHERE received_at < ?1", [cutoff])?;
         // The activity log is for looking back over, not forever, and failed sign-ins can't fill the disk.
         db.execute("DELETE FROM audit_log WHERE seq NOT IN (SELECT seq FROM audit_log ORDER BY seq DESC LIMIT 20000)", [])?;
+        db.execute("DELETE FROM deleted_rooms WHERE deleted_at < ?1", [cutoff])?;
         db.execute("DELETE FROM rooms WHERE ends_at < ?1", [cutoff])
     }
 }

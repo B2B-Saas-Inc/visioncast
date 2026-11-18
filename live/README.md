@@ -25,7 +25,7 @@ Pick three hostnames, like `live.example.com` for the service, `rtc.example.com`
 | `/{slug}/lobby` | Attendees before it goes live: a countdown, chat, Q&A and polls |
 | `/{slug}/green-room` | Hosts, producers and guests |
 | `/login` | Sign in to the settings, as yourself. There's no sign-up: an owner adds people |
-| `/admin` | Sessions, crew, brand, stream keys, recordings and captions, people, activity |
+| `/admin` | Sessions (and deleting them), crew, brand, stream keys, recordings and captions, people, activity |
 | `/join/{signed link}` | What VisionCast hands out. It sends you to the right address and is gone from the address bar straight away |
 
 The slug comes from the event in VisionCast. An event with several sessions adds the date and time to tell them apart. An address can't be used twice, or be one of the server's own, like `admin`.
@@ -94,6 +94,7 @@ Everyone uses the same page. What they can do is decided by the service and enfo
 * **The recording.** What attendees saw, frame and overlays included, recorded at 1080p30 in H.264 High at 12 Mbps (`LIVE_RECORDING_VIDEO_KBPS`) with 256 kbps AAC at 48 kHz, for the website and YouTube. It's made from what speakers send, so it can't be sharper than that: each speaker's own copy is the full-quality source.
 
 * **Ending and reopening.** End session ends it for everyone. A host, or a producer who may go live, can press Reopen session afterwards: the session is back to not live, attendees see the countdown again, and it can go live again. Use it after a rehearsal in the real room, or an end pressed by mistake. VisionCast can do the same with `POST /v1/rooms/{room}/reopen`.
+* **Deleting a session.** At the bottom of its page at `/admin`. Its attendee and crew links stop working, anyone still in it is told it's been deleted and put out, and it's off the list. Not while it's live or recording. A session with recordings asks first: keep the files in the bucket, under `recordings/{room}/`, or delete them too, and if the bucket won't delete them, nothing is deleted. VisionCast unlinks the event it belonged to within a few minutes: the event and its registrations stay, and creating a new room for it from the Hosting page works as before. Recorded in the activity log as `session.deleted`.
 
 **Recordings, captions and speakers' own files.** Each session's page at `/admin` lists them, with Play and Download. The bucket can stay private: every file goes out on a link this service signs, which works for 6 hours and sends the browser on to a bucket address that's signed for an hour. Speakers' own recordings are served from this server's disk the same way. `GET /v1/rooms/{room}/recordings` gives VisionCast the same links. **Publish** gives a recording a page of its own at `/watch/...`, with the player, everyone's captions and a download button, that works for anyone with the link until it's unpublished, and can be embedded in another site. Publishing the same recording again gives the same address. VisionCast can use that page as the session's recording.
 
@@ -287,8 +288,9 @@ Everything under `/v1` needs `Authorization: Bearer <LIVE_SERVICE_SECRET>`. All 
 | Request | Answer |
 |---|---|
 | `PUT /v1/rooms/{room}` `{title, startsAt, endsAt, autoRecord, slug, entryUrl}` | `{id, slug}` |
-| `GET /v1/rooms/{room}` | The room, with its `phase` (`not_live`, `live` or `ended`) and `liveSince` |
+| `GET /v1/rooms/{room}` | The room, with its `phase` (`not_live`, `live` or `ended`) and `liveSince`. `410 deleted` with `deletedAt` if it was deleted at `/admin` |
 | `POST /v1/rooms/{room}/reopen` | An ended session back to not live. `409 on_air` while it's live |
+| `GET /v1/deleted-rooms` | `{rooms: [{id, deletedAt}]}`: sessions deleted at `/admin`, newest first, kept as long as `LIVE_RETENTION_DAYS`. Making a room again with `PUT` takes it off |
 | `POST /v1/rooms/{room}/tickets` `{identity}` | `{id, joinUrl}`, the same link every time |
 | `PUT /v1/rooms/{room}/destinations` `{destinations: [{platform, server, key, armed, clearKey}]}` | Saves those platforms. An empty key keeps the one there. The answer never has a key |
 | `GET /v1/rooms/{room}/destinations` | `{destinations: [{platform, label, server, armed, status, error, key}]}`, where `key` is `own`, `saved` or `none` |
