@@ -39,8 +39,11 @@ MAX_RECORDINGS = 50
 MAX_CAPTION_FILES = 40
 ENGAGEMENT_MAX_PAGES = 500
 ATTENDANCE_MAX_PAGES = 25  # 200 rows a page, the most one import takes
+MAX_LOCAL_RECORDINGS = 100
 _TIME = re.compile(r"^[0-9T:\-.+Z]{1,40}$")
 _CURSOR = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+_EGRESS_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+PHASES = ("not_live", "live", "ended")
 
 
 def room_id(occ):
@@ -304,6 +307,9 @@ class LiveKitAdapter(Adapter):
         return Outcome("succeeded", external_id=identity)
 
     def fetch_recordings(self, config, secrets, external_id, *, transport):
+        """Read-only. ``data`` is ``{"recordings": [...], "local": [...]}``. ``downloadUrl`` and the caption and
+        local ``url``s are links the service signs for a few hours: show them, never store them. ``watchUrl`` is
+        the stable page of a published recording."""
         try:
             data = self._call(transport, config, secrets, "recordings", "GET", f"/rooms/{external_id}/recordings")
         except _Stop as stop:
@@ -311,21 +317,81 @@ class LiveKitAdapter(Adapter):
         items = data.get("recordings")
         if not isinstance(items, list):
             return Outcome("failed", "recordings: response_unexpected")
+        hosts = self.join_link_hosts(config)
         recordings = []
         for item in items[:MAX_RECORDINGS]:
             if isinstance(item, dict):
+                egress = item.get("egressId")
                 recordings.append({
+                    "egressId": egress if isinstance(egress, str) and _EGRESS_ID.match(egress) else "",
                     "status": str(item.get("status") or "")[:32],
-                    "durationSeconds": item.get("durationSeconds") if isinstance(item.get("durationSeconds"), int) else 0,
-                    "sizeBytes": item.get("sizeBytes") if isinstance(item.get("sizeBytes"), int) else 0,
+                    "startedAt": _int(item.get("startedAt")),
+                    "durationSeconds": _int(item.get("durationSeconds")),
+                    "sizeBytes": _int(item.get("sizeBytes")),
                     "filename": str(item.get("filename") or "")[:300],
-                    # Anything but https is dropped, so the studio can safely link to it.
+                    # Anything but https is dropped, so the studio can safely link to it. Links the service
+                    # signs must be on the service's own host.
                     "publicUrl": _public_https(item.get("publicUrl")),
+                    "downloadUrl": https_link(item.get("downloadUrl"), hosts),
+                    "watchUrl": https_link(item.get("watchUrl"), hosts),
                     "captions": [{"speaker": str(c.get("speaker") or "")[:200], "kind": "srt" if c.get("kind") == "srt" else "txt",
                                   "url": _public_https(c.get("url"))}
                                  for c in (item.get("captions") if isinstance(item.get("captions"), list) else [])[:MAX_CAPTION_FILES] if isinstance(c, dict)],
                 })
-        return Outcome("succeeded", external_id=external_id, data={"recordings": recordings})
+        local = []
+        for item in (data.get("local") if isinstance(data.get("local"), list) else [])[:MAX_LOCAL_RECORDINGS]:
+            url = https_link(item.get("url"), hosts) if isinstance(item, dict) else ""
+            if url:
+                local.append({"name": str(item.get("name") or "")[:200], "sizeBytes": _int(item.get("sizeBytes")),
+                              "startedAt": _int(item.get("startedAt")), "url": url})
+        return Outcome("succeeded", external_id=external_id, data={"recordings": recordings, "local": local})
+
+    def fetch_room(self, config, secrets, external_id, *, transport):
+        """Read-only: where the room is. ``data`` is ``{"phase": "not_live" | "live" | "ended"}``."""
+        if not self.valid_external_id(external_id):
+            return Outcome("failed", "room: invalid_external_id")
+        try:
+            data = self._call(transport, config, secrets, "room", "GET", f"/rooms/{external_id}")
+        except _Stop as stop:
+            return stop.outcome
+        phase = data.get("phase")
+        if phase not in PHASES:
+            return Outcome("failed", "room: response_unexpected")
+        return Outcome("succeeded", external_id=external_id, data={"phase": phase})
+
+    def reopen_room(self, config, secrets, external_id, *, transport):
+        """An ended room back to "not live", for a session ended too early (a rehearsal, a mistake)."""
+        if not self.valid_external_id(external_id):
+            return Outcome("failed", "reopen: invalid_external_id")
+        try:
+            data = self._call(transport, config, secrets, "reopen", "POST", f"/rooms/{external_id}/reopen")
+        except _Stop as stop:
+            return stop.outcome
+        phase = data.get("phase")
+        return Outcome("succeeded", external_id=external_id, data={"phase": phase if phase in PHASES else "not_live"})
+
+    def publish_recording(self, config, secrets, external_id, egress_id, *, transport):
+        """Gives one finished recording a stable public page. ``data`` is ``{"watchUrl": ...}``. Repeatable."""
+        if not self.valid_external_id(external_id) or not isinstance(egress_id, str) or not _EGRESS_ID.match(egress_id):
+            return Outcome("failed", "publish: invalid_id")
+        try:
+            data = self._call(transport, config, secrets, "publish", "POST", f"/rooms/{external_id}/recordings/{egress_id}/publish")
+        except _Stop as stop:
+            return stop.outcome
+        watch = https_link(data.get("watchUrl"), self.join_link_hosts(config))
+        if not watch:
+            return Outcome("failed", "publish: response_unexpected")
+        return Outcome("succeeded", external_id=egress_id, data={"watchUrl": watch})
+
+    def unpublish_recording(self, config, secrets, external_id, egress_id, *, transport):
+        """Takes a recording's public page down."""
+        if not self.valid_external_id(external_id) or not isinstance(egress_id, str) or not _EGRESS_ID.match(egress_id):
+            return Outcome("failed", "unpublish: invalid_id")
+        try:
+            self._call(transport, config, secrets, "unpublish", "POST", f"/rooms/{external_id}/recordings/{egress_id}/unpublish")
+        except _Stop as stop:
+            return stop.outcome
+        return Outcome("succeeded", external_id=egress_id)
 
 
 def _entry_url(occ):
@@ -341,6 +407,10 @@ def _public_https(value):
     if not isinstance(value, str) or len(value) > 1000 or not value.startswith("https://") or any(c in value for c in "\r\n\t "):
         return ""
     return value
+
+
+def _int(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
 
 
 def _time(value):

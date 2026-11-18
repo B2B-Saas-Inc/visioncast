@@ -41,11 +41,17 @@
     <section class="panel" aria-labelledby="room-title">
       <div class="panel-head"><h2 id="room-title">Waiting room &amp; admission</h2>{% if occ.waiting_room_enabled %}<span class="badge badge-{{ room.state }}">{{ room_state_label }}</span>{% endif %}</div>
       <div class="panel-body stack">
-        <p class="help">A hosted page at a stable link. Attendees confirm their email, wait for the doors to open, and are sent to the join URL. Check-ins are recorded as attendance.</p>
+        <p class="help">A hosted page at a stable link. Attendees confirm their email, wait for the doors to open, and are sent {% if occ.live_room %}into the live room, each with their own link{% else %}to the join URL{% endif %}. Check-ins are recorded as attendance.</p>
         {% if not occ.waiting_room_enabled %}
           <p class="callout" role="note">Off. Turn it on below to get a shareable room link and door controls.</p>
         {% elif room.state == "preparing" %}
+          {% if occ.live_room %}
+          <p class="callout callout-warn" role="note">Not ready: the live room's hosting account is turned off. Turn it on in Settings, Hosting.</p>
+          {% else %}
           <p class="callout callout-warn" role="note">Not ready: add the join URL in Session details so admitted attendees have somewhere to go.</p>
+          {% endif %}
+        {% elif occ.live_room %}
+          <p class="callout callout-teal" role="note">Ready. Share the room link below: it lets each person into the live room with their own link.</p>
         {% else %}
           <p class="callout callout-teal" role="note">Ready. Share the room link below instead of the join URL.</p>
         {% endif %}
@@ -107,7 +113,7 @@
   <aside class="stack">
     <form method="post" action="{% url 'studio:session' occ.pk %}" class="panel" novalidate aria-labelledby="schedule-title">
       {% csrf_token %}
-      <div class="panel-head"><h2 id="schedule-title">Schedule</h2><span class="badge badge-{% if cancelled %}cancelled{% else %}plain{% endif %}">{{ occ.get_status_display }}</span></div>
+      <div class="panel-head"><h2 id="schedule-title">Schedule</h2><span class="badge badge-{% if cancelled %}cancelled{% else %}plain{% endif %}" id="session-status">{{ occ.get_status_display }}</span>{% if occ.room_phase_label %} <span class="badge{% if occ.room_phase_label == 'Live now' %} badge-success{% endif %}" id="session-room-phase">{{ occ.room_phase_label }}</span>{% endif %}</div>
       <div class="panel-body">
         <div class="field">
           <label class="label" for="id_timezone">Time zone</label>
@@ -141,8 +147,12 @@
           <input class="input" type="number" min="1" max="1440" id="id_duration_minutes" name="duration_minutes" value="{{ values.duration_minutes }}"{% if readonly %} disabled{% endif %}{% if errors.duration_minutes %} aria-invalid="true" aria-describedby="id_duration_minutes-error"{% endif %}>
           {% if errors.duration_minutes %}<p class="field-error" id="id_duration_minutes-error">{{ errors.duration_minutes|join:" " }}</p>{% endif %}
         </div>
-        <div class="field">
-          {% if can_change %}
+        <div class="field" id="join-url-field">
+          {% if occ.live_room %}
+          <p class="label">Join link</p>
+          <p class="help" id="live-room-links">Each person gets their own link to the live room when they're let in, so there's no join URL to set. Crew links are on the <a href="{% url 'studio:session-hosting' pk=occ.pk %}">Hosting</a> page.</p>
+          {% if can_change %}<input type="hidden" name="join_url" value="{{ values.join_url }}">{% endif %}
+          {% elif can_change %}
           <label class="label" for="id_join_url">Join URL</label>
           <p class="help" id="id_join_url-help">The destination, editable until the last minute, never shown to attendees.</p>
           <input class="input" type="url" inputmode="url" placeholder="https://" id="id_join_url" name="join_url" value="{{ values.join_url }}" aria-describedby="id_join_url-help{% if errors.join_url %} id_join_url-error{% endif %}"{% if readonly %} disabled{% endif %}{% if errors.join_url %} aria-invalid="true"{% endif %}>

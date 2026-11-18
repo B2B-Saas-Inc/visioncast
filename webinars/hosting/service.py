@@ -751,6 +751,16 @@ def registrant_bound(pr, session):
     )
 
 
+def uses_personal_links(occ):
+    """Whether the session is linked to a room that gives each person their own link, so there's no
+    shared join URL to set. Lookup errors return False."""
+    try:
+        return _per_registrant_links(session_for(occ))
+    except Exception as exc:
+        logger.warning("personal link lookup failed: %s", type(exc).__name__)
+        return False
+
+
 def has_join_destination(occ):
     """Whether admitted registrants have somewhere to go, without reading any secret.
 
@@ -1181,6 +1191,12 @@ def update_live_brand(account, theme, *, user=None, api_key=None, transport=None
 
 def fetch_recordings(occ, *, transport=None):
     """Read-only: what the provider recorded for this session. Raises ``ValidationError``."""
+    return fetch_recording_files(occ, transport=transport)["recordings"]
+
+
+def fetch_recording_files(occ, *, transport=None):
+    """Read-only: ``{"recordings": [...], "local": [...]}``, the room's recordings and each speaker's own.
+    Signed links in it expire after a few hours: show them, never store them. Raises ``ValidationError``."""
     session = session_for(occ)
     adapter = adapter_for(session) if session is not None else None
     if adapter is None or not adapter.capabilities.recordings or not session.external_id or session.account is None:
@@ -1195,7 +1211,43 @@ def fetch_recordings(occ, *, transport=None):
                                        transport=transport or base.default_transport)
     if outcome.kind != "succeeded":
         raise ValidationError({"action": [f"The recordings could not be fetched ({outcome.error})."]})
-    return outcome.data["recordings"]
+    return {"recordings": outcome.data.get("recordings", []), "local": outcome.data.get("local", [])}
+
+
+def publish_live_recording(occ, egress_id, *, user=None, transport=None):
+    """Gives one of the live room's recordings a stable public page on the live server, then publishes
+    that page as the session's recording, exactly as if someone had pasted the link: registrants are
+    emailed and ``recording.published`` goes out. Raises ``ValidationError``."""
+    from webinars.scheduling import publish_recording
+
+    session, adapter, secrets = _crew_session(occ)
+    if not hasattr(adapter, "publish_recording"):
+        raise ValidationError({"action": ["This provider can't publish recordings."]})
+    outcome = _crew_outcome(adapter.publish_recording(session.account.config or {}, secrets, session.external_id, egress_id,
+                                                      transport=transport or base.default_transport))
+    watch = outcome.data["watchUrl"]
+    audit("hosting.recording_published", user=user, obj=session, recording=egress_id)
+    publish_recording(occ, watch, user=user)
+    return watch
+
+
+def unpublish_live_recording(occ, egress_id, *, user=None, transport=None):
+    """Takes the recording's public page down on the live server and, when it's the session's
+    published recording, takes that down too. Raises ``ValidationError``."""
+    from webinars.scheduling import unpublish_recording
+
+    session, adapter, secrets = _crew_session(occ)
+    if not hasattr(adapter, "unpublish_recording"):
+        raise ValidationError({"action": ["This provider can't publish recordings."]})
+    watch = next((r["watchUrl"] for r in fetch_recording_files(occ, transport=transport)["recordings"] if r["egressId"] == egress_id), "")
+    _crew_outcome(adapter.unpublish_recording(session.account.config or {}, secrets, session.external_id, egress_id,
+                                              transport=transport or base.default_transport))
+    audit("hosting.recording_unpublished", user=user, obj=session, recording=egress_id)
+    occ.refresh_from_db(fields=["recording_url", "recording_published_at"])
+    if watch and occ.recording_url == watch:
+        unpublish_recording(occ, user=user)
+        return True
+    return False
 
 
 def live_settings_link(account, *, user, room="", transport=None):

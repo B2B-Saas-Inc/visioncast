@@ -192,6 +192,19 @@ def _decorate_occurrence(occ, now=None):
     else:
         occ.room_state = None
         occ.room_state_label = ""
+    _decorate_live_room(occ)
+    return occ
+
+
+def _decorate_live_room(occ):
+    """``live_room``: linked to a room that gives each person their own link; ``join_ready``: admitted
+    people have somewhere to go; ``room_phase_label``: what the live room last said ("Live now")."""
+    from webinars.hosting import room_status
+    from webinars.hosting import service as hosting_service
+
+    occ.live_room = hosting_service.uses_personal_links(occ)
+    occ.join_ready = hosting_service.has_join_destination(occ)
+    occ.room_phase_label = room_status.label(hosting_service.session_for(occ)) if occ.live_room else ""
     return occ
 
 

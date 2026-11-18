@@ -16,12 +16,28 @@
   <ul>{% for k, msgs in errors.items %}{% for m in msgs %}<li>{{ m }}</li>{% endfor %}{% endfor %}</ul>
 </div>
 {% endif %}
+{% if notice %}<p class="callout callout-teal" role="status" id="hosting-notice">{{ notice }}</p>{% endif %}
 
 {% if room_ready %}
 <section class="panel">
-  <div class="panel-head"><h2>Your room</h2></div>
+  <div class="panel-head"><h2>Your room</h2>{% if room_phase_label %}<span class="badge{% if room_phase == 'live' %} badge-success{% endif %}" id="room-phase">{{ room_phase_label }}</span>{% endif %}</div>
   <div class="panel-body stack">
     <p class="help">The crew can get in up to 48 hours early to rehearse in the green room. Attendees enter through the waiting room, each with a personal link, and see nothing until you go live.</p>
+    {% if room_phase == "ended" %}
+    <div class="callout{% if occ.status == 'scheduled' %} callout-warn{% endif %}" id="room-ended">
+      {% if occ.status == "completed" %}
+      <p>The session was ended in the live room, so it's marked completed: registration is closed. If that was too early, reopen the room. The session goes back to scheduled.</p>
+      {% else %}
+      <p>The room was ended before the session's start time, so attendees would find it over. Reopen it before the session if you still need it.</p>
+      {% endif %}
+      {% if can_execute %}
+      <form method="post" action="{% url 'studio:session-hosting' pk=occ.pk %}" data-confirm="Reopen the live room? It goes back to waiting to go live.">
+        {% csrf_token %}<input type="hidden" name="op" value="room_reopen">
+        <button class="btn btn-sm" type="submit">Reopen the live room</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
     <div class="form-actions" style="margin-top:var(--s-3)">
       <form method="post" action="{% url 'studio:session-hosting' pk=occ.pk %}" target="_blank">
         {% csrf_token %}<input type="hidden" name="op" value="host_room">
@@ -85,17 +101,37 @@
     </form>
     {% endif %}
     {% if recordings_checked %}
+      <h3 id="recordings-title">Recordings</h3>
       {% if recordings %}
-      <div class="table-wrap"><table class="table">
-        <thead><tr><th scope="col">Recording</th><th scope="col">Status</th><th scope="col" class="num">Minutes</th></tr></thead>
-        <tbody>{% for r in recordings %}<tr>
-          <td>{% if r.publicUrl %}<a href="{{ r.publicUrl }}" rel="noopener noreferrer">{{ r.filename }}</a>{% elif r.filename %}<code>{{ r.filename }}</code>{% else %}<span class="small">Not finished yet</span>{% endif %}</td>
+      <div class="table-wrap"><table class="table" id="recordings">
+        <thead><tr><th scope="col">Recording</th><th scope="col">Status</th><th scope="col" class="num">Minutes</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+        <tbody>{% for r in recordings %}<tr data-recording="{{ r.egressId }}">
+          <td>{% if r.filename %}<code>{{ r.filename }}</code>{% else %}<span class="small">Not finished yet</span>{% endif %}
+            {% if r.watchUrl %}<br><span class="badge badge-success">Published</span> <a class="small" href="{{ r.watchUrl }}" target="_blank" rel="noopener noreferrer">Viewers' page</a>{% endif %}</td>
           <td>{{ r.status }}</td><td class="num">{% widthratio r.durationSeconds 60 1 %}</td>
-        </tr>{% for c in r.captions %}<tr><td colspan="3" class="small">{% if c.url %}<a href="{{ c.url }}" rel="noopener noreferrer">{{ c.speaker }}: {% if c.kind == "srt" %}SRT{% else %}transcript{% endif %}</a>{% else %}{{ c.speaker }}: {% if c.kind == "srt" %}SRT{% else %}transcript{% endif %}{% endif %}</td></tr>{% endfor %}{% endfor %}</tbody>
+          <td><div class="form-actions" style="margin:0;gap:var(--s-2)">
+            {% if r.downloadUrl %}
+            <a class="btn btn-ghost btn-sm" href="{{ r.downloadUrl }}" target="_blank" rel="noopener noreferrer">Play</a>
+            <a class="btn btn-ghost btn-sm" href="{{ r.downloadUrl }}{% if '?' in r.downloadUrl %}&amp;{% else %}?{% endif %}download=1" rel="noopener noreferrer">Download</a>
+            {% elif r.publicUrl %}<a class="btn btn-ghost btn-sm" href="{{ r.publicUrl }}" target="_blank" rel="noopener noreferrer">Play</a>{% endif %}
+            {% if can_execute and r.egressId and r.status == "complete" %}
+              <form method="post" action="{% url 'studio:session-hosting' pk=occ.pk %}"{% if r.watchUrl %} data-confirm="Unpublish this recording? Its page stops working, and if it's the session's recording, that's taken off the event page. Emails already sent can't be recalled."{% else %} data-confirm="Publish this as the session's recording? Every registrant is emailed the link now, and it shows on the event page."{% endif %}>
+                {% csrf_token %}<input type="hidden" name="recording" value="{{ r.egressId }}">
+                {% if r.watchUrl %}<button class="btn btn-ghost btn-sm" name="op" value="recording_unpublish" type="submit">Unpublish</button>
+                {% else %}<button class="btn btn-sm" name="op" value="recording_publish" type="submit">Publish as this session's recording</button>{% endif %}
+              </form>
+            {% endif %}
+          </div></td>
+        </tr>{% for c in r.captions %}<tr><td colspan="4" class="small">{% if c.url %}<a href="{{ c.url }}" rel="noopener noreferrer">{{ c.speaker }}: {% if c.kind == "srt" %}SRT{% else %}transcript{% endif %}</a>{% else %}{{ c.speaker }}: {% if c.kind == "srt" %}SRT{% else %}transcript{% endif %}{% endif %}</td></tr>{% endfor %}{% endfor %}</tbody>
       </table></div>
-      <p class="help">To send a recording to registrants, copy its link into <a href="{% url 'studio:session' pk=occ.pk %}#recording-title">Recording</a> on the session page.</p>
+      <p class="help">Play and Download links last a few hours: check again for fresh ones. Publishing gives the recording a page of its own on your live server and makes it the session's <a href="{% url 'studio:session' pk=occ.pk %}#recording-title">Recording</a>, which emails registrants.</p>
       {% else %}
       <p class="help">Nothing recorded for this session yet.</p>
+      {% endif %}
+      {% if local_recordings %}
+      <h3>Each speaker's own recording</h3>
+      <p class="help">Recorded in each speaker's browser, camera and microphone only, while the room recorded.</p>
+      <ul class="list-rows" id="local-recordings">{% for f in local_recordings %}<li><div class="grow">{{ f.name|default:"Speaker" }} <span class="small muted">{{ f.sizeBytes|filesizeformat }}</span></div><a class="btn btn-ghost btn-sm" href="{{ f.url }}" rel="noopener noreferrer">Download</a></li>{% endfor %}</ul>
       {% endif %}
     {% endif %}
   </div>
