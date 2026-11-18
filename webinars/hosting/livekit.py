@@ -14,6 +14,9 @@ secret, so unlike a vendor's fixed API host it must be an exact ``WEBHOOK_HOST_A
 entry, the same rule as other self-hosted destinations.
 """
 import re
+from datetime import timedelta
+
+from django.db.models import Q
 
 from webinars.native_integrations import _HOSTNAME, destination_host_problem
 
@@ -52,11 +55,20 @@ def room_id(occ):
 
 def room_slug(occ):
     """The session's address on the live server: the event's slug, and when the event has more than
-    one session, its date and time as well."""
+    one session, its date and time as well. Sessions of one event that start at the same minute (two
+    tracks, say) would share that, and the live server refuses a taken address, so every one but the
+    first made also gets the start of its own ID. The first keeps the address it already has."""
     base_slug = re.sub(r"[^a-z0-9-]+", "-", occ.event.slug.lower()).strip("-")[:150] or "session"
-    if occ.event.occurrences.exclude(pk=occ.pk).exists():
-        return f"{base_slug}-{occ.starts_at:%Y-%m-%d-%H%M}"
-    return base_slug
+    others = occ.event.occurrences.exclude(pk=occ.pk)
+    if not others.exists():
+        return base_slug
+    slug = f"{base_slug}-{occ.starts_at:%Y-%m-%d-%H%M}"
+    minute = occ.starts_at.replace(second=0, microsecond=0)
+    same_minute = others.filter(starts_at__gte=minute, starts_at__lt=minute + timedelta(minutes=1))
+    earlier = same_minute.filter(Q(created_at__lt=occ.created_at) | Q(created_at=occ.created_at, pk__lt=occ.pk))
+    if earlier.exists():
+        slug = f"{slug}-{occ.pk.hex[:6]}"
+    return slug
 
 
 class LiveKitAdapter(Adapter):
@@ -171,6 +183,8 @@ class LiveKitAdapter(Adapter):
                     return Outcome("failed", "register: response_missing_link")
                 return Outcome("succeeded", external_id=identity, join_url=link)
         except _Stop as stop:
+            if action in ("create", "update") and stop.outcome.error == f"{action}: http 409":
+                return Outcome("failed", f"{action}: another room on the live server already has this session's address (http 409)")
             return stop.outcome
         raise Unsupported(action)
 
