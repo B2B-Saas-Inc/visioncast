@@ -536,6 +536,28 @@ def test_an_event_with_several_sessions_tells_them_apart_by_date():
     assert room_slug(occ) == f"{only}-{occ.starts_at:%Y-%m-%d-%H%M}"
 
 
+def test_sessions_that_start_at_the_same_minute_get_their_own_address():
+    from tests.conftest import make_occurrence
+    from webinars.hosting.livekit import room_slug
+
+    occ = room_occurrence(join_url="")
+    twin = make_occurrence(occ.event, starts_at=occ.starts_at)
+    dated = f"{room_slug(occ).rsplit('-', 4)[0]}-{occ.starts_at:%Y-%m-%d-%H%M}"
+    assert room_slug(occ) == dated, "the first made keeps the address it had"
+    assert room_slug(twin) == f"{dated}-{twin.pk.hex[:6]}"
+    assert room_slug(occ) != room_slug(twin)
+
+
+def test_a_taken_address_says_so():
+    occ = room_occurrence(join_url="")
+    fake = Service()
+    fake.fail = 409
+    service.execute(occ, _account(), "create", transport=fake)
+    session = HostedSession.objects.get(occurrence=occ)
+    assert session.state == HostedSession.State.FAILED
+    assert session.last_error == "create: another room on the live server already has this session's address (http 409)"
+
+
 def test_stream_keys_and_brand_are_not_kept_in_visioncast():
     fields = {f.name for f in (*get_adapter("livekit").credential_fields, *get_adapter("livekit").config_fields)}
     assert not {name for name in fields if "brand" in name or name.endswith(("_key", "_url"))}

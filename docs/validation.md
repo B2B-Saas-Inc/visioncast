@@ -2,6 +2,11 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Studio: sessions that start at the same minute get their own live-room address — 2026-11-18
+
+- Found in production: a second session of one event at the same date and time failed to provision (`create: http 409`), because both asked the live server for the same address (`<event>-<date>-<time>`) and it refuses a taken one. `room_slug` now adds the start of the session's ID for every session but the first made at that minute; the first keeps its address. A 409 on create or update now reads "another room on the live server already has this session's address".
+- Two tests in `tests/test_hosting_livekit.py`. Full suite: 2,574 passed, 1 skipped; ruff clean.
+
 ## Studio: live-room status sync, recordings from the live server, no join URL for a live room — 2026-11-18
 
 - **Status sync** (`webinars/hosting/room_status.py`, migration `0018_hostedsession_room_phase`): the worker asks the live server (`GET /v1/rooms/{room}` `phase`) about each linked LiveKit session starting within 24 hours or ended less than 6 hours ago, about once a minute, with backoff; opening the Hosting page asks once. Ended after the start time: Scheduled → Completed. Ended before it (a rehearsal) is shown, and changes nothing, so it can't close registration early. Reopened: back to Scheduled, only when this sync completed it; cancelled sessions and ones completed another way are never touched. "Live now" / "Ended in the live room" on the Hosting page, the session's schedule and the event's session list; **Reopen the live room** for Administrators.
