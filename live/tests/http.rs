@@ -123,8 +123,22 @@ struct Ctx {
 }
 
 fn ctx(recording: bool) -> Ctx {
+    ctx_with(config(recording))
+}
+
+/// A private bucket: nothing can be linked to directly, so files go out on signed links.
+fn ctx_private_bucket() -> Ctx {
+    let mut c = config(true);
+    if let Some(r) = c.recording.as_mut() {
+        r.public_base_url = None;
+        r.endpoint = "https://nyc3.digitaloceanspaces.com".into();
+    }
+    ctx_with(c)
+}
+
+fn ctx_with(config: Config) -> Ctx {
     let fake = Arc::new(Fake::default());
-    let state = AppState::new(config(recording), Store::open(":memory:").unwrap(), fake.clone());
+    let state = AppState::new(config, Store::open(":memory:").unwrap(), fake.clone());
     visioncast_live::admin::seed_first_admin(&state).unwrap();
     Ctx { app: router(state), fake }
 }
@@ -1354,6 +1368,99 @@ async fn recordings_report_their_result_and_public_link() {
     let (_, body) = c.v1("GET", &format!("/v1/rooms/{ROOM}/recordings"), None).await;
     let failed = body["recordings"].as_array().unwrap().iter().find(|r| r["egressId"] == "EG_2").unwrap().clone();
     assert_eq!((failed["status"].as_str(), failed["publicUrl"].is_null()), (Some("failed"), true));
+}
+
+#[tokio::test]
+async fn an_ended_session_can_be_reopened_and_says_its_phase() {
+    let c = ctx(false);
+    let crew = c.crew().await;
+    let (_, room) = c.v1("GET", &format!("/v1/rooms/{ROOM}"), None).await;
+    assert_eq!((room["phase"].as_str(), room["liveSince"].is_null()), (Some("not_live"), true));
+    c.enter(&crew.host, "Maya", CLIENT).await;
+    assert_eq!(c.act(&crew.host, CLIENT, json!({"type":"go_live"})).await.0, StatusCode::OK);
+    let (_, room) = c.v1("GET", &format!("/v1/rooms/{ROOM}"), None).await;
+    assert_eq!(room["phase"], "live");
+    assert!(room["liveSince"].as_str().is_some());
+    assert_eq!(c.v1("POST", &format!("/v1/rooms/{ROOM}/reopen"), None).await.0, StatusCode::CONFLICT, "not while it's on the air");
+    c.act(&crew.host, CLIENT, json!({"type":"end_session"})).await;
+    assert_eq!(c.v1("GET", &format!("/v1/rooms/{ROOM}"), None).await.1["phase"], "ended");
+    // A guest can't reopen it; the host can, from the room.
+    c.enter(&crew.guest, "Gus", CLIENT).await;
+    assert_eq!(c.act(&crew.guest, CLIENT, json!({"type":"reopen"})).await.0, StatusCode::FORBIDDEN);
+    assert_eq!(c.act(&crew.host, CLIENT, json!({"type":"reopen"})).await.0, StatusCode::OK);
+    assert_eq!(c.snapshot(&crew.host, CLIENT).await["state"]["phase"], "not_live");
+    assert_eq!(c.act(&crew.host, CLIENT, json!({"type":"go_live"})).await.0, StatusCode::OK, "and it can go live again");
+    c.act(&crew.host, CLIENT, json!({"type":"end_session"})).await;
+    // VisionCast can reopen it too, and repeating it changes nothing.
+    for _ in 0..2 {
+        let (status, body) = c.v1("POST", &format!("/v1/rooms/{ROOM}/reopen"), None).await;
+        assert_eq!((status, body["phase"].as_str()), (StatusCode::OK, Some("not_live")));
+    }
+    assert_eq!(c.call("POST", &format!("/v1/rooms/{ROOM}/reopen"), None, None).await.0, StatusCode::UNAUTHORIZED);
+}
+
+fn egress_done(id: &str, egress: &str, file: &str) -> Value {
+    json!({"id": id, "event": "egress_ended", "createdAt": 2000, "egressInfo": {"egressId":egress,"roomName":ROOM,"status":"EGRESS_COMPLETE","startedAt":"1000000000000","endedAt":"1600000000000","fileResults":[{"filename":file,"duration":"600000000000","size":"12345","location":"s3://b/x"}]}})
+}
+
+#[tokio::test]
+async fn a_private_buckets_recordings_go_out_on_signed_links_that_expire() {
+    let c = ctx_private_bucket();
+    c.room(1).await;
+    let file = format!("recordings/{ROOM}/20261118-174038.mp4");
+    assert_eq!(c.webhook(egress_done("e1", "EG_1", &file)).await, StatusCode::OK);
+    let (_, body) = c.v1("GET", &format!("/v1/rooms/{ROOM}/recordings"), None).await;
+    let rec = &body["recordings"][0];
+    assert!(rec["publicUrl"].is_null());
+    assert!(rec["watchUrl"].is_null(), "not published");
+    assert!(body["local"].as_array().unwrap().is_empty());
+    let link = rec["downloadUrl"].as_str().unwrap();
+    assert!(link.starts_with("https://live.example.com/files/"), "{link}");
+    let path = link.trim_start_matches("https://live.example.com");
+    // Plays inline, or downloads; either way on to a short-lived signed bucket address.
+    let (status, headers, _) = c.fetch(path).await;
+    assert_eq!(status, StatusCode::TEMPORARY_REDIRECT);
+    let to = headers[header::LOCATION].to_str().unwrap();
+    assert!(to.starts_with("https://b.nyc3.digitaloceanspaces.com/") && to.contains("X-Amz-Signature=") && to.contains("response-content-disposition=inline"), "{to}");
+    let (_, headers, _) = c.fetch(&format!("{path}?download=1")).await;
+    assert!(headers[header::LOCATION].to_str().unwrap().contains("attachment"), "a download");
+    // A link that's been changed, or for another room's file, gets nothing.
+    let mut forged = path.to_string();
+    forged.insert(12, 'x');
+    assert_eq!(c.fetch(&forged).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(c.fetch("/files/abc.def").await.0, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_published_recording_has_a_page_until_its_unpublished() {
+    let c = ctx_private_bucket();
+    c.room(1).await;
+    let file = format!("recordings/{ROOM}/20261118-174038.mp4");
+    c.webhook(egress_done("e1", "EG_1", &file)).await;
+    assert_eq!(c.v1("POST", &format!("/v1/rooms/{ROOM}/recordings/EG_nope/publish"), None).await.0, StatusCode::NOT_FOUND);
+    let (status, first) = c.v1("POST", &format!("/v1/rooms/{ROOM}/recordings/EG_1/publish"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, again) = c.v1("POST", &format!("/v1/rooms/{ROOM}/recordings/EG_1/publish"), None).await;
+    assert_eq!(first, again, "publishing twice gives the same page");
+    let page = first["watchUrl"].as_str().unwrap().trim_start_matches("https://live.example.com").to_string();
+    assert!(page.starts_with("/watch/"));
+    let (_, body) = c.v1("GET", &format!("/v1/rooms/{ROOM}/recordings"), None).await;
+    assert_eq!(body["recordings"][0]["watchUrl"], first["watchUrl"]);
+    // Public: a page with the player, allowed to play from the bucket and to be embedded.
+    let (status, headers, html) = c.fetch(&page).await;
+    assert_eq!(status, StatusCode::OK);
+    let html = String::from_utf8(html).unwrap();
+    assert!(html.contains("<video") && html.contains(&format!("{page}/video.mp4")) && html.contains("Launch"));
+    let csp = headers[header::CONTENT_SECURITY_POLICY].to_str().unwrap();
+    assert!(csp.contains("media-src 'self' https://b.nyc3.digitaloceanspaces.com") && csp.contains("frame-ancestors *"), "{csp}");
+    let (status, headers, _) = c.fetch(&format!("{page}/video.mp4")).await;
+    assert_eq!(status, StatusCode::TEMPORARY_REDIRECT);
+    assert!(headers[header::LOCATION].to_str().unwrap().contains(&file.replace('/', "/")));
+    // Unpublished, the page and the video are gone, and the same address doesn't come back by itself.
+    assert_eq!(c.v1("POST", &format!("/v1/rooms/{ROOM}/recordings/EG_1/unpublish"), None).await.0, StatusCode::OK);
+    assert_eq!(c.fetch(&page).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(c.fetch(&format!("{page}/video.mp4")).await.0, StatusCode::NOT_FOUND);
+    assert!(c.v1("GET", &format!("/v1/rooms/{ROOM}/recordings"), None).await.1["recordings"][0]["watchUrl"].is_null());
 }
 
 #[tokio::test]

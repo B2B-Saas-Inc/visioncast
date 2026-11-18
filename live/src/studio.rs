@@ -592,7 +592,7 @@ pub struct Hub {
     /// Languages someone here wants captions in.
     pub caption_languages: Mutex<HashSet<String>>,
     /// Going live, ending and what runs by the clock happen one at a time.
-    show_lock: tokio::sync::Mutex<()>,
+    pub show_lock: tokio::sync::Mutex<()>,
     /// One chunk at a time for each speaker's own recording.
     local_lock: tokio::sync::Mutex<()>,
 }
@@ -1249,6 +1249,8 @@ pub async fn events(State(app): State<Arc<AppState>>, Path(ticket): Path<String>
 pub enum Action {
     GoLive,
     EndSession,
+    /// An ended session opens again, not live, for one that was ended by mistake or after a rehearsal.
+    Reopen,
     Record { on: bool },
     StageAdd { identity: String },
     StageRemove { identity: String },
@@ -1427,6 +1429,11 @@ async fn apply(app: &Arc<AppState>, hub: &Arc<Hub>, me: &Me, action: Action) -> 
                 return Err(ApiError(StatusCode::CONFLICT, "not_available"));
             }
             go_live(app, hub, &me.room).await?;
+        }
+        Action::Reopen => {
+            require(may_go_live(me.role, &state.settings))?;
+            let _show = hub.show_lock.lock().await;
+            hub.reset_phase_after_end(app)?;
         }
         Action::EndSession => {
             require(may_go_live(me.role, &state.settings))?;
@@ -2388,10 +2395,15 @@ pub async fn delete_inputs(app: &AppState, room: &str) {
 
 /// A room's phase, from what's saved, without waking it up.
 pub fn saved_phase(app: &AppState, room: &str) -> ApiResult<String> {
+    Ok(saved_state(app, room)?.phase)
+}
+
+/// The room's state without opening it: from its hub if it's open, else as last saved.
+pub fn saved_state(app: &AppState, room: &str) -> ApiResult<StudioState> {
     if let Some(hub) = app.hubs.lock().unwrap_or_else(|e| e.into_inner()).get(room) {
-        return Ok(hub.state().phase);
+        return Ok(hub.state());
     }
-    Ok(app.store.studio_state(room)?.and_then(|s| doc::<StudioState>(&s)).unwrap_or_default().phase)
+    Ok(app.store.studio_state(room)?.and_then(|s| doc::<StudioState>(&s)).unwrap_or_default())
 }
 
 /// The rooms a LiveKit room name belongs to: (the session, what kind, which breakout).
