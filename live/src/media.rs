@@ -167,7 +167,8 @@ pub fn local_json(app: &AppState, room: &str) -> ApiResult<Value> {
         .filter(|r| r.finished || r.size > 0)
         .map(|r| json!({
             "id": r.id, "name": r.name, "sizeBytes": r.size, "startedAt": crate::app::iso(r.at), "finished": r.finished,
-            "url": signed(app, room, &Target::Local(r.id.clone())),
+            "screen": r.screen, "inBucket": r.bucket_key.is_some(), "filename": r.bucket_key.clone(),
+            "url": match &r.bucket_key { Some(key) => signed(app, room, &Target::Bucket(key.clone())), None => signed(app, room, &Target::Local(r.id.clone())) },
         }))
         .collect::<Vec<_>>()))
 }
@@ -303,6 +304,93 @@ pub fn srt_to_vtt(srt: &str) -> String {
         out.push('\n');
     }
     out
+}
+
+// ---- speakers' own recordings, copied to the bucket once they're finished
+
+/// Parts of a multipart upload: at least 5 MiB each except the last, and at most 10,000 of them.
+const PART_BYTES: usize = 64 * 1024 * 1024;
+
+/// Where a speaker's own recording goes in the bucket, next to the session's recordings.
+pub fn local_key(room: &str, rec: &crate::studio::LocalRecording) -> String {
+    let name: String = rec.name.to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
+    let name = name.split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-");
+    let ext = if rec.mp4 { "mp4" } else { "webm" };
+    format!("recordings/{room}/speakers/{}-{}{}.{ext}", crate::app::iso(rec.at).replace([':', '-'], "").get(..15).unwrap_or("x"), if name.is_empty() { "speaker".to_string() } else { name }, if rec.screen { "-screen" } else { "" })
+}
+
+/// Copies a finished speaker's recording to the bucket, in parts, so files of several GB never sit in
+/// memory. The copy on this server stays until the room's records are removed. Failing leaves it there.
+pub fn upload_local(app: Arc<AppState>, room: String, id: String) {
+    if app.config.recording.is_none() {
+        return;
+    }
+    tokio::spawn(async move {
+        let Some(mut rec) = crate::studio::local_recordings(&app, &room).ok().and_then(|all| all.into_iter().find(|r| r.id == id)) else { return };
+        if rec.bucket_key.is_some() {
+            return;
+        }
+        let key = local_key(&room, &rec);
+        match put_file(&app, &room, &rec, &key).await {
+            Ok(()) => {
+                rec.bucket_key = Some(key);
+                let _ = app.store.put_doc(&room, "local", &rec.id, &serde_json::to_string(&rec).unwrap_or_default());
+            }
+            Err(err) => tracing::warn!(error = %err, "could not copy a speaker's own recording to the bucket"),
+        }
+    });
+}
+
+async fn put_file(app: &AppState, room: &str, rec: &crate::studio::LocalRecording, key: &str) -> Result<(), String> {
+    use tokio::io::AsyncReadExt;
+    let (bucket, credentials) = bucket(app, true).ok_or("no storage")?;
+    let path = std::path::Path::new(&app.config.upload_dir).join(room).join(format!("{}.local", rec.id));
+    let mut file = tokio::fs::File::open(&path).await.map_err(|e| e.to_string())?;
+    let content_type = if rec.mp4 { "video/mp4" } else { "video/webm" };
+    let signed = |d: u64| Duration::from_secs(d);
+    let created = app.http.post(bucket.create_multipart_upload(Some(&credentials), key).sign(signed(600))).header(header::CONTENT_TYPE, content_type).send().await.map_err(|e| e.to_string())?;
+    if !created.status().is_success() {
+        return Err(format!("create: http {}", created.status()));
+    }
+    let body = created.text().await.map_err(|e| e.to_string())?;
+    let upload = rusty_s3::actions::CreateMultipartUpload::parse_response(&body).map_err(|e| e.to_string())?;
+    let upload_id = upload.upload_id().to_string();
+    let mut etags = vec![];
+    let result: Result<(), String> = async {
+        let mut buffer = vec![0u8; PART_BYTES];
+        for part in 1u16.. {
+            let mut filled = 0;
+            while filled < PART_BYTES {
+                let n = file.read(&mut buffer[filled..]).await.map_err(|e| e.to_string())?;
+                if n == 0 {
+                    break;
+                }
+                filled += n;
+            }
+            if filled == 0 && part > 1 {
+                break;
+            }
+            let url = bucket.upload_part(Some(&credentials), key, part, &upload_id).sign(signed(3600));
+            let res = app.http.put(url).body(buffer[..filled].to_vec()).send().await.map_err(|e| e.to_string())?;
+            if !res.status().is_success() {
+                return Err(format!("part {part}: http {}", res.status()));
+            }
+            let etag = res.headers().get(header::ETAG).and_then(|v| v.to_str().ok()).ok_or("no etag")?.to_string();
+            etags.push(etag);
+            if filled < PART_BYTES {
+                break;
+            }
+        }
+        let complete = bucket.complete_multipart_upload(Some(&credentials), key, &upload_id, etags.iter().map(String::as_str));
+        let url = complete.sign(signed(600));
+        let res = app.http.post(url).body(complete.body()).send().await.map_err(|e| e.to_string())?;
+        if res.status().is_success() { Ok(()) } else { Err(format!("complete: http {}", res.status())) }
+    }
+    .await;
+    if result.is_err() {
+        let _ = app.http.delete(bucket.abort_multipart_upload(Some(&credentials), key, &upload_id).sign(signed(600))).send().await;
+    }
+    result
 }
 
 #[cfg(test)]

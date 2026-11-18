@@ -48,6 +48,26 @@ pub struct LiveKit {
     egress: EgressClient,
     ingress: IngressClient,
     storage: Option<RecordingStorage>,
+    video_kbps: i32,
+}
+
+/// How the recording is encoded: full HD at a bitrate that holds up for editing and for YouTube,
+/// with AAC, which editors and every platform take. LiveKit's own default is 4.5 Mbps with Opus.
+pub fn recording_encoding(video_kbps: i32) -> livekit_api::services::egress::encoding::EncodingOptions {
+    livekit_api::services::egress::encoding::EncodingOptions {
+        width: 1920,
+        height: 1080,
+        depth: 24,
+        framerate: 30,
+        audio_codec: proto::AudioCodec::Aac,
+        audio_bitrate: 256,
+        audio_frequency: 48000,
+        video_codec: proto::VideoCodec::H264High,
+        video_bitrate: video_kbps,
+        keyframe_interval: 2.0,
+        audio_quality: 0,
+        video_quality: 0,
+    }
 }
 
 impl LiveKit {
@@ -58,6 +78,7 @@ impl LiveKit {
             egress: EgressClient::with_api_key(url, key, secret).with_request_timeout(Duration::from_secs(30)),
             ingress: IngressClient::with_api_key(url, key, secret),
             storage: config.recording.clone(),
+            video_kbps: config.recording_video_kbps,
         }
     }
 }
@@ -85,7 +106,12 @@ impl Backend for LiveKit {
                 ..Default::default()
             })),
         };
-        let options = RoomCompositeOptions { layout: "program".to_string(), custom_base_url: page.to_string(), ..Default::default() };
+        let options = RoomCompositeOptions {
+            layout: "program".to_string(),
+            custom_base_url: page.to_string(),
+            encoding: recording_encoding(self.video_kbps),
+            ..Default::default()
+        };
         let info = self
             .egress
             .start_room_composite_egress(room, vec![EgressOutput::File(output)], options)

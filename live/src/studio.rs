@@ -140,7 +140,7 @@ impl Default for Settings {
             captions: true,
             captions_on_picture: false,
             qa_private: false,
-            local_recordings: false,
+            local_recordings: true,
         }
     }
 }
@@ -2260,6 +2260,7 @@ async fn apply(app: &Arc<AppState>, hub: &Arc<Hub>, me: &Me, action: Action) -> 
             }
             rec.finished = true;
             app.store.put_doc(room, "local", &id, &serde_json::to_string(&rec).unwrap_or_default())?;
+            crate::media::upload_local(app.clone(), room.to_string(), id.clone());
         }
 
         // ---- an encoder sending RTMP in
@@ -2965,9 +2966,21 @@ pub struct LocalRecording {
     pub next: u64,
     #[serde(default)]
     pub finished: bool,
-    /// Safari records MP4s, everyone else WebM.
+    /// Safari records MP4s, and Chrome does too where it can; anything else is WebM.
     #[serde(default)]
     pub mp4: bool,
+    /// The screen someone shared, not their camera.
+    #[serde(default)]
+    pub screen: bool,
+    /// Where its copy is in the bucket, once it's there.
+    #[serde(default)]
+    pub bucket_key: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct LocalQuery {
+    #[serde(default)]
+    screen: Option<String>,
 }
 
 const MAX_LOCAL_RECORDING_BYTES: u64 = 8 * 1024 * 1024 * 1024;
@@ -2975,7 +2988,7 @@ const MAX_LOCAL_CHUNK_BYTES: usize = 32 * 1024 * 1024;
 const MAX_LOCAL_RECORDINGS_EACH: usize = 20;
 const MAX_LOCAL_ROOM_BYTES: u64 = 100 * 1024 * 1024 * 1024;
 
-pub async fn local_chunk(State(app): State<Arc<AppState>>, Path((ticket, id, seq)): Path<(String, String, u64)>, body: Body) -> ApiResult<Json<Value>> {
+pub async fn local_chunk(State(app): State<Arc<AppState>>, Path((ticket, id, seq)): Path<(String, String, u64)>, Query(q): Query<LocalQuery>, body: Body) -> ApiResult<Json<Value>> {
     let me = resolve(&app, &ticket)?;
     require(me.role.is_crew())?;
     if !crate::ticket::valid_id(&id) {
@@ -2994,14 +3007,21 @@ pub async fn local_chunk(State(app): State<Arc<AppState>>, Path((ticket, id, seq
         Some(existing) if existing.identity != me.identity => return Err(FORBIDDEN),
         Some(existing) => existing,
         None => {
-            // A new file only while recording, from someone on stage, and only so many.
-            if !state.recording || !state.stage.iter().any(|m| m.identity == me.identity) {
+            // A new file only while recording, from someone on stage (or, for a screen, someone who
+            // may share one: those running the show share theirs from the green room), and only so many.
+            let screen = q.screen.is_some();
+            let on_stage = state.stage.iter().any(|m| m.identity == me.identity);
+            if !state.recording || !(on_stage || (screen && me.role.runs_show())) {
                 return Err(ApiError(StatusCode::CONFLICT, "not_available"));
             }
             if all.iter().filter(|r| r.identity == me.identity).count() >= MAX_LOCAL_RECORDINGS_EACH {
                 return Err(ApiError(StatusCode::PAYLOAD_TOO_LARGE, "file_too_large"));
             }
-            LocalRecording { id: id.clone(), identity: me.identity.clone(), name: hub.person(&me.identity).name, at: now(), size: 0, next: 0, finished: false, mp4: bytes.len() >= 8 && &bytes[4..8] == b"ftyp" }
+            let name = hub.person(&me.identity).name;
+            LocalRecording {
+                id: id.clone(), identity: me.identity.clone(), name: if screen { format!("{name} (screen)") } else { name }, at: now(), size: 0, next: 0, finished: false,
+                mp4: bytes.len() >= 8 && &bytes[4..8] == b"ftyp", screen, bucket_key: None,
+            }
         }
     };
     // A chunk sent twice after a dropped connection counts once.

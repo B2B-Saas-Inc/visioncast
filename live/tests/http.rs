@@ -105,6 +105,7 @@ fn config(recording: bool) -> Config {
         min_cpus: 0,
         max_upload_bytes: 1024 * 1024,
         retention_days: 90,
+        recording_video_kbps: 12000,
         recording: recording.then(|| RecordingStorage {
             bucket: "b".into(),
             region: "r".into(),
@@ -1637,8 +1638,16 @@ async fn crew_recording_chunks_arrive_in_order_and_stay_with_their_owner() {
         async move { app.oneshot(Request::put(path).body(Body::from(vec![1u8; 32])).unwrap()).await.unwrap().status() }
     };
     let chunk = |who: &str, seq: u64| format!("{who}/local/abc123def4567890/{seq}");
-    assert_eq!(put(chunk(&host, 0)).await, StatusCode::CONFLICT, "only when the session records this way");
     let mut settings = c.snapshot(&host, CLIENT).await["state"]["settings"].clone();
+    assert_eq!(settings["localRecordings"], true, "on unless a session turns it off");
+    settings["localRecordings"] = json!(false);
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"set_settings","settings":settings.clone()})).await.0, StatusCode::OK);
+    let me = c.snapshot(&host, CLIENT).await["me"]["identity"].clone();
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"stage_add","identity":me.clone()})).await.0, StatusCode::OK);
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"record","on":true})).await.0, StatusCode::OK);
+    assert_eq!(put(chunk(&host, 0)).await, StatusCode::CONFLICT, "only when the session records this way");
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"record","on":false})).await.0, StatusCode::OK);
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"stage_remove","identity":me})).await.0, StatusCode::OK);
     settings["localRecordings"] = json!(true);
     assert_eq!(c.act(&host, CLIENT, json!({"type":"set_settings","settings":settings})).await.0, StatusCode::OK);
     assert_eq!(put(chunk(&a, 0)).await, StatusCode::FORBIDDEN, "not attendees");
@@ -1652,6 +1661,36 @@ async fn crew_recording_chunks_arrive_in_order_and_stay_with_their_owner() {
     assert_eq!(put(chunk(&other, 1)).await, StatusCode::FORBIDDEN, "not someone else's file");
     assert_eq!(c.call("GET", &format!("{a}/local/abc123def4567890"), None, None).await.0, StatusCode::FORBIDDEN);
     assert_eq!(c.act(&other, CLIENT, json!({"type":"local_recording_done","id":"abc123def4567890"})).await.0, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn whoever_shares_a_screen_while_recording_keeps_a_full_quality_copy_of_it() {
+    let c = ctx(true);
+    let host = live_with_host(&c).await;
+    let producer = c.member("producer", "Pat").await;
+    c.enter(&producer, "Pat", CLIENT).await;
+    let app = c.app.clone();
+    let put = |path: String| {
+        let app = app.clone();
+        async move { app.oneshot(Request::put(path).body(Body::from([&[0u8, 0, 0, 0x18][..], b"ftypmp42", &[0u8; 20][..]].concat())).unwrap()).await.unwrap().status() }
+    };
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"record","on":true})).await.0, StatusCode::OK);
+    // A producer is never on stage, so has no camera copy, but shares the presentation.
+    assert_eq!(put(format!("{producer}/local/cafe0000cafe0000/0")).await, StatusCode::CONFLICT, "no camera copy off stage");
+    assert_eq!(put(format!("{producer}/local/cafe0000cafe0001/0?screen=1")).await, StatusCode::OK);
+    assert_eq!(c.act(&producer, CLIENT, json!({"type":"local_recording_done","id":"cafe0000cafe0001"})).await.0, StatusCode::OK);
+    let (_, body) = c.v1("GET", &format!("/v1/rooms/{ROOM}/recordings"), None).await;
+    let copy = &body["local"][0];
+    assert_eq!((copy["name"].as_str(), copy["screen"].as_bool(), copy["finished"].as_bool()), (Some("Pat (screen)"), Some(true), Some(true)));
+    assert!(copy["url"].as_str().unwrap().starts_with("https://live.example.com/files/"));
+}
+
+#[test]
+fn recordings_are_encoded_for_editing_and_publishing() {
+    let e = visioncast_live::backend::recording_encoding(12000);
+    assert_eq!((e.width, e.height, e.framerate, e.video_bitrate, e.audio_bitrate, e.audio_frequency), (1920, 1080, 30, 12000, 256, 48000));
+    assert!(matches!(e.video_codec, livekit_protocol::VideoCodec::H264High));
+    assert!(matches!(e.audio_codec, livekit_protocol::AudioCodec::Aac));
 }
 
 #[tokio::test]
