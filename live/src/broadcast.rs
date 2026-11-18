@@ -554,6 +554,18 @@ pub struct Brand {
     pub logo: bool,
     /// A font file was uploaded. Theme `font: custom` uses it.
     pub font_file: bool,
+    /// Full-stage graphic shown before anyone is live, and the one shown after the session ends.
+    pub holding_before: Option<Holding>,
+    pub holding_after: Option<Holding>,
+}
+
+/// A brand holding graphic: an image, or a video that loops without sound.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Holding {
+    pub mime: String,
+    /// Changes with every upload, so the address does too and browsers never show the old one.
+    pub v: u64,
 }
 
 fn brand(app: &AppState) -> Brand {
@@ -674,6 +686,76 @@ pub async fn get_font(State(app): State<Arc<AppState>>, request: axum::extract::
     let Ok(served) = tower::ServiceExt::oneshot(tower_http::services::ServeFile::new_with_mime(path, &mime_parsed), request).await;
     let (mut parts, body) = served.into_parts();
     parts.headers.insert(header::CACHE_CONTROL, axum::http::HeaderValue::from_static("public, max-age=3600"));
+    Response::from_parts(parts, axum::body::Body::new(body))
+}
+
+// ---- holding graphics: what fills the stage before anyone is live and after the session ends
+
+pub const MAX_HOLDING_BYTES: usize = 40 * 1024 * 1024;
+
+fn holding_path(app: &AppState, which: &str) -> std::path::PathBuf {
+    std::path::Path::new(&app.config.upload_dir).join("_brand").join(format!("holding-{which}"))
+}
+
+fn holding_slot<'a>(value: &'a mut Brand, which: &str) -> ApiResult<&'a mut Option<Holding>> {
+    match which {
+        "before" => Ok(&mut value.holding_before),
+        "after" => Ok(&mut value.holding_after),
+        _ => Err(ApiError(StatusCode::NOT_FOUND, "not_found")),
+    }
+}
+
+/// What a holding graphic really is, from its first bytes: PNG, JPEG, WebP, GIF, MP4 or WebM.
+/// Never SVG or HTML, so nothing that can run script in this origin.
+fn holding_mime(head: &[u8]) -> Option<&'static str> {
+    crate::studio::banner_mime(head).or_else(|| crate::studio::graphic_mime(head))
+}
+
+pub async fn put_holding(State(app): State<Arc<AppState>>, Path(which): Path<String>, body: Bytes) -> ApiResult<Json<Value>> {
+    let mut value = brand(&app);
+    holding_slot(&mut value, &which)?;
+    if body.len() > MAX_HOLDING_BYTES {
+        return Err(ApiError(StatusCode::PAYLOAD_TOO_LARGE, "file_too_large"));
+    }
+    let Some(mime) = holding_mime(&body) else {
+        return Err(ApiError(StatusCode::UNSUPPORTED_MEDIA_TYPE, "file_type_not_allowed"));
+    };
+    let path = holding_path(&app, &which);
+    let storage = |_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "storage_unavailable");
+    tokio::fs::create_dir_all(path.parent().expect("has a parent")).await.map_err(storage)?;
+    // Written beside it and moved into place, so a room never reads half a file.
+    let partial = path.with_extension("partial");
+    tokio::fs::write(&partial, &body).await.map_err(storage)?;
+    tokio::fs::rename(&partial, &path).await.map_err(storage)?;
+    let v = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(1);
+    *holding_slot(&mut value, &which)? = Some(Holding { mime: mime.to_string(), v });
+    save_brand(&app, &value)?;
+    Ok(Json(json!(value)))
+}
+
+pub async fn delete_holding(State(app): State<Arc<AppState>>, Path(which): Path<String>) -> ApiResult<Json<Value>> {
+    let mut value = brand(&app);
+    *holding_slot(&mut value, &which)? = None;
+    let _ = tokio::fs::remove_file(holding_path(&app, &which)).await;
+    save_brand(&app, &value)?;
+    Ok(Json(json!(value)))
+}
+
+/// Public, like the logo: rooms show it before anyone has joined. Served as a file, so videos
+/// get range requests, which Safari needs to play them.
+pub async fn get_holding(State(app): State<Arc<AppState>>, Path(which): Path<String>, request: axum::extract::Request) -> Response {
+    let mut value = brand(&app);
+    let Ok(slot) = holding_slot(&mut value, &which) else { return StatusCode::NOT_FOUND.into_response() };
+    let Some(holding) = slot.clone() else { return StatusCode::NOT_FOUND.into_response() };
+    let path = holding_path(&app, &which);
+    if tokio::fs::metadata(&path).await.is_err() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let Ok(mime) = holding.mime.parse() else { return StatusCode::NOT_FOUND.into_response() };
+    let Ok(served) = tower::ServiceExt::oneshot(tower_http::services::ServeFile::new_with_mime(path, &mime), request).await;
+    let (mut parts, body) = served.into_parts();
+    // The address carries ?v=, which changes with each upload.
+    parts.headers.insert(header::CACHE_CONTROL, axum::http::HeaderValue::from_static("public, max-age=86400"));
     Response::from_parts(parts, axum::body::Body::new(body))
 }
 

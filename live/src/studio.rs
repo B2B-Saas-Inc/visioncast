@@ -2713,7 +2713,7 @@ fn looks_right(kind: &str, head: &[u8]) -> bool {
 
 /// What an uploaded graphic really is, from its first bytes. Never SVG or HTML: nothing that can
 /// run script in this origin.
-fn graphic_mime(head: &[u8]) -> Option<&'static str> {
+pub(crate) fn graphic_mime(head: &[u8]) -> Option<&'static str> {
     if head.starts_with(b"GIF87a") || head.starts_with(b"GIF89a") {
         Some("image/gif")
     } else if head.starts_with(&[0x89, b'P', b'N', b'G']) {
@@ -2729,7 +2729,7 @@ fn graphic_mime(head: &[u8]) -> Option<&'static str> {
     }
 }
 
-fn banner_mime(head: &[u8]) -> Option<&'static str> {
+pub(crate) fn banner_mime(head: &[u8]) -> Option<&'static str> {
     if head.starts_with(&[0xff, 0xd8, 0xff]) {
         return Some("image/jpeg");
     }

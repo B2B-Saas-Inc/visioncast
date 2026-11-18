@@ -129,6 +129,8 @@ In the room's Look tab, hosts and producers can put GIFs, PNGs, WebP images and 
 
 Set at `/admin`: logo, brand colour, stage background, light or dark attendee page, and font. Saving updates open rooms straight away. Everything on the picture uses it, including overlays and polls, so recordings and broadcasts carry it too.
 
+**Holding graphics.** Also at `/admin`: one graphic for before anyone is live, and one for after the session ends. Each is a 16:9 image (PNG, JPEG, WebP or GIF) or a video that loops without sound (MP4 or WebM), up to 40 MB. It fills the stage for attendees, the crew and the recorder. Attendees see it from the moment they're in the lobby until the session goes live, with the session's title and countdown over its bottom third, so keep that part plain. The crew sees it until someone or something is put on the stage. After the end, everyone sees the second one. Without them, the stage looks as before. Videos play muted and inline, so phones start them without a tap.
+
 A host or producer can override a single session from the room's Look tab, where frames, backgrounds and full-stage images also live. The built-in fonts are ones already on people's devices, so nothing loads from elsewhere. You can also upload your own font at `/admin`, which is served from this server.
 
 The studio's own Brand page ([docs/branding.md](../docs/branding.md)) sets the name, colour and logo across the studio, the waiting room and every connected live server.
@@ -295,6 +297,7 @@ Everything under `/v1` needs `Authorization: Bearer <LIVE_SERVICE_SECRET>`. All 
 | `PUT /v1/brand` `{accent, stage, mode, font}` | The brand for every room |
 | `PUT /v1/brand/logo`, `POST /v1/brand/logo/remove` | A PNG of at most 2 MB |
 | `PUT /v1/brand/font`, `POST /v1/brand/font/remove` | A WOFF2, WOFF, TTF or OTF of at most 8 MB. Theme `font: custom` uses it |
+| `PUT /v1/brand/holding/{before\|after}`, `POST /v1/brand/holding/{before\|after}/remove` | The holding graphic: PNG, JPEG, WebP, GIF, MP4 or WebM, at most 40 MB, checked by its first bytes. Public at `/brand/holding/{before\|after}` |
 | `GET /v1/rooms/{room}/attendance?after={identity}` | `{rows, complete, next}`, 200 rows a page. `complete` is false while anyone is still in the room |
 | `GET /v1/rooms/{room}/recordings` | `{recordings}`, the latest 50, each with its `captions` files |
 
@@ -302,7 +305,7 @@ Everything under `/v1` needs `Authorization: Bearer <LIVE_SERVICE_SECRET>`. All 
 
 Public routes: `/{slug}`, `/{slug}/lobby`, `/{slug}/green-room`, `/{slug}/public`, `/login`, `/logout`, `/admin`,
 `/login/set/{token}`, `/login/link/{token}`, `/join/{ticket}` and its `/info`, `/enter`, `/events`, `/act`, `/share-token`, `/files`, `/local` and `/captions` actions,
-`/program/{ticket}` for the recorder, `/brand/logo`, `/brand/font`, `/assets/*`, `POST /webhooks/livekit` (signature checked by
+`/program/{ticket}` for the recorder, `/brand/logo`, `/brand/font`, `/brand/holding/{before|after}`, `/assets/*`, `POST /webhooks/livekit` (signature checked by
 LiveKit's own receiver) and `/healthz`. `/captions/in/{ticket}` takes audio from the recorder, and the Traefik config
 closes it from outside.
 
