@@ -254,7 +254,7 @@
     if (!isCrew() && (!previous || previous.phase !== next.phase)) { audiencePhase(next.phase); }
     syncAddress();
     paintCaptionButton();
-    if (isCrew()) { syncPosition(); syncLocalRecording(); }
+    if (isCrew()) { syncPosition(); syncLocalRecording(); syncScreenCopy(); }
   }
 
   // ---- the address, and captions
@@ -375,7 +375,8 @@
       videoCaptureDefaults: { resolution: LK.VideoPresets.h1080.resolution },
       publishDefaults: {
         simulcast: true,
-        videoEncoding: LK.VideoPresets.h1080.encoding,
+        // Full HD with room to spare: the recording is made from what speakers send, so this is its ceiling.
+        videoEncoding: { maxBitrate: 5000000, maxFramerate: 30 },
         videoSimulcastLayers: [LK.VideoPresets.h360, LK.VideoPresets.h720],
         audioPreset: LK.AudioPresets.musicHighQualityStereo,
         forceStereo: true
@@ -806,17 +807,39 @@
       if (pub.track && !pub.isMuted && pub.track.mediaStreamTrack && pub.track.mediaStreamTrack.readyState === "live") { tracks.push(pub.track.mediaStreamTrack); }
     });
     if (!tracks.length) { return; }
-    var mime = ["video/webm;codecs=vp9,opus", "video/webm", "video/mp4"].filter(function (m) { return MediaRecorder.isTypeSupported(m); })[0];
+    localRec = makeLocalRecorder(tracks, false, function (rec) {
+      if (localRec === rec) { stopLocalRecording(); setTimeout(syncLocalRecording, 1000); }
+    }, function (rec) { if (localRec === rec) { localRec = null; schedule(); } });
+  }
+
+  // The same for a screen being shared, from its own tracks, while recording.
+  var shareTracks = [], screenRec = null;
+  function syncScreenCopy() {
+    var live = shareTracks.map(function (t) { return t.mediaStreamTrack; }).filter(function (t) { return t && t.readyState === "live"; });
+    var wanted = !!(S.state && S.state.settings.localRecordings && S.state.recording && live.length && typeof MediaRecorder === "function");
+    if (wanted && !screenRec) {
+      screenRec = makeLocalRecorder(live, true, function (rec) {
+        if (screenRec === rec) { var r = screenRec; screenRec = null; if (r.recorder.state !== "inactive") { r.recorder.stop(); } setTimeout(syncScreenCopy, 1000); }
+      }, function (rec) { if (screenRec === rec) { screenRec = null; } });
+    }
+    if (!wanted && screenRec) { var rec = screenRec; screenRec = null; if (rec.recorder.state !== "inactive") { rec.recorder.stop(); } }
+  }
+
+  // Full quality from the source, before any of it is compressed to send: H.264 and AAC in MP4 where the
+  // browser can (editors and every platform take it), else VP9 and Opus in WebM.
+  var LOCAL_TYPES = ["video/mp4;codecs=avc1.640028,mp4a.40.2", "video/mp4;codecs=avc1,mp4a.40.2", "video/mp4", "video/webm;codecs=vp9,opus", "video/webm"];
+  function makeLocalRecorder(tracks, screen, onMissed, onStopped) {
+    var mime = LOCAL_TYPES.filter(function (m) { return MediaRecorder.isTypeSupported(m); })[0];
     var id = Array.from(crypto.getRandomValues(new Uint8Array(8))).map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
-    var recorder = new MediaRecorder(new MediaStream(tracks), { mimeType: mime, videoBitsPerSecond: 10000000, audioBitsPerSecond: 128000 });
+    var recorder = new MediaRecorder(new MediaStream(tracks), { mimeType: mime, videoBitsPerSecond: screen ? 6000000 : 10000000, audioBitsPerSecond: 256000 });
     var rec = { recorder: recorder, id: id, seq: 0, chain: Promise.resolve(), broken: false, tracks: tracks };
     var missed = function () {
       rec.broken = true;
       setError($("room-error"), "Your own copy of the recording missed a part, so a new file has started. The main recording isn't affected.");
-      if (localRec === rec) { stopLocalRecording(); setTimeout(syncLocalRecording, 1000); }
+      onMissed(rec);
     };
     var send = function (blob, seq, tries) {
-      return fetch(base + "/local/" + id + "/" + seq, { method: "PUT", body: blob }).then(function (res) {
+      return fetch(base + "/local/" + id + "/" + seq + (screen ? "?screen=1" : ""), { method: "PUT", body: blob }).then(function (res) {
         if (res.status >= 500) { throw new Error("retry"); }
         if (!res.ok) { missed(); }
       }).catch(function () {
@@ -832,10 +855,10 @@
     };
     recorder.onstop = function () {
       rec.chain.then(function () { quietly({ type: "local_recording_done", id: id }); });
-      if (localRec === rec) { localRec = null; schedule(); }
+      onStopped(rec);
     };
     recorder.start(5000);
-    localRec = rec;
+    return rec;
   }
   // A camera or microphone turned on, off or changed is a new track, which a running recorder can't
   // follow. So each change starts a new file.
@@ -1187,6 +1210,8 @@
   }
 
   function stopShare() {
+    shareTracks = [];
+    syncScreenCopy();
     if (shareRoom) { shareRoom.disconnect(); shareRoom = null; }
     syncToggle($("screen"), false, "Stop sharing", "Share screen");
   }
@@ -1198,7 +1223,7 @@
     var tracks = [];
     // First, straight from the click: Safari only opens the screen picker from a click itself,
     // and waiting for the server or LiveKit before asking would lose it.
-    room.localParticipant.createScreenTracks({ audio: true }).then(function (made) {
+    room.localParticipant.createScreenTracks({ audio: true, resolution: LK.ScreenSharePresets.h1080fps30.resolution, contentHint: "detail" }).then(function (made) {
       tracks = made;
       return request("/share-token", { clientId: clientId });
     }).then(function (d) {
@@ -1206,9 +1231,12 @@
     }).then(function () {
       room.on(LK.RoomEvent.Disconnected, stopShare);
       room.on(LK.RoomEvent.LocalTrackUnpublished, stopShare);
-      return Promise.all(tracks.map(function (track) { return room.localParticipant.publishTrack(track, { source: track.source }); }));
+      // Text on a shared screen has to stay sharp in the recording.
+      return Promise.all(tracks.map(function (track) { return room.localParticipant.publishTrack(track, { source: track.source, screenShareEncoding: { maxBitrate: 6000000, maxFramerate: 30 } }); }));
     }).then(function () {
       shareRoom = room;
+      shareTracks = tracks;
+      syncScreenCopy();
       syncToggle(button, true, "Stop sharing", "Share screen");
     }).catch(function (err) {
       tracks.forEach(function (track) { track.stop(); });
@@ -1877,7 +1905,7 @@
     ["handRaising", "Raise hand", "Attendees can ask to come on stage."],
     ["profanityFilter", "Hide common swear words", "In chat and questions."],
     ["qaPrivate", "Keep questions private", "Attendees' questions are seen only by the crew and whoever asked. Answers too."],
-    ["localRecordings", "Each speaker records their own copy", "While you're recording, each person on stage also records their own camera and microphone in full quality, uploaded as they go. It uses more of their computer and upload speed."],
+    ["localRecordings", "Each speaker records their own copy", "While you're recording, each person on stage also records their own camera and microphone, and anyone sharing their screen records it, at full quality from the source, uploaded as they go and copied to your bucket afterwards. For editing and media assets. It uses more of their computer and upload speed."],
     ["captions", "Live captions", "Transcribes the people on stage while live, per speaker, and saves SRT and transcript files with the recording. Each viewer turns the display on or off."],
     ["captionsOnPicture", "Put captions on the picture", "Everyone sees them, and they're in recordings and broadcasts."],
     ["producersCanGoLive", "Producers can go live and end the session", "Only a host can change this."]

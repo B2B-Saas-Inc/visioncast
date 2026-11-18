@@ -57,6 +57,8 @@ pub struct Config {
     pub db_path: String,
     pub retention_days: i64,
     pub recording: Option<RecordingStorage>,
+    /// The recording's video bitrate in kbps: 1080p30 H.264 High, with 256 kbps AAC.
+    pub recording_video_kbps: i32,
 }
 
 fn required(name: &str) -> Result<String, String> {
@@ -140,6 +142,7 @@ impl Config {
             db_path: env::var("LIVE_DB_PATH").unwrap_or_else(|_| "/data/live.sqlite3".to_string()),
             retention_days,
             recording,
+            recording_video_kbps: env::var("LIVE_RECORDING_VIDEO_KBPS").ok().and_then(|v| v.parse().ok()).filter(|k| (2000..=50000).contains(k)).unwrap_or(12000),
         })
     }
 }
