@@ -184,8 +184,27 @@ def session_hosting(request, pk):
                     raise ValidationError({"action": ["Link this session to a live server first."]})
                 return redirect(service.live_settings_link(session.account, room=session.external_id, user=request.user))
             elif op == "recordings":
-                ctx["recordings"] = service.fetch_recordings(occ)
-                ctx["recordings_checked"] = True
+                _recordings_into(ctx, occ)
+            elif op in ("recording_publish", "recording_unpublish"):
+                if not admin:
+                    return forbidden(request, "Only Administrators can publish recordings.")
+                egress = request.POST.get("recording", "")
+                if op == "recording_publish":
+                    service.publish_live_recording(occ, egress, user=request.user)
+                    ctx["notice"] = "Published. Registrants are getting the link by email, and it's on the event page."
+                else:
+                    took_down = service.unpublish_live_recording(occ, egress, user=request.user)
+                    ctx["notice"] = "Unpublished. Its page is gone" + (", and the session has no recording now." if took_down else ".")
+                occ.refresh_from_db()
+                _recordings_into(ctx, occ)
+            elif op == "room_reopen":
+                if not admin:
+                    return forbidden(request, "Only Administrators can reopen the live room.")
+                from webinars.hosting import room_status
+
+                done = room_status.reopen(occ, user=request.user)
+                occ.refresh_from_db()
+                ctx["notice"] = "Reopened. The room is waiting to go live again." + (" The session is scheduled again." if done["changed"] == "scheduled" else "")
             elif op in ("reconcile", "manual", "detach"):
                 if not admin:
                     return forbidden(request, "Only Administrators can change provider links.")
@@ -207,6 +226,19 @@ def session_hosting(request, pk):
     ctx["session"] = service.serialize_session(session) if session is not None else None
     ctx["room_ready"] = bool(ctx["session"] and ctx["session"]["capabilities"] and ctx["session"]["capabilities"]["hostRoom"]
                              and ctx["session"]["state"] in ("linked", "out_of_date"))
+    if ctx["room_ready"] and session.provider == "livekit" and request.method == "GET":
+        from webinars.hosting import room_status
+
+        # Cheap, and the page should say where the room is now. Failures change nothing.
+        if room_status.try_sync(occ) is not None:
+            occ.refresh_from_db()
+            session = service.session_for(occ)
+    if ctx["room_ready"]:
+        from webinars.hosting import room_status
+
+        ctx["room_phase"] = session.room_phase
+        ctx["room_phase_label"] = room_status.label(session)
+        ctx["occ"] = occ
     if ctx["room_ready"] and admin:
         try:
             ctx["crew"] = service.crew_list(occ)
@@ -222,6 +254,13 @@ def session_hosting(request, pk):
     ctx["any_manual"] = any(get_adapter(a.provider).capabilities.manual_link for a in accounts)
     response = render(request, T + "session_hosting.html", ctx, status=400 if ctx["errors"] else 200)
     return no_store(response) if ctx.get("crew_link") else response
+
+
+def _recordings_into(ctx, occ):
+    files = service.fetch_recording_files(occ)
+    ctx["recordings"] = files["recordings"]
+    ctx["local_recordings"] = files["local"]
+    ctx["recordings_checked"] = True
 
 
 _CONFIRM_SALT = "webinars.studio.hosting.confirm"

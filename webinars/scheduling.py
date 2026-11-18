@@ -288,6 +288,20 @@ def publish_recording(occurrence, recording_url, user=None):
     _sync(occurrence, occ, ["recording_url", "recording_published_at", "updated_at"])
 
 
+def unpublish_recording(occurrence, user=None):
+    """Take the session's recording link down: it leaves the public API and pages. Emails already
+    sent can't be recalled, and nothing new is sent."""
+    with transaction.atomic():
+        occ = Occurrence.objects.select_for_update().get(pk=occurrence.pk)
+        had = bool(occ.recording_url or occ.recording_published_at)
+        occ.recording_url = ""
+        occ.recording_published_at = None
+        occ.save(update_fields=["recording_url", "recording_published_at", "updated_at"])
+        if had:
+            audit("recording.unpublished", user=_actor(user), obj=occ)
+    _sync(occurrence, occ, ["recording_url", "recording_published_at", "updated_at"])
+
+
 # Kinds a person or API may record. ``checked_in`` is written only by the waiting room.
 MANUAL_ATTENDANCE_KINDS = (
     AttendanceEvent.Kind.ATTENDED,

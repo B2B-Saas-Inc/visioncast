@@ -903,6 +903,14 @@ class HostedSession(TimestampedModel):
     engagement_next_at = models.DateTimeField(null=True, blank=True)
     engagement_attempts = models.PositiveIntegerField(default=0)
     engagement_ended_at = models.DateTimeField(null=True, blank=True)
+    # Where a self-hosted live room last said it was (webinars/hosting/room_status.py): not_live,
+    # live or ended, and when. ``room_completed_at`` is set when that sync marked the session
+    # completed, so reopening the room can undo it (and only it).
+    room_phase = models.CharField(max_length=16, blank=True)
+    room_phase_at = models.DateTimeField(null=True, blank=True)
+    room_phase_next_at = models.DateTimeField(null=True, blank=True)
+    room_phase_attempts = models.PositiveIntegerField(default=0)
+    room_completed_at = models.DateTimeField(null=True, blank=True)
 
 
 class ProvisioningOperation(models.Model):

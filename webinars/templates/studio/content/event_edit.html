@@ -193,9 +193,9 @@
               <div class="grow">
                 <a href="{% url 'studio:session' s.pk %}"><strong>{{ s.local_label }}</strong></a>
                 <p class="small muted" style="margin:0">{{ s.timezone }} · {{ s.duration_minutes }} min · {{ s.registered }} registered</p>
-                <p class="small" style="margin:0"><a href="{% url 'studio:session' s.pk %}#room-title">Waiting room &amp; admission</a> · {% if s.waiting_room_enabled %}{% if s.join_url %}hosted room on{% else %}on, needs a join URL{% endif %}{% else %}off{% endif %} · <a href="{% url 'studio:session-embed' s.pk %}">Embed on your site</a></p>
+                <p class="small" style="margin:0"><a href="{% url 'studio:session' s.pk %}#room-title">Waiting room &amp; admission</a> · {% if s.waiting_room_enabled %}{% if s.live_room %}{% if s.join_ready %}on, live room{% else %}on, live room's account is off{% endif %}{% elif s.join_ready %}hosted room on{% else %}on, needs a join URL{% endif %}{% else %}off{% endif %} · <a href="{% url 'studio:session-embed' s.pk %}">Embed on your site</a></p>
               </div>
-              {% if s.status == "cancelled" %}<span class="badge badge-cancelled">Cancelled</span>{% elif s.room_state %}<span class="badge badge-{{ s.room_state }}">{{ s.room_state_label }}</span>{% endif %}
+              {% if s.status == "cancelled" %}<span class="badge badge-cancelled">Cancelled</span>{% else %}{% if s.status == "completed" %}<span class="badge">Completed</span>{% endif %}{% if s.room_phase_label %}<span class="badge{% if s.room_phase_label == 'Live now' %} badge-success{% endif %}" data-room-phase>{{ s.room_phase_label }}</span>{% elif s.room_state and s.status != "completed" %}<span class="badge badge-{{ s.room_state }}">{{ s.room_state_label }}</span>{% endif %}{% endif %}
             </li>
           {% endfor %}
         </ul>
