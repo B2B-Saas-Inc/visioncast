@@ -2,6 +2,13 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Live server: full-quality recordings, speakers' copies in the bucket — 2026-11-18
+
+- Before: the owner's test recording measured 1080p30 H.264 **Main** at 3.96 Mbps with 121 kbps **Opus** (LiveKit's default composite, 4.5 Mbps), made from cameras sending 3 Mbps and screens at 2.5 Mbps / 15 fps.
+- Now: the recording is requested as 1080p30 H.264 High at 12 Mbps (`LIVE_RECORDING_VIDEO_KBPS`) with 256 kbps AAC at 48 kHz; cameras send up to 5 Mbps; screens 1080p30 up to 6 Mbps. Each speaker's own copy is on by default, prefers H.264/AAC MP4 (`video/mp4;codecs=avc1.640028,mp4a.40.2` in Chrome), records shared screens too (`?screen=1`, allowed off stage for hosts and producers), carries 256 kbps audio, and is copied to the bucket by multipart upload under `recordings/<room>/speakers/` once finished.
+- Production (`v0.4.15-pre`, throwaway room, Google Chrome with a 1080p fake camera, 25 s): the egress request carried `video_bitrate 12000`, `video_codec H264_HIGH`, `audio_codec AAC`, `audio_bitrate 256`. The recording probed as H.264 High 1920x1080 30 fps with AAC-LC 48 kHz stereo; the speaker's copy as MP4, H.264 High 1920x1080 with AAC-LC 48 kHz, and it reached the bucket through the multipart upload (`inBucket: true`). Measured bitrates (2.1 Mbps and 0.6 Mbps) reflect the synthetic test pattern, which compresses to almost nothing; a real camera is needed to see the bitrate used. Test files deleted afterwards.
+- `whoever_shares_a_screen_while_recording_keeps_a_full_quality_copy_of_it`, `recordings_are_encoded_for_editing_and_publishing`; the chunk test now checks the default and the off switch. Live suite: 78 HTTP and 20 unit tests pass.
+
 ## Studio: sessions that start at the same minute get their own live-room address — 2026-11-18
 
 - Found in production: a second session of one event at the same date and time failed to provision (`create: http 409`), because both asked the live server for the same address (`<event>-<date>-<time>`) and it refuses a taken one. `room_slug` now adds the start of the session's ID for every session but the first made at that minute; the first keeps its address. A 409 on create or update now reads "another room on the live server already has this session's address".
