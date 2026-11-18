@@ -1,6 +1,6 @@
 # Release checklist
 
-Status as of 2026-11-05 (release candidate `0.4.10-pre`, tag `v0.4.10-pre` at `8607c72`). Since `0.3.7-pre`: the self-hosted live studio on LiveKit (`0.4.0-pre`), brand colour and font (`0.4.2-pre`), email through PostHog (`0.4.3`–`0.4.4-pre`), calendar links to the waiting room (`0.4.5-pre`), live add-on update and backup scripts (`0.4.6-pre`), automatic rooms and delete at any visibility (`0.4.7-pre`), card images (`0.4.8-pre`), the live tab icon (`0.4.9-pre`) and the dashboard checklist (`0.4.10-pre`). Every tag published to GHCR by `release.yml`. **Nothing on
+Status as of 2026-11-05 (release candidate `0.4.11-pre`, tag `v0.4.11-pre`). Since `0.3.7-pre`: the self-hosted live studio on LiveKit (`0.4.0-pre`), brand colour and font (`0.4.2-pre`), email through PostHog (`0.4.3`–`0.4.4-pre`), calendar links to the waiting room (`0.4.5-pre`), live add-on update and backup scripts (`0.4.6-pre`), automatic rooms and delete at any visibility (`0.4.7-pre`), card images (`0.4.8-pre`), the live tab icon (`0.4.9-pre`) the dashboard checklist (`0.4.10-pre`) and the live stage's holding graphics (`0.4.11-pre`). Every tag published to GHCR by `release.yml`. **Nothing on
 this page is evidence.** Results are recorded only in [validation.md](validation.md); the
 gaps they close are in [remaining-gaps.md](remaining-gaps.md) (R-numbered). "Last recorded"
 quotes validation.md.

@@ -366,6 +366,8 @@
       show($("b-font-custom"), !!d.fontFile);
       $("b-font-state").textContent = d.fontFile ? "Your font is uploaded. Choose it above, under Font." : "No font uploaded.";
       if (d.logo) { $("b-logo").src = "/brand/logo?v=" + Date.now(); }
+      paintHolding("before", d.holdingBefore);
+      paintHolding("after", d.holdingAfter);
       $("brand-form").dataset.loaded = "1";
     }).catch(fail);
   }
@@ -387,6 +389,53 @@
       brand();
       saved("Font uploaded. Choose it under Font and save.");
     }).catch(fail);
+  });
+  function holdingSlot(which) { return document.querySelector('[data-holding="' + which + '"]'); }
+  function paintHolding(which, h) {
+    var slot = holdingSlot(which);
+    var preview = slot.querySelector(".holding-preview");
+    var key = h ? String(h.v) : "";
+    if (preview.dataset.v !== key) {
+      preview.dataset.v = key;
+      preview.textContent = "";
+      if (h) {
+        var src = "/brand/holding/" + which + "?v=" + encodeURIComponent(h.v);
+        var node = document.createElement(h.mime.indexOf("video/") === 0 ? "video" : "img");
+        if (node.tagName === "VIDEO") { node.muted = true; node.loop = true; node.autoplay = true; node.playsInline = true; node.setAttribute("muted", ""); node.setAttribute("playsinline", ""); }
+        else { node.alt = which === "before" ? "Graphic before going live" : "Graphic after the session ends"; }
+        node.src = src;
+        preview.appendChild(node);
+      }
+    }
+    show(preview, !!h);
+    slot.querySelector(".holding-state").textContent = h
+      ? (h.mime.indexOf("video/") === 0 ? "A looping video. Rooms show it without sound." : "An image.")
+      : (which === "before" ? "None. Attendees see the session's title and countdown." : "None. The stage says the session has ended.");
+    show(slot.querySelector("button"), !!h);
+  }
+  ["before", "after"].forEach(function (which) {
+    var slot = holdingSlot(which);
+    var input = slot.querySelector("input");
+    input.addEventListener("change", function () {
+      if (!input.files[0]) { return; }
+      if (input.files[0].size > 40 * 1024 * 1024) { input.value = ""; $("admin-error").textContent = "That file is over 40 MB."; show($("admin-error"), true); return; }
+      saved("Uploading…");
+      fetch("/admin/api/brand/holding/" + which, { method: "PUT", body: input.files[0] }).then(function (res) {
+        input.value = "";
+        if (res.status === 401) { window.location.href = "/login"; return; }
+        if (!res.ok) {
+          $("admin-error").textContent = res.status === 413 ? "That file is over 40 MB." : "That file isn't an image or video we can use. Use PNG, JPEG, WebP, GIF, MP4 or WebM.";
+          show($("admin-error"), true);
+          show($("admin-saved"), false);
+          return;
+        }
+        brand();
+        saved("Saved. Open rooms have it now.");
+      }).catch(fail);
+    });
+    slot.querySelector("button").addEventListener("click", function () {
+      api("/brand/holding/" + which + "/remove", "POST").then(function () { brand(); saved("Removed."); }).catch(fail);
+    });
   });
   $("b-font-remove").addEventListener("click", function () { api("/brand/font/remove", "POST").then(function () { brand(); saved("Font removed."); }).catch(fail); });
   $("b-logo-remove").addEventListener("click", function () { api("/brand/logo/remove", "POST").then(function () { brand(); saved("Logo removed."); }).catch(fail); });

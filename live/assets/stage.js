@@ -88,7 +88,9 @@
     var captionsOn = false, captionTimer = null;
     var empty = el("p", "pic-empty");
     var floaters = el("div", "pic-floaters");
-    [bg, layer, frame, visual, layersEl, logo, third, ticker, poll, cta, captionBox, empty, floaters].forEach(function (n) { pic.appendChild(n); });
+    var holding = el("div", "pic-holding"); holding.hidden = true;
+    var holdingKey = "";
+    [bg, layer, frame, visual, layersEl, logo, third, ticker, poll, cta, holding, captionBox, empty, floaters].forEach(function (n) { pic.appendChild(n); });
     root.appendChild(pic);
 
     function toSrc(img, id) {
@@ -276,8 +278,39 @@
         ctaBtn.textContent = state.cta.label || "Open";
         cta.href = state.cta.url;
       }
-      empty.hidden = keys.length > 0 || !!state.visualId;
+      var holdingShown = paintHolding(keys);
+      empty.hidden = keys.length > 0 || !!state.visualId || holdingShown;
       empty.textContent = options.emptyText ? options.emptyText(state) : "";
+    }
+
+    // ---- the brand's holding graphic: before anyone is live, and after the session ends
+
+    function paintHolding(keys) {
+      var which = holdingFor(state, keys.length, !!options.audience);
+      var h = which ? (state.brand || {})[which === "after" ? "holdingAfter" : "holdingBefore"] : null;
+      var key = h ? which + ":" + h.v : "";
+      if (key !== holdingKey) {
+        holdingKey = key;
+        holding.textContent = "";
+        if (h) {
+          var src = "/brand/holding/" + which + "?v=" + encodeURIComponent(h.v);
+          var node;
+          if (String(h.mime).indexOf("video/") === 0) {
+            // Muted, inline and looping, so phones play it without a tap.
+            node = el("video");
+            node.muted = true; node.defaultMuted = true; node.loop = true; node.autoplay = true; node.playsInline = true;
+            node.setAttribute("muted", ""); node.setAttribute("playsinline", ""); node.setAttribute("aria-hidden", "true");
+            node.preload = "auto";
+            node.src = src;
+          } else {
+            node = el("img"); node.alt = ""; node.src = src;
+          }
+          holding.appendChild(node);
+          if (node.play) { var p = node.play(); if (p && p.catch) { p.catch(function () {}); } }
+        }
+      }
+      holding.hidden = !h;
+      return !!h;
     }
 
     // ---- graphics: GIFs, videos and words placed on the picture
@@ -462,4 +495,16 @@
     };
   };
   window.VCStage.computeRects = computeRects;
+  /**
+   * Which holding graphic the stage shows. "after" once the session has ended. "before" while it
+   * isn't live: always for the audience, who can't see the stage yet, and for the crew and the
+   * recorder only until someone or something is on the stage.
+   */
+  function holdingFor(state, sources, audience) {
+    if (!state) { return ""; }
+    if (state.phase === "ended") { return "after"; }
+    if (state.phase === "not_live" && (audience || (!sources && !state.visualId))) { return "before"; }
+    return "";
+  }
+  window.VCStage.holdingFor = holdingFor;
 })();

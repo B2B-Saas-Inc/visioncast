@@ -1565,6 +1565,49 @@ async fn only_real_fonts_are_taken_and_a_room_can_use_one() {
 }
 
 #[tokio::test]
+async fn holding_graphics_fill_the_stage_before_and_after_and_reach_every_room() {
+    let c = ctx(false);
+    let _crew = c.crew().await;
+    let attendee = c.attendee_path("p1").await;
+    c.enter(&attendee, "Ada", "x").await;
+    let app = c.app.clone();
+    let put = |which: &'static str, bytes: Vec<u8>, auth: bool| {
+        let app = app.clone();
+        async move {
+            let mut req = Request::put(format!("/v1/brand/holding/{which}"));
+            if auth { req = req.header(header::AUTHORIZATION, format!("Bearer {SECRET}")); }
+            app.oneshot(req.body(Body::from(bytes)).unwrap()).await.unwrap().status()
+        }
+    };
+    let mp4 = [&[0u8, 0, 0, 0x18][..], b"ftypmp42", &vec![7u8; 3 * 1024 * 1024]].concat();
+    assert_eq!(put("before", mp4.clone(), false).await, StatusCode::UNAUTHORIZED);
+    assert_eq!(put("before", b"<svg onload=alert(1)>".to_vec(), true).await, StatusCode::UNSUPPORTED_MEDIA_TYPE, "never SVG");
+    assert_eq!(put("before", b"<html><script>x</script>".to_vec(), true).await, StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    assert_eq!(put("sideways", PNG.to_vec(), true).await, StatusCode::NOT_FOUND, "only before and after");
+    assert_eq!(c.fetch("/brand/holding/before").await.0, StatusCode::NOT_FOUND, "nothing until one is set");
+    assert_eq!(put("before", vec![0x1a; 41 * 1024 * 1024], true).await, StatusCode::PAYLOAD_TOO_LARGE);
+    // A video bigger than an API body is taken, and rooms that are open get it straight away.
+    assert_eq!(put("before", mp4.clone(), true).await, StatusCode::OK);
+    assert_eq!(put("after", [&[0xffu8, 0xd8, 0xff, 0xe0][..], &[1u8; 64][..]].concat(), true).await, StatusCode::OK, "a JPEG");
+    let snap = c.snapshot(&attendee, "x").await;
+    assert_eq!(snap["state"]["brand"]["holdingBefore"]["mime"], "video/mp4");
+    assert_eq!(snap["state"]["brand"]["holdingAfter"]["mime"], "image/jpeg");
+    assert!(snap["state"]["brand"]["holdingBefore"]["v"].as_u64().unwrap() > 0);
+    // Public, with the type it really is, and in ranges, which Safari needs for video.
+    let (status, headers, body) = c.fetch("/brand/holding/before").await;
+    assert_eq!((status, headers[header::CONTENT_TYPE].to_str().unwrap()), (StatusCode::OK, "video/mp4"));
+    assert_eq!(body.len(), mp4.len());
+    let req = Request::get("/brand/holding/before").header(header::RANGE, "bytes=0-99").body(Body::empty()).unwrap();
+    let res = c.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(res.headers()[header::CONTENT_LENGTH], "100");
+    // Removing one takes it out of every room.
+    assert_eq!(c.v1("POST", "/v1/brand/holding/after/remove", None).await.0, StatusCode::OK);
+    assert_eq!(c.fetch("/brand/holding/after").await.0, StatusCode::NOT_FOUND);
+    assert!(c.snapshot(&attendee, "x").await["state"]["brand"]["holdingAfter"].is_null());
+}
+
+#[tokio::test]
 async fn an_encoder_is_on_stage_only_while_its_stream_runs() {
     let c = ctx(true);
     let host = live_with_host(&c).await;

@@ -52,6 +52,24 @@
         <input type="file" id="b-logo-file" accept=".png,image/png">
         <div class="row"><button class="mini danger" type="button" id="b-logo-remove" hidden>Remove the logo</button></div>
       </div>
+      <div class="box admin-box" id="b-holding">
+        <h2>Holding graphics</h2>
+        <p class="muted">Fill the stage before anyone is live and after the session ends, for attendees, the crew and recordings. A 16:9 image (PNG, JPEG, WebP or GIF) or a video that loops without sound (MP4 or WebM), at most 40 MB. Attendees see the session's title and countdown over the bottom third, so keep that part plain.</p>
+        <div class="holding-slot" data-holding="before">
+          <h3>Before going live</h3>
+          <div class="holding-preview" hidden></div>
+          <p class="small muted holding-state">None. Attendees see the session's title and countdown.</p>
+          <input type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm">
+          <div class="row"><button class="mini danger" type="button" hidden>Remove</button></div>
+        </div>
+        <div class="holding-slot" data-holding="after">
+          <h3>After the session ends</h3>
+          <div class="holding-preview" hidden></div>
+          <p class="small muted holding-state">None. The stage says the session has ended.</p>
+          <input type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm">
+          <div class="row"><button class="mini danger" type="button" hidden>Remove</button></div>
+        </div>
+      </div>
       <div class="box admin-box">
         <h2>Your font</h2>
         <p class="muted">A WOFF2, WOFF, TTF or OTF of at most 8 MB. Make sure your licence allows it on a website.</p>

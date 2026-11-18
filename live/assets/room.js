@@ -177,7 +177,7 @@
       syncToggle($("hand"), !!d.me.hand, "Lower hand", "Raise hand");
     });
     on("state", setState);
-    on("brand", function (b) { S.state.brand = b; applyTheme(); });
+    on("brand", function (b) { S.state.brand = b; applyTheme(); if (stage) { stage.repaint(); } paintPreliveHolding(); });
     on("broadcast", function (rows) { S.broadcast = rows; });
     on("chat", function (m) {
       var i = S.chat.findIndex(function (x) { return x.id === m.id; });
@@ -488,6 +488,7 @@
   function audiencePhase(phase) {
     var live = phase === "live";
     show($("prelive"), !live);
+    paintPreliveHolding();
     clearInterval(countdownTimer);
     if (phase === "not_live") {
       $("prelive-title").textContent = info.title;
@@ -515,6 +516,15 @@
         if (d.stageToken && !stageRoom) { return connectStage(d.url, d.stageToken); }
       }).catch(function (err) { setError($("room-error"), message(err)); });
     }
+  }
+
+  // With a holding graphic behind it, the waiting text moves to the bottom so the graphic shows.
+  function paintPreliveHolding() {
+    var st = S.state;
+    var b = (st && st.brand) || {};
+    var which = st ? window.VCStage.holdingFor(st, (st.stage || []).length, true) : "";
+    var on = which === "before" ? !!b.holdingBefore : which === "after" ? !!b.holdingAfter : false;
+    $("prelive").classList.toggle("over-holding", on);
   }
 
   function paintBanner() {
@@ -2119,6 +2129,7 @@
       stage = window.VCStage($("stage"), {
         fileUrl: fileUrl,
         pageUrl: pageUrl,
+        audience: d.role === "attendee",
         emptyText: function (st) { return d.role === "attendee" ? "" : st.phase === "ended" ? "The session has ended." : "Nobody is on stage yet."; },
         screenName: function (key) {
           var room = stageRoom;
