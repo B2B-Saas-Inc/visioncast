@@ -92,6 +92,10 @@ Everyone uses the same page. What they can do is decided by the service and enfo
 * **Encoders.** With `LIVE_INGRESS_URL` set, create an input under Broadcast and put its server and key in OBS, vMix or a hardware encoder. It's on stage for exactly as long as its stream runs, so start it when you want it seen. RTMP only, not RTMPS, so its stream key travels unencrypted. Inputs are deleted when the session ends.
 * **Each speaker's own copy.** Turn this on in Settings and, while recording, each person on stage also records their own camera and microphone in their browser, uploaded as it goes. The files are listed with the recordings, and stay on this server: they don't go to the bucket.
 
+* **Ending and reopening.** End session ends it for everyone. A host, or a producer who may go live, can press Reopen session afterwards: the session is back to not live, attendees see the countdown again, and it can go live again. Use it after a rehearsal in the real room, or an end pressed by mistake. VisionCast can do the same with `POST /v1/rooms/{room}/reopen`.
+
+**Recordings, captions and speakers' own files.** Each session's page at `/admin` lists them, with Play and Download. The bucket can stay private: every file goes out on a link this service signs, which works for 6 hours and sends the browser on to a bucket address that's signed for an hour. Speakers' own recordings are served from this server's disk the same way. `GET /v1/rooms/{room}/recordings` gives VisionCast the same links. **Publish** gives a recording a page of its own at `/watch/...`, with the player, everyone's captions and a download button, that works for anyone with the link until it's unpublished, and can be embedded in another site. Publishing the same recording again gives the same address. VisionCast can use that page as the session's recording.
+
 **What people did goes back to VisionCast.** From about 10 minutes after a session's scheduled end, VisionCast fetches each attendee's chat, questions, poll votes and survey answers every hour, for a day after it ends, stores them on their registration and sends `engagement.recorded` for whatever changed. An anonymous question isn't tied to anyone, even by the crew, so it isn't included. Crew aren't included. Each person's lists are cut to the first 20 entries of each kind.
 
 ## Live captions
@@ -282,7 +286,8 @@ Everything under `/v1` needs `Authorization: Bearer <LIVE_SERVICE_SECRET>`. All 
 | Request | Answer |
 |---|---|
 | `PUT /v1/rooms/{room}` `{title, startsAt, endsAt, autoRecord, slug, entryUrl}` | `{id, slug}` |
-| `GET /v1/rooms/{room}` | The room |
+| `GET /v1/rooms/{room}` | The room, with its `phase` (`not_live`, `live` or `ended`) and `liveSince` |
+| `POST /v1/rooms/{room}/reopen` | An ended session back to not live. `409 on_air` while it's live |
 | `POST /v1/rooms/{room}/tickets` `{identity}` | `{id, joinUrl}`, the same link every time |
 | `PUT /v1/rooms/{room}/destinations` `{destinations: [{platform, server, key, armed, clearKey}]}` | Saves those platforms. An empty key keeps the one there. The answer never has a key |
 | `GET /v1/rooms/{room}/destinations` | `{destinations: [{platform, label, server, armed, status, error, key}]}`, where `key` is `own`, `saved` or `none` |
@@ -299,13 +304,14 @@ Everything under `/v1` needs `Authorization: Bearer <LIVE_SERVICE_SECRET>`. All 
 | `PUT /v1/brand/font`, `POST /v1/brand/font/remove` | A WOFF2, WOFF, TTF or OTF of at most 8 MB. Theme `font: custom` uses it |
 | `PUT /v1/brand/holding/{before\|after}`, `POST /v1/brand/holding/{before\|after}/remove` | The holding graphic: PNG, JPEG, WebP, GIF, MP4 or WebM, at most 40 MB, checked by its first bytes. Public at `/brand/holding/{before\|after}` |
 | `GET /v1/rooms/{room}/attendance?after={identity}` | `{rows, complete, next}`, 200 rows a page. `complete` is false while anyone is still in the room |
-| `GET /v1/rooms/{room}/recordings` | `{recordings}`, the latest 50, each with its `captions` files |
+| `GET /v1/rooms/{room}/recordings` | `{recordings, local}`: the latest 50 recordings, each with a signed `downloadUrl`, its `captions` files with signed `url`s and its `watchUrl` once published, and speakers' own recordings with signed `url`s. Signed links work for 6 hours |
+| `POST /v1/rooms/{room}/recordings/{egressId}/publish`, `.../unpublish` | `{watchUrl, videoUrl}`: the recording's page for viewers, the same each time. Unpublished, both stop working |
 
 `/admin/api` has the same settings routes, plus `GET /rooms`, `GET /rooms/{room}`, `/me`, `/me/password`, `/activity`, and for owners `/accounts`, `DELETE /accounts/{id}` and `POST /accounts/{id}/reset`, behind the `/login` session.
 
 Public routes: `/{slug}`, `/{slug}/lobby`, `/{slug}/green-room`, `/{slug}/public`, `/login`, `/logout`, `/admin`,
 `/login/set/{token}`, `/login/link/{token}`, `/join/{ticket}` and its `/info`, `/enter`, `/events`, `/act`, `/share-token`, `/files`, `/local` and `/captions` actions,
-`/program/{ticket}` for the recorder, `/brand/logo`, `/brand/font`, `/brand/holding/{before|after}`, `/assets/*`, `POST /webhooks/livekit` (signature checked by
+`/program/{ticket}` for the recorder, `/brand/logo`, `/brand/font`, `/brand/holding/{before|after}`, `/files/{signed link}`, `/watch/{page}` with its `/video.mp4` and `/captions.vtt`, `/assets/*`, `POST /webhooks/livekit` (signature checked by
 LiveKit's own receiver) and `/healthz`. `/captions/in/{ticket}` takes audio from the recorder, and the Traefik config
 closes it from outside.
 

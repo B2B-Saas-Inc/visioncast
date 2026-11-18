@@ -125,6 +125,12 @@
       page.textContent = "";
       page.appendChild(h("button", { class: "mini", type: "button", text: "All sessions", onclick: function () { window.location.hash = ""; sessions(); } }));
       page.appendChild(h("h2", { text: d.title }));
+      var phaseText = { not_live: "Not live yet", live: "Live now", ended: "Ended" }[d.phase] || d.phase;
+      page.appendChild(h("div", { class: "box admin-box", id: "session-phase" }, h("h3", { text: "Status" }),
+        h("div", { class: "file" }, h("strong", { text: phaseText }),
+          d.phase === "ended" ? h("button", { class: "mini", type: "button", text: "Reopen session", title: "Opens it again, not live. Attendees go back to the countdown.", onclick: function () {
+            api("/rooms/" + encodeURIComponent(id) + "/reopen", "POST").then(function () { session(id); saved("Reopened. You can go live again from the room."); }).catch(fail);
+          } }) : null)));
       page.appendChild(h("div", { class: "box admin-box" }, h("h3", { text: "Where it lives" }),
         h("div", { class: "file" }, h("div", {}, h("strong", { text: "Attendees" }), h("div", {}, h("code", { text: publicUrl + "/" + d.slug }))), h("span", { class: "muted small", text: "Each registrant comes in on their own link, from the waiting room." })),
         h("div", { class: "file" }, h("div", {}, h("strong", { text: "Crew" }), h("div", {}, h("code", { text: publicUrl + "/" + d.slug + "/green-room" }))), h("span", { class: "muted small", text: "Opened with one of the links below." }))));
@@ -156,20 +162,53 @@
       page.appendChild(h("div", { class: "box admin-box" }, h("h3", { text: "Broadcast to other platforms" }),
         h("p", { class: "muted small", text: "Turned-on platforms start when you go live, from one encode. A platform that fails doesn't affect the others or your audience. Hosts and producers see each one's status in the room's Broadcast tab." }), form));
 
-      var recordings = h("div", { class: "box admin-box" }, h("h3", { text: "Recordings and captions" }));
-      if (!d.recordings.length) { recordings.appendChild(h("p", { class: "muted small", text: "Nothing recorded yet." })); }
-      d.recordings.forEach(function (r) {
-        var name = (r.filename || "").split("/").pop() || "Recording";
-        recordings.appendChild(h("div", { class: "file" },
-          r.publicUrl ? h("a", { href: r.publicUrl, rel: "noopener noreferrer", target: "_blank", text: name }) : h("span", { text: name }),
-          h("span", { class: "muted small", text: r.status === "complete" ? Math.max(1, Math.round(r.durationSeconds / 60)) + " min" : r.status })));
-        r.captions.forEach(function (f) {
-          var label = f.speaker + " · " + (f.kind === "srt" ? "SRT" : "transcript");
-          recordings.appendChild(h("div", { class: "file small" }, f.url ? h("a", { href: f.url, rel: "noopener noreferrer", target: "_blank", text: label }) : h("span", { text: label + ": " + f.filename })));
-        });
-      });
-      page.appendChild(recordings);
+      page.appendChild(recordingsBox(id, d));
     }).catch(function (err) { sessions(); fail(err); });
+  }
+
+  function megabytes(bytes) { return bytes >= 1e9 ? (bytes / 1e9).toFixed(1) + " GB" : Math.max(1, Math.round(bytes / 1e6)) + " MB"; }
+  function link(href, text, download) {
+    return h("a", { class: "mini", href: download ? href + (href.indexOf("?") < 0 ? "?" : "&") + "download=1" : href, rel: "noopener noreferrer", target: "_blank", text: text });
+  }
+
+  // Recordings live in the bucket, speakers' own copies on this server. Links work for a few hours.
+  function recordingsBox(id, d) {
+    var box = h("div", { class: "box admin-box", id: "recordings" }, h("h3", { text: "Recordings and captions" }),
+      h("p", { class: "muted small", text: "Play or download them here. Links work for a few hours: open this page again for new ones. Publish one to give it a page anyone with the link can watch, which VisionCast can use as the session's recording." }));
+    if (!d.recordings.length && !(d.local || []).length) { box.appendChild(h("p", { class: "muted small", text: "Nothing recorded yet." })); }
+    d.recordings.forEach(function (r) {
+      var name = (r.filename || "").split("/").pop() || "Recording";
+      var done = r.status === "complete" && r.downloadUrl;
+      var meta = done ? Math.max(1, Math.round(r.durationSeconds / 60)) + " min · " + megabytes(r.sizeBytes) : (r.error ? "Failed: " + r.error : r.status);
+      var actions = h("span", { class: "row" });
+      if (done) {
+        actions.appendChild(link(r.downloadUrl, "Play"));
+        actions.appendChild(link(r.downloadUrl, "Download", true));
+        actions.appendChild(r.watchUrl
+          ? armed("Unpublish", function () { api("/rooms/" + encodeURIComponent(id) + "/recordings/" + encodeURIComponent(r.egressId) + "/unpublish", "POST").then(function () { session(id); saved("Unpublished. Its page no longer works."); }).catch(fail); }, "danger")
+          : h("button", { class: "mini", type: "button", text: "Publish", onclick: function () {
+            api("/rooms/" + encodeURIComponent(id) + "/recordings/" + encodeURIComponent(r.egressId) + "/publish", "POST").then(function () { session(id); saved("Published. Anyone with the link can watch it."); }).catch(fail);
+          } }));
+      }
+      box.appendChild(h("div", { class: "file", "data-recording": r.egressId },
+        h("div", {}, h("strong", { text: name }), h("div", { class: "muted small", text: meta }),
+          r.watchUrl ? h("div", { class: "small" }, document.createTextNode("Published: "), h("a", { href: r.watchUrl, rel: "noopener noreferrer", target: "_blank", text: r.watchUrl })) : null),
+        actions));
+      r.captions.forEach(function (f) {
+        var label = f.speaker + " · " + (f.kind === "srt" ? "SRT" : "transcript");
+        box.appendChild(h("div", { class: "file small" }, h("span", { text: label }), f.url ? h("span", { class: "row" }, link(f.url, "Open"), link(f.url, "Download", true)) : h("span", { class: "muted", text: f.filename })));
+      });
+    });
+    if ((d.local || []).length) {
+      box.appendChild(h("h3", { text: "Speakers' own recordings" }));
+      box.appendChild(h("p", { class: "muted small", text: "Each speaker's camera and microphone, recorded in their browser at full quality. Kept on this server." }));
+      d.local.forEach(function (f) {
+        box.appendChild(h("div", { class: "file", "data-local": f.id },
+          h("div", {}, h("strong", { text: f.name }), h("div", { class: "muted small", text: megabytes(f.sizeBytes) + (f.finished ? "" : " · still uploading or cut short") })),
+          h("span", { class: "row" }, link(f.url, "Play"), link(f.url, "Download", true))));
+      });
+    }
+    return box;
   }
 
   // For what can't be undone: the first press asks, the second does it.

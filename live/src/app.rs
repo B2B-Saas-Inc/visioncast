@@ -92,7 +92,7 @@ fn parse_time(value: &str) -> Option<i64> {
 }
 
 /// Addresses a session can't have, because something else lives there.
-const RESERVED: [&str; 11] = ["admin", "login", "logout", "join", "program", "assets", "brand", "captions", "healthz", "v1", "webhooks"];
+const RESERVED: [&str; 13] = ["admin", "login", "logout", "join", "program", "assets", "brand", "captions", "healthz", "v1", "webhooks", "files", "watch"];
 
 fn valid_slug(slug: &str) -> bool {
     (1..=180).contains(&slug.len())
@@ -116,6 +116,9 @@ fn settings_routes() -> Router<Arc<AppState>> {
         .route("/brand/holding/{which}/remove", post(broadcast::delete_holding))
         .route("/rooms/{room}/crew", get(crew::list).post(crew::add))
         .route("/rooms/{room}/settings", get(studio::get_settings).patch(studio::patch_settings))
+        .route("/rooms/{room}/reopen", post(reopen_room))
+        .route("/rooms/{room}/recordings/{egress}/publish", post(crate::media::publish))
+        .route("/rooms/{room}/recordings/{egress}/unpublish", post(crate::media::unpublish))
         .route("/rooms/{room}/engagement", get(studio::engagement))
         .route("/rooms/{room}/crew/{id}", axum::routing::delete(crew::remove))
         .route("/rooms/{room}/crew/{id}/new-link", post(crew::new_link))
@@ -180,6 +183,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/brand/icon", get(broadcast::get_icon))
         .route("/brand/font", get(broadcast::get_font))
         .route("/brand/holding/{which}", get(broadcast::get_holding))
+        .route("/files/{token}", get(crate::media::file))
+        .route("/watch/{token}", get(crate::media::watch_page))
+        .route("/watch/{token}/video.mp4", get(crate::media::watch_video))
+        .route("/watch/{token}/captions.vtt", get(crate::media::watch_captions))
         .route("/assets/stage.js", get(|| asset("text/javascript; charset=utf-8", include_str!("../assets/stage.js"))))
         .route("/assets/room.js", get(|| asset("text/javascript; charset=utf-8", include_str!("../assets/room.js"))))
         .route("/assets/room.css", get(|| asset("text/css; charset=utf-8", include_str!("../assets/room.css"))))
@@ -276,7 +283,23 @@ async fn put_room(State(state): State<Arc<AppState>>, Path(room): Path<String>, 
 
 async fn get_room(State(state): State<Arc<AppState>>, Path(room): Path<String>) -> ApiResult<Json<serde_json::Value>> {
     let room = state.store.room(&room)?.ok_or(ApiError(StatusCode::NOT_FOUND, "not_found"))?;
-    Ok(Json(json!({ "id": room.id, "slug": room.slug, "startsAt": iso(room.starts_at), "endsAt": iso(room.ends_at), "autoRecord": room.auto_record })))
+    let studio = studio::saved_state(&state, &room.id)?;
+    Ok(Json(json!({
+        "id": room.id, "slug": room.slug, "startsAt": iso(room.starts_at), "endsAt": iso(room.ends_at), "autoRecord": room.auto_record,
+        "phase": studio.phase, "liveSince": studio.live_since.map(iso),
+    })))
+}
+
+/// Opens an ended session again, not live. Nothing changes for one that isn't ended; one on the air is refused.
+async fn reopen_room(State(state): State<Arc<AppState>>, Path(room): Path<String>) -> ApiResult<Json<serde_json::Value>> {
+    state.store.room(&room)?.ok_or(ApiError(StatusCode::NOT_FOUND, "not_found"))?;
+    let hub = state.hub(&room)?;
+    let _show = hub.show_lock.lock().await;
+    if hub.state().phase == "live" {
+        return Err(ApiError(StatusCode::CONFLICT, "on_air"));
+    }
+    hub.reset_phase_after_end(&state)?;
+    Ok(Json(json!({ "phase": hub.state().phase })))
 }
 
 #[derive(Deserialize)]
@@ -324,7 +347,7 @@ async fn get_attendance(
 
 async fn get_recordings(State(state): State<Arc<AppState>>, Path(room): Path<String>) -> ApiResult<Json<serde_json::Value>> {
     state.store.room(&room)?.ok_or(ApiError(StatusCode::NOT_FOUND, "not_found"))?;
-    Ok(Json(json!({ "recordings": recordings_json(&state, &room)? })))
+    Ok(Json(json!({ "recordings": recordings_json(&state, &room)?, "local": crate::media::local_json(&state, &room)? })))
 }
 
 pub fn recordings_json(state: &AppState, room: &str) -> ApiResult<serde_json::Value> {
@@ -338,11 +361,23 @@ pub fn recordings_json(state: &AppState, room: &str) -> ApiResult<serde_json::Va
                 (Some(base), "complete", false) => Some(format!("{base}/{}", recording.filename)),
                 _ => None,
             };
+            let finished = recording.status == "complete" && !recording.filename.is_empty();
+            // Every file gets a signed link that expires, so the bucket can stay private.
+            let mut files = captions::recording_files(state, room, &recording.egress_id);
+            for f in files.as_array_mut().into_iter().flatten() {
+                if f.get("url").is_none() {
+                    if let Some(name) = f["filename"].as_str().map(str::to_string) {
+                        f["url"] = json!(crate::media::bucket_link(state, room, &name));
+                    }
+                }
+            }
             json!({
                 "egressId": recording.egress_id, "status": recording.status, "startedAt": recording.started_at, "endedAt": recording.ended_at,
                 "durationSeconds": recording.duration_seconds, "sizeBytes": recording.size_bytes, "filename": recording.filename,
                 "location": recording.location, "error": recording.error, "publicUrl": public_url,
-                "captions": captions::recording_files(state, room, &recording.egress_id),
+                "downloadUrl": finished.then(|| crate::media::bucket_link(state, room, &recording.filename)),
+                "watchUrl": if finished { crate::media::watch_url(state, room, &recording.egress_id) } else { None },
+                "captions": files,
             })
         })
         .collect();
@@ -376,7 +411,7 @@ async fn join_page(State(state): State<Arc<AppState>>, Path(value): Path<String>
     response
 }
 
-fn not_found_page() -> Response {
+pub fn not_found_page() -> Response {
     (StatusCode::NOT_FOUND, [(header::CACHE_CONTROL, "no-store")], Html(include_str!("../assets/not-found.html"))).into_response()
 }
 

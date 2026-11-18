@@ -10,6 +10,7 @@ pub mod broadcast;
 pub mod captions;
 pub mod config;
 pub mod crew;
+pub mod media;
 pub mod store;
 pub mod studio;
 pub mod ticket;

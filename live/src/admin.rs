@@ -476,6 +476,7 @@ pub async fn room_detail(State(app): State<Arc<AppState>>, Path(room): Path<Stri
         "crew": crate::crew::list_json(&app, &room)?,
         "destinations": crate::broadcast::admin_rows(&app, &room)?,
         "recordings": crate::app::recordings_json(&app, &room)?,
+        "local": crate::media::local_json(&app, &room)?,
         "captionsAvailable": crate::captions::available(&app),
     })))
 }

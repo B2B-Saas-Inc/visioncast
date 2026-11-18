@@ -1222,6 +1222,7 @@
   // ---- the top bar
 
   $("go-live").addEventListener("click", function () { quietly({ type: "go_live" }); });
+  $("reopen").addEventListener("click", function () { quietly({ type: "reopen" }); });
   var endArmed = null;
   $("end").addEventListener("click", function () {
     var button = this;
@@ -1967,6 +1968,7 @@
     show($("audience-view"), crew);
     show($("go-live"), S.me.perms.goLive && st.phase === "not_live");
     show($("end"), S.me.perms.goLive && st.phase === "live");
+    show($("reopen"), S.me.perms.goLive && st.phase === "ended");
     show($("record"), runs() && S.recordingAvailable && st.phase !== "ended");
     syncToggle($("record"), st.recording, "Stop recording", "Start recording");
     show($("layouts"), runs());
@@ -1981,7 +1983,7 @@
     var note = $("notice");
     var text = "", air = false;
     if (crew) {
-      if (st.phase === "ended") { text = "The session has ended."; }
+      if (st.phase === "ended") { text = S.me.perms.goLive ? "The session has ended. Reopen it to go live again." : "The session has ended."; }
       else if (S.me.role === "producer") { text = "You're producing. The audience can't see or hear you. On-stage speakers can hear you, so keep it short."; }
       else if (onStageNow && st.phase === "live") { text = "You're on air. The audience can see and hear you."; air = true; }
       else if (onStageNow) { text = "You're on stage, but the session isn't live yet. Only the crew can see you."; }
@@ -2064,7 +2066,7 @@
     $("gate-title").textContent = note ? "You're out of the session" : "You've left the session";
     $("gate-note").textContent = note || "";
     $("gate").appendChild(h("button", { class: "btn btn-primary", type: "button", text: "Join again", onclick: function () { window.location.reload(); } }));
-    ["go-live", "end", "record", "audience-view", "viewers-pill", "phase-pill", "rec-pill", "role-pill"].forEach(function (id) { show($(id), false); });
+    ["go-live", "end", "reopen", "record", "audience-view", "viewers-pill", "phase-pill", "rec-pill", "role-pill"].forEach(function (id) { show($(id), false); });
   }
   $("leave").addEventListener("click", function () { leave(); });
   $("leave-crew").addEventListener("click", function () { leave(); });
