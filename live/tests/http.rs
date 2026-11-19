@@ -2031,7 +2031,8 @@ async fn fake_bucket(keys: Vec<String>) -> (String, Arc<Mutex<Vec<String>>>) {
     let list = move || {
         let keys = keys.clone();
         async move {
-            let items: String = keys.iter().map(|k| format!("<Contents><Key>{k}</Key><LastModified>2026-01-01T00:00:00.000Z</LastModified><ETag>\"e\"</ETag><Size>1</Size><StorageClass>STANDARD</StorageClass></Contents>")).collect();
+            // URL-encoded, slashes too, the way DigitalOcean Spaces sends them.
+            let items: String = keys.iter().map(|k| k.replace('/', "%2F")).map(|k| format!("<Contents><Key>{k}</Key><LastModified>2026-01-01T00:00:00.000Z</LastModified><ETag>\"e\"</ETag><Size>1</Size><StorageClass>STANDARD</StorageClass></Contents>")).collect();
             format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult><Name>b</Name><Prefix></Prefix><KeyCount>{}</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated>{items}</ListBucketResult>", keys.len())
         }
     };

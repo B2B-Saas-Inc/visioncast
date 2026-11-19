@@ -2,6 +2,11 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Live server: production test of videos through the media server, and deleting recordings from Spaces — 2026-11-19
+
+- Production (`v0.4.17-pre` with `COMPOSE_PROFILES=video`, `LIVE_VIDEO_INGRESS=1`, ingress v1.6.0; throwaway room with automatic recording; Chromium with fake devices): the 25 MB video uploaded in pieces in 5.3 s; with "Send videos through the media server" on, **Go live with it** put the session live and the attendee had the video as a LiveKit track 2.2 s later (360p layer at first); the session ended 13.9 s after going live, with the 12 s video. The recording probed as 1920x1080 30 fps H.264 with AAC 48 kHz stereo (mean -18 dB, the test tone), 10.2 s long: the recorder starts about 2 s after going live, so the first seconds of a video started with the session aren't in the recording. A frame 6 s in shows the video.
+- Found there: deleting a session with "delete them too" reported 0 files although its recording was in the bucket. The bucket listing asked for URL-encoded keys and DigitalOcean Spaces encodes the slashes (`recordings%2F...`), so nothing matched the session's prefix. Fixed: plain keys are asked for, and keys that still arrive encoded are decoded. The fake bucket now encodes keys the way Spaces does; the test fails without the fix. Live suite: 87 HTTP and 21 unit tests pass.
+
 ## Live server: videos in the green room, uploads that resume, videos through the media server — 2026-11-19
 
 - Videos: each uploaded MP4 waits in the green room with **Play on stage** and, before going live, **Go live with it** (`go_live_with_video`: goes live and starts the video under one lock, optionally ending the session when it finishes). A video now carries its duration and comes off the stage when it's over; paused, it stays. Scheduled simulive starts through the same path, so its auto-end follows the video (pauses included) rather than the clock.

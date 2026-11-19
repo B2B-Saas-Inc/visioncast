@@ -1,6 +1,6 @@
 # Remaining gaps
 
-What is still open on `0.4.17-pre`, reconciled 2026-11-05. **Everything here needs vendor accounts, an operator's decision, or a real event with real people.** Nothing implemented or already proven is listed; test evidence lives only in [validation.md](validation.md), and the ordered, tickable form of this page is [release-checklist.md](release-checklist.md). Detailed behaviour is owned by [mcp.md](mcp.md), [native-integrations.md](native-integrations.md), [tickets.md](tickets.md), [hosting.md](hosting.md), [kits.md](kits.md) and [operations.md](operations.md); where they disagree with this page on detail, theirs win.
+What is still open on `0.4.18-pre`, reconciled 2026-11-05. **Everything here needs vendor accounts, an operator's decision, or a real event with real people.** Nothing implemented or already proven is listed; test evidence lives only in [validation.md](validation.md), and the ordered, tickable form of this page is [release-checklist.md](release-checklist.md). Detailed behaviour is owned by [mcp.md](mcp.md), [native-integrations.md](native-integrations.md), [tickets.md](tickets.md), [hosting.md](hosting.md), [kits.md](kits.md) and [operations.md](operations.md); where they disagree with this page on detail, theirs win.
 
 ## 1. Release blockers
 
