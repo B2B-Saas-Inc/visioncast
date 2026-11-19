@@ -130,7 +130,7 @@
       {% endif %}
       {% if local_recordings %}
       <h3>Each speaker's own recording</h3>
-      <p class="help">Recorded in each speaker's browser, camera and microphone only, while the room recorded.</p>
+      <p class="help">Recorded in each speaker's browser while the room recorded, at full quality from the source: their camera and microphone, and any screen they shared. For editing and media assets.</p>
       <ul class="list-rows" id="local-recordings">{% for f in local_recordings %}<li><div class="grow">{{ f.name|default:"Speaker" }} <span class="small muted">{{ f.sizeBytes|filesizeformat }}</span></div><a class="btn btn-ghost btn-sm" href="{{ f.url }}" rel="noopener noreferrer">Download</a></li>{% endfor %}</ul>
       {% endif %}
     {% endif %}

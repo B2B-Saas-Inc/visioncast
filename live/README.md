@@ -11,7 +11,7 @@ control, with no per-attendee or per-seat bill.
 | `visioncast-live` (this folder) | Rooms, personal links, the room page, `/admin`, attendance from webhooks, retention | Rust |
 | `visioncast-captions` (`captions/`) | Whisper, in its own container, for live captions | Rust and whisper.cpp |
 | `visioncast-slides` (`slides/`) | Turns PDF and PowerPoint into page images, with no network at all | Python, LibreOffice, Poppler |
-| [LiveKit Ingress](https://github.com/livekit/ingress) | Takes RTMP from an encoder. Optional | Go, unmodified upstream image |
+| [LiveKit Ingress](https://github.com/livekit/ingress) | Takes RTMP from an encoder, and plays videos into the room for a large audience. Optional; v1.6.0 or later | Go, unmodified upstream image |
 | [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate) | Translates captions, on your server. Optional | Python, unmodified upstream image |
 | VisionCast `livekit` provider | Creates the room from the studio and hands out links at the waiting room | Python |
 
@@ -62,7 +62,7 @@ Everyone uses the same page. What they can do is decided by the service and enfo
 * Putting someone on stage is a server action that opens publishing for them. Taking them off closes it, and LiveKit removes their tracks.
 * Chat, questions and polls go through this service, not LiveKit's data channel, so they can be moderated, are there for people who join late, and can't be spoofed.
 
-**Taking access away.** A LiveKit credential lasts 15 minutes, and LiveKit keeps a live connection's fresh. Removing someone or replacing their link closes their connection and their event stream at once. If they try to come back with a credential they kept, the service sees them arrive and puts them out, and anyone publishing on the stage who isn't on it has publishing closed. A replaced link's old credential can still be used to watch for up to 15 minutes, because it's the same person's identity. The Share credential can publish any kind of track its browser labels as a screen, so a host or producer who deliberately modifies their browser could send their voice that way. They run the show, so that's a matter of trust.
+**Taking access away.** A LiveKit credential lasts 15 minutes, and LiveKit keeps a live connection's fresh. Removing someone or replacing their link closes their connection and their event stream at once. If they try to come back with a credential they kept, the service sees them arrive and puts them out, and anyone publishing on the stage who isn't on it has publishing closed. The exceptions are this service's own: an encoder's input, and a video sent through the media server. A replaced link's old credential can still be used to watch for up to 15 minutes, because it's the same person's identity. The Share credential can publish any kind of track its browser labels as a screen, so a host or producer who deliberately modifies their browser could send their voice that way. They run the show, so that's a matter of trust.
 
 **On stage, you hear the stage and the producers.** That's how a producer talks to a speaker on air. The audience can't hear it, except through a speaker's own microphone if they're not on headphones.
 
@@ -92,11 +92,10 @@ Everyone uses the same page. What they can do is decided by the service and enfo
 * **Videos by link.** A video already hosted somewhere, on a CDN or in a bucket, can be added by its https:// link under Look instead of being uploaded. It's listed in the green room like any other and plays straight from there: each browser fetches it from the link, or, through the media server, LiveKit's ingress does. An HLS stream (`.m3u8`) works through the media server only, since not every browser plays HLS. Links have to be on the public internet: addresses on a private network, and names that lead to one, are refused when added and again when played. The host's server has to allow the video to be fetched by any page (no hotlink protection that checks the referrer).
 * **Big uploads.** Files over 8 MB go up in 8 MB pieces. A dropped connection carries on where it stopped, and after a reload or a crash, choosing the same file again does too. Videos can be up to `LIVE_MAX_VIDEO_MB` (default 8 GB), other files `LIVE_MAX_UPLOAD_MB`. An upload that wouldn't leave 2 GB free on the server is refused before it starts. An upload left untouched for two days is cleared out the next time someone uploads to that session.
 * **Videos for a large audience.** Normally each browser fetches the video from this server and plays it in step with everyone else, which looks best but means this server sends the whole file to every viewer: fine for tens of people, not for hundreds. With `LIVE_VIDEO_INGRESS=1` and the ingress container running (`COMPOSE_PROFILES=video`, or `encoder`), a session's Settings offer **Send videos through the media server**: LiveKit's ingress fetches the file from this server once and plays it into the room as 1080p30 H.264 at 6 Mbps (with 720p and 360p layers) and 128 kbps stereo Opus, and everyone gets it the way they get cameras. It starts a few seconds after you press play and can't be paused. If the ingress can't start, browsers play it instead and the crew is told. Transcoding takes about two CPU cores while it plays. It needs LiveKit ingress v1.6 or later (the compose files pin v1.6.0): earlier versions read a file faster than real time, so the video ended almost at once.
-* **Simulive.** Schedule a video under Look, for a time still to come. The session goes live by itself at that time, plays the video for everyone, and can end itself when it's over. Chat, questions and polls work as usual. Attendees aren't told it's a recording. This keeps working across a restart of the service.
+* **Simulive.** Schedule a video under Look, uploaded or by link, for a time still to come. The session goes live by itself at that time, plays the video for everyone (after the recorder, if going live starts one), and can end itself when the video does, pauses included. Chat, questions and polls work as usual. Attendees aren't told it's a recording. This keeps working across a restart of the service.
 * **Encoders.** With `LIVE_INGRESS_URL` set, create an input under Broadcast and put its server and key in OBS, vMix or a hardware encoder. It's on stage for exactly as long as its stream runs, so start it when you want it seen. RTMP only, not RTMPS, so its stream key travels unencrypted. Inputs are deleted when the session ends.
 * **Each speaker's own copy.** On unless a session turns it off in Settings. While recording, each person on stage also records their own camera and microphone in their browser, straight from the source before anything is compressed to send, and whoever shares their screen records that too. H.264 and AAC in MP4 where the browser can (Chrome, Edge and Safari), so editors and YouTube take them as they are, else VP9 and Opus in WebM; 10 Mbps for a camera, 6 for a screen, 256 kbps audio. They upload as they're made and, once each is finished, are copied to the bucket under `recordings/<room>/speakers/`. They're listed with the recordings. Use them for editing and media assets.
 * **The recording.** What attendees saw, frame and overlays included, recorded at 1080p30 in H.264 High at 12 Mbps (`LIVE_RECORDING_VIDEO_KBPS`) with 256 kbps AAC at 48 kHz, for the website and YouTube. It's made from what speakers send, so it can't be sharper than that: each speaker's own copy is the full-quality source.
-
 * **Ending and reopening.** End session ends it for everyone. A host, or a producer who may go live, can press Reopen session afterwards: the session is back to not live, attendees see the countdown again, and it can go live again. Use it after a rehearsal in the real room, or an end pressed by mistake. VisionCast can do the same with `POST /v1/rooms/{room}/reopen`.
 * **Deleting a session.** At the bottom of its page at `/admin`. Its attendee and crew links stop working, anyone still in it is told it's been deleted and put out, and it's off the list. Not while it's live or recording. A session with recordings asks first: keep the files in the bucket, under `recordings/{room}/`, or delete them too, and if the bucket won't delete them, nothing is deleted. VisionCast unlinks the event it belonged to within a few minutes: the event and its registrations stay, and creating a new room for it from the Hosting page works as before. Recorded in the activity log as `session.deleted`.
 
@@ -176,6 +175,8 @@ These are estimates for planning, not measurements on a server. They scale LiveK
 * **Each recording and broadcast reserves 4 CPUs,** and captions use up to 4 by default. The test stack lowers the reservation to 1, so the default hasn't been run under load.
 * **Budget 5.5 GB per hour for the main recording,** at 12 Mbps. It reaches the bucket when it stops, so a crash during a long session can lose it.
 * **Speakers' own recordings go to the server's disk as they're made, then to the bucket,** at 10 Mbps, which is 4.5 GB per speaker-hour (a screen, 2.7 GB an hour). A file holds 8 GB, so a new one starts about every 1 hour 45 minutes, and a room holds 100 GB, about 22 speaker-hours. With this on, a speaker needs about 18 Mbps of steady upload, and encoding twice is hard on older laptops. If their connection can't keep up, their own copy loses a part, and the main recording isn't affected.
+* **Videos on the stage cost bandwidth or CPU.** Played by browsers, this server sends the whole file to each viewer: a 6 Mbps video to 100 people is 600 Mbps for as long as it plays. Through the media server, it's fetched once and sent like a camera, so it fits the table above, and transcoding it takes about two CPU cores while it plays. A video played from a CDN link costs this server nothing in browsers; the CDN serves it.
+* **Uploaded videos take disk.** Up to `LIVE_MAX_VIDEO_MB` each (8 GB by default), kept with the room until it's purged or deleted. An upload that wouldn't leave 2 GB free is refused. The nightly backup includes them.
 * **Size is checked for you, up to a point.** The room warns below 8 CPUs. It doesn't know how many people are coming, so run `size-check.sh` for that.
 * **Set the session's end time honestly.** Nobody new can enter more than 4 hours after the scheduled end, and an empty room closes after 30 minutes.
 * **The longest automated session so far is a few minutes.** Rehearse the length you plan to run.
@@ -233,7 +234,7 @@ Nothing here depends on one provider. You need:
 * **Enough outbound network for the table above.** A plan's advertised speed and what you pay per GB vary a lot, and this is often the real limit and the real cost.
 * **amd64 or arm64.** A resize can't change architecture.
 * **Your firewall rules in both places,** where the provider has a firewall as well as the server's own.
-* **Any S3-compatible bucket:** `RECORDING_S3_ENDPOINT` for the address, and `RECORDING_S3_FORCE_PATH_STYLE=1` if it needs that. Only a strict local S3-compatible server has been tested so far.
+* **Any S3-compatible bucket:** `RECORDING_S3_ENDPOINT` for the address, and `RECORDING_S3_FORCE_PATH_STYLE=1` if it needs that. DigitalOcean Spaces runs in production, and a strict local S3-compatible server in the tests. Amazon S3 hasn't been tried. The bucket can stay private. The service's key needs to read, write, list and delete in it.
 * **Certificates and names from anywhere,** as long as the names are DNS only.
 
 ## Try it locally
@@ -259,7 +260,7 @@ deploy/live/setup.sh live.example.com rtc.example.com turn.example.com you@examp
 The script writes new secrets to `deploy/live/.env`, without printing them, downloads Whisper's model (about 150 MB, checked against its published hash), and lists the remaining steps:
 
 1. Point all three names at the server, DNS only. Cloudflare's proxy can't carry the media ports or TURN.
-2. Open 80/tcp, 443/tcp, 7881/tcp, 3478/udp, 30000-40000/udp and 50000-60000/udp. Add 1935/tcp if you use RTMP input.
+2. Open 80/tcp, 443/tcp, 7881/tcp, 3478/udp, 30000-40000/udp and 50000-60000/udp. Add 1935/tcp if you use RTMP input. Videos sent through the media server need no extra port.
 3. For recording, fill in the `RECORDING_S3_*` lines in `.env`. Without a bucket, rooms work and recording stays off.
 4. Run `docker compose up -d --build` in `deploy/live`.
 5. On your VisionCast server, add the service host to `WEBHOOK_HOST_ALLOWLIST` and restart.
@@ -269,13 +270,13 @@ The script writes new secrets to `deploy/live/.env`, without printing them, down
 
 **Networks that only allow port 443.** Traefik takes all of port 443 and sends each hostname where it belongs. `turn.example.com` goes to LiveKit's TURN server with the TLS taken off, so media can travel as ordinary-looking HTTPS traffic. To check it for real, run `live/tests/turn/check.cjs` against your server: it forces two browsers to use nothing else. It leaves a room called "Connection test from turn/check.cjs" in `/admin`, which ends 10 minutes later and goes with the normal retention.
 
-**Optional parts.** Set `COMPOSE_PROFILES=encoder,translate` in `.env`, with the matching lines the script left commented out. Translation needs about 1 GB of disk and memory for each language.
+**Optional parts.** Set `COMPOSE_PROFILES` in `.env`, with the matching lines the script left commented out: `encoder` for RTMP input (with `LIVE_INGRESS_URL`), `video` for videos sent through the media server (with `LIVE_VIDEO_INGRESS=1`), and `translate` for translated captions, like `COMPOSE_PROFILES=video,translate`. `encoder` covers videos too. Translation needs about 1 GB of disk and memory for each language.
 
 ## Updating and backups
 
-**Updating.** On the server, from the checkout: `deploy/live/update.sh v0.4.6-pre` (any release tag). It refuses to run over local code changes, takes a backup first when backups are set up, checks out the tag, rebuilds the images, restarts what changed and waits for `/healthz`. `.env`, the data volumes and the captions model are kept. It ends by printing the command that goes back to the previous tag. Rooms in progress drop for the restart, so update between sessions.
+**Updating.** On the server, from the checkout: `deploy/live/update.sh v0.4.20-pre` (any release tag). A release can also change `deploy/live/compose.yaml`, like the ingress image; the update applies that too. It refuses to run over local code changes, takes a backup first when backups are set up, checks out the tag, rebuilds the images, restarts what changed and waits for `/healthz`. `.env`, the data volumes and the captions model are kept. It ends by printing the command that goes back to the previous tag. Rooms in progress drop for the restart, so update between sessions.
 
-**Backups.** `deploy/live/backup.sh` makes one encrypted file of the database (rooms, crew, accounts, settings, engagement), uploads (slides, graphics, the brand) and speakers' local recordings, using a consistent copy of the database while the service runs. Recordings already sent to a bucket aren't included. Set it up once, as root:
+**Backups.** `deploy/live/backup.sh` makes one encrypted file of the database (rooms, crew, accounts, settings, engagement), uploads (slides, graphics, videos, the brand) and speakers' local recordings, using a consistent copy of the database while the service runs. Recordings already sent to a bucket aren't included. Set it up once, as root:
 
 ```bash
 apt-get install -y age sqlite3
@@ -283,7 +284,7 @@ echo 'LIVE_BACKUP_AGE_RECIPIENT=age1...' >> deploy/live/.env   # a public key; k
 echo '30 2 * * * root /opt/visioncast/deploy/live/backup.sh >> /var/log/visioncast-live-backup.log 2>&1' > /etc/cron.d/visioncast-live
 ```
 
-Files go to `/var/backups/visioncast-live` (`LIVE_BACKUP_DIR`) and are kept 14 days (`LIVE_BACKUP_KEEP_DAYS`). They're on the same server, so copy them somewhere else, or use your provider's server backups as well. To restore, stop the stack, then `age -d -i <identity> live-<time>.tar.age | tar -x -C <the live-data volume>`, and start it again.
+Everything in the data volume goes in, so uploaded videos (up to 8 GB each) make each backup that much bigger; delete the ones you're done with, or lower `LIVE_BACKUP_KEEP_DAYS`. Files go to `/var/backups/visioncast-live` (`LIVE_BACKUP_DIR`) and are kept 14 days (`LIVE_BACKUP_KEEP_DAYS`). They're on the same server, so copy them somewhere else, or use your provider's server backups as well. To restore, stop the stack, then `age -d -i <identity> live-<time>.tar.age | tar -x -C <the live-data volume>`, and start it again.
 
 ## Service API
 
@@ -314,11 +315,11 @@ Everything under `/v1` needs `Authorization: Bearer <LIVE_SERVICE_SECRET>`. All 
 | `GET /v1/rooms/{room}/recordings` | `{recordings, local}`: the latest 50 recordings, each with a signed `downloadUrl`, its `captions` files with signed `url`s and its `watchUrl` once published, and speakers' own recordings with signed `url`s. Signed links work for 6 hours |
 | `POST /v1/rooms/{room}/recordings/{egressId}/publish`, `.../unpublish` | `{watchUrl, videoUrl}`: the recording's page for viewers, the same each time. Unpublished, both stop working |
 
-`/admin/api` has the same settings routes, plus `GET /rooms`, `GET /rooms/{room}`, `/me`, `/me/password`, `/activity`, and for owners `/accounts`, `DELETE /accounts/{id}` and `POST /accounts/{id}/reset`, behind the `/login` session.
+`/admin/api` has the same settings routes, plus `GET /rooms`, `GET /rooms/{room}`, `DELETE /rooms/{room}` `{recordings: keep|delete}` (refused while live or recording, and needs the choice when there are recordings), `/me`, `/me/password`, `/activity`, and for owners `/accounts`, `DELETE /accounts/{id}` and `POST /accounts/{id}/reset`, behind the `/login` session.
 
 Public routes: `/{slug}`, `/{slug}/lobby`, `/{slug}/green-room`, `/{slug}/public`, `/login`, `/logout`, `/admin`,
-`/login/set/{token}`, `/login/link/{token}`, `/join/{ticket}` and its `/info`, `/enter`, `/events`, `/act`, `/share-token`, `/files`, `/local` and `/captions` actions,
-`/program/{ticket}` for the recorder, `/brand/logo`, `/brand/font`, `/brand/holding/{before|after}`, `/files/{signed link}`, `/watch/{page}` with its `/video.mp4` and `/captions.vtt`, `/assets/*`, `POST /webhooks/livekit` (signature checked by
+`/login/set/{token}`, `/login/link/{token}`, `/join/{ticket}` and its `/info`, `/enter`, `/events`, `/act`, `/share-token`, `/files`, `/uploads` (big files in pieces: start, how much has arrived, the next piece at an offset, give up), `/local` and `/captions` actions,
+`/program/{ticket}` for the recorder, `/brand/logo`, `/brand/font`, `/brand/holding/{before|after}`, `/files/{signed link}` (recordings, speakers' copies, and stage videos for the media server), `/watch/{page}` with its `/video.mp4` and `/captions.vtt`, `/assets/*`, `POST /webhooks/livekit` (signature checked by
 LiveKit's own receiver) and `/healthz`. `/captions/in/{ticket}` takes audio from the recorder, and the Traefik config
 closes it from outside.
 

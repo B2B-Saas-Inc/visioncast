@@ -612,7 +612,7 @@ late.
 
 ### 9.2 Your own live video: LiveKit add-on [Supported] [Preview]
 
-Optional. Zoom and the other hosting providers keep working without it. It runs live sessions on a separate server of yours: a studio with a green room, hosts, producers and guests, screen sharing, frames and on-screen graphics, polls, moderated chat and Q&A, live captions, recording, and broadcasting to YouTube, Meta, X and LinkedIn. Full reference: [live/README.md](../live/README.md).
+Optional. Zoom and the other hosting providers keep working without it. It runs live sessions on a separate server of yours: a studio with a green room, hosts, producers and guests, screen sharing, frames and on-screen graphics, holding graphics, videos on the stage (uploaded or from a CDN link, up to whole pre-recorded sessions), polls, moderated chat and Q&A, live captions, recording at 1080p, and broadcasting to YouTube, Meta, X and LinkedIn. Full reference: [live/README.md](../live/README.md).
 
 **Starting from nothing?** [deploy/quickstart/install.sh](../deploy/quickstart/install.sh) puts the studio and live rooms on one server with your brand. See [branding.md](branding.md). The rest of this section adds live rooms to a VisionCast you already run.
 
@@ -631,7 +631,8 @@ git clone https://github.com/B2B-Saas-Inc/visioncast.git && cd visioncast
 deploy/live/setup.sh live.example.com rtc.example.com turn.example.com you@example.com   # new secrets in deploy/live/.env, and Whisper's model
 # Open 80/tcp, 443/tcp, 7881/tcp, 3478/udp, 30000-40000/udp and 50000-60000/udp
 # For recording, fill in the RECORDING_S3_* lines in deploy/live/.env
-# Optional: RTMP input and translated captions, with COMPOSE_PROFILES=encoder,translate
+# Optional: RTMP input, videos through the media server and translated captions,
+#   with COMPOSE_PROFILES=encoder,video,translate (see live/README.md, Optional parts)
 cd deploy/live && docker compose up -d --build
 cd ../..
 deploy/live/verify-public.sh live.example.com rtc.example.com turn.example.com   # from the repo root, on another machine
@@ -650,6 +651,7 @@ deploy/live/verify-public.sh live.example.com rtc.example.com turn.example.com  
 3. Under **Crew**, add each host, producer and guest, and send each their own link. Press **Open the studio as a host** for your own. A link that goes astray can be replaced without touching anyone else's.
 4. For broadcasting, press **Broadcast and brand settings** and turn platforms on. Have the platform's event ready first. LinkedIn only gives out its server and key one or two hours before the scheduled start.
 5. On the day, the crew meet in the green room. Put speakers on stage, then **Go live**. Then press Go live on each platform that needs it.
+6. For a pre-recorded session, or a promo reel, upload the video under Look in the room, or add its CDN link. It waits in the green room: **Play on stage** plays it, and **Go live with it** goes live and starts it together, ending the session when it finishes if you choose. For a large audience, turn on **Send videos through the media server** in the room's Settings first.
 
 **Addresses people see:**
 
@@ -661,7 +663,7 @@ deploy/live/verify-public.sh live.example.com rtc.example.com turn.example.com  
 
 The address alone gets nobody in, so it's safe if someone shares it: a visitor with no link gets sent to the waiting room.
 
-**After the session:** recordings, with SRT and transcript files for everyone and per speaker, are in your bucket and listed on the Hosting page, `/admin` and the room's Files tab. To send one to registrants, publish its link as in the Recordings section above. Pull attendance from the Attendance page as with any provider; it matches on the registration ID.
+**After the session:** recordings, with SRT and transcript files for everyone and per speaker, and each speaker's own copy, are in your bucket and listed on the Hosting page, `/admin` and the room's Files tab. To send one to registrants, press **Publish as this session's recording** on the Hosting page: it gets a page of its own on the live server, which becomes the session's recording as in the Recordings section above. The session is marked completed when the crew ends it after its start time. To remove a room, delete it at `/admin`: the session is unlinked in the studio within a few minutes. Pull attendance from the Attendance page as with any provider; it matches on the registration ID.
 
 **Sending what people did to your CRM:** subscribe a webhook destination to `engagement.recorded`, and add `engagement` to its allowed groups. It arrives from about 10 minutes after the scheduled end, and again if something changes during the next day (a late survey answer, say), per registrant, with their chat, questions, poll votes and survey answers ([webhooks.md](webhooks.md)).
 
@@ -670,6 +672,7 @@ The address alone gets nobody in, so it's safe if someone shares it: a visitor w
 - [ ] Run a rehearsal with real speakers on real networks, including a phone.
 - [ ] Send a test stream to each platform you'll use. LinkedIn's preview lets you do this without going live.
 - [ ] Record one, and check its video, SRT and transcript in the bucket.
+- [ ] Play each video you'll use on the stage, with the setting you'll use (in browsers or through the media server), on the server you'll use.
 - [ ] Check the captions with your speakers' real names and jargon.
 - [ ] Run `deploy/live/verify-public.sh` and `live/tests/turn/check.cjs` against your server.
 - [ ] Load test it on your server with `live/tests/load/run.sh`. The numbers in [validation.md](validation.md) come from a laptop.

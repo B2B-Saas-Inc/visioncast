@@ -41,6 +41,7 @@ codes/links and team invitations ([email.md](email.md)).
 | `webinars/outbox.py` | `enqueue_event(...)`, payload builder, destination field/purpose filtering |
 | `webinars/delivery.py` | Lease-based claim, signed delivery, retries/backoff, dead-letter |
 | `webinars/reporting.py` | Minimal aggregate reporting (no inferred attendance) |
+| `webinars/hosting/*` | Hosting providers: one adapter per provider (`zoom`, `wistia`, `sequel`, `riverside`, `streamyard`, `livekit`), `service` (create, update, attach, personal links, crew), and for your own live server `engagement` (what attendees did) and `room_status` (the session's status following the live room, and rooms deleted there). See `hosting.md` |
 | `webinars/admin.py` | Marketing admin UI, role-aware PII masking, outbox retry action |
 | `webinars/management/commands/*` | `bootstrap_admin`, `create_api_key`, `run_worker`, `purge_personal_data`, `sync_roles`, `set_destination_secret` |
 | `tests/` | pytest-django suite (PostgreSQL required for concurrency tests) |
@@ -228,6 +229,11 @@ over `"{delivery_id}.{timestamp}.{body}"`.
 
 Each send runs under a total deadline (`post_json_bounded`, see `security.md`). Deleting a Person
 deletes their outbox messages (`CASCADE`).
+
+Between batches the worker also runs side sweeps, each isolated so a failure never stops delivery:
+paid-ticket reconciliation, providers' personal links, and for your own live server, engagement and
+the live room's status (`webinars/hosting/room_status.py`: about once a minute per session near its
+time, and every 2 minutes a check for rooms deleted on the live server).
 
 ## Roles
 

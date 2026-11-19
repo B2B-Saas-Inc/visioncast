@@ -309,7 +309,7 @@ Runs from `deploy/live`. See [live/README.md](../live/README.md).
 
 | Task | How |
 |---|---|
-| Start, update | `docker compose up -d --build` in `deploy/live` |
+| Start, update | `docker compose up -d --build` in `deploy/live`; to move to a release, `deploy/live/update.sh <tag>`, which prints how to go back |
 | Logs | `docker compose logs -f live`, or `traefik`, `egress`, `livekit`, `captions`, `slides`, `ingress`, `translate` |
 | Health | `GET /healthz` on the service host |
 | People at `/admin` | Add, reset and remove under People. Locked out: `docker compose exec live visioncast-live reset-admin you@example.com` prints a link that works once |
@@ -317,12 +317,15 @@ Runs from `deploy/live`. See [live/README.md](../live/README.md).
 | Replace a crew link | Crew, on the session's page at `/admin` or its Hosting page in the studio |
 | Check it from outside | `deploy/live/verify-public.sh <live host> <media host> <TURN host>` |
 | Slides | `docker compose logs slides`. A deck that fails says so in the room, and doesn't stop the next one |
-| Back up | The `live-data` volume: its SQLite file has accounts, crew, chat, questions, polls, surveys, captions and stream keys, and it holds uploaded files, slide pages, fonts and speakers' own recordings. Main recordings are in your bucket |
+| Back up | The `live-data` volume: its SQLite file has accounts, crew, chat, questions, polls, surveys, captions and stream keys, and it holds uploaded files (stage videos included), slide pages, fonts and speakers' own recordings. Main recordings are in your bucket. `deploy/live/backup.sh` does it nightly |
 | Retention | Rooms and what's in them go `LIVE_RETENTION_DAYS` after their end, 90 by default. Your bucket's files don't |
+| Delete a session | At the bottom of its page at `/admin`: keep its recordings in the bucket or delete them too. Its event is unlinked in the studio within a few minutes |
 
 **Don't change `LIVE_TICKET_KEY` around a session.** It signs every link and seals stream keys, so all links stop working and keys need entering again.
 
-Speakers' own recordings can be large, about 2 GB an hour each. Watch the disk if you turn them on.
+Watch the disk. Speakers' own recordings are on by default, about 4.5 GB per speaker-hour, and stay on the server's disk as well as being copied to the bucket. Uploaded stage videos can be up to 8 GB each. Both stay until the room is purged or deleted, and both go into every nightly backup, which is kept 14 days on the same disk. Delete what you're done with.
+
+Videos sent through the media server run in the `ingress` container (`COMPOSE_PROFILES=video` and `LIVE_VIDEO_INGRESS=1`). If one doesn't start, the crew is told and browsers play it instead: check `docker compose logs ingress`.
 
 If captions stop, the session carries on. Check `docker compose logs captions`. If it logs that it's falling behind, lower the number of speakers or raise `CAPTIONS_THREADS`.
 
