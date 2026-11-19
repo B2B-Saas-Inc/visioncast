@@ -2282,3 +2282,70 @@ async fn big_files_upload_in_pieces_and_carry_on_where_they_stopped() {
     assert_eq!(c.call("DELETE", &format!("{host}/uploads/{gone}"), None, None).await.0, StatusCode::OK);
     assert_eq!(c.piece(&host, &gone, 0, MP4).await.0, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn a_video_started_with_the_session_waits_for_the_recorder() {
+    let c = ctx(true);
+    let start = Utc::now() + Duration::hours(1);
+    let body = json!({"title": "Launch", "startsAt": start.to_rfc3339(), "endsAt": (start + Duration::hours(1)).to_rfc3339(), "autoRecord": true});
+    assert_eq!(c.v1("PUT", &format!("/v1/rooms/{ROOM}"), Some(body)).await.0, StatusCode::OK);
+    let host = c.member("host", "Maya").await;
+    c.enter(&host, "Maya", CLIENT).await;
+    let id = video(&c, &host).await;
+    let go = json!({"clientId": CLIENT, "action": {"type": "go_live_with_video", "id": id, "duration": 30.0, "endSession": false}});
+    let req = Request::post(format!("{host}/act")).header(header::CONTENT_TYPE, "application/json").body(Body::from(go.to_string())).unwrap();
+    let app = c.app.clone();
+    let pending = tokio::spawn(async move { app.oneshot(req).await.unwrap().status() });
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let state = c.snapshot(&host, CLIENT).await["state"].clone();
+    assert_eq!((state["phase"].as_str(), state["media"].is_null()), (Some("live"), true), "live, recording starting, video not yet");
+    assert!(c.fake.calls.lock().unwrap().iter().any(|x| x.starts_with("record:")));
+    let active = json!({"id": "eg-active", "event": "egress_updated", "createdAt": 3, "egressInfo": {"egressId": "EG_1", "roomName": ROOM, "status": "EGRESS_ACTIVE"}});
+    assert_eq!(c.webhook(active).await, StatusCode::OK);
+    assert_eq!(pending.await.unwrap(), StatusCode::OK);
+    assert_eq!(c.snapshot(&host, CLIENT).await["state"]["media"]["id"], id.as_str(), "and then the video, from its first frame");
+}
+
+#[tokio::test]
+async fn a_video_can_play_from_its_link_without_being_uploaded() {
+    let c = ctx(true);
+    let host = live_with_host(&c).await;
+    let attendee = c.attendee_path("p1").await;
+    c.enter(&attendee, "Ada", CLIENT).await;
+    let add = |url: &str| json!({"type": "media_link_add", "url": url});
+    for (bad, why) in [
+        ("http://93.184.215.14/v.mp4", "invalid_video_link"),
+        ("ftp://93.184.215.14/v.mp4", "invalid_video_link"),
+        ("https://user:pw@93.184.215.14/v.mp4", "invalid_video_link"),
+        ("not a link", "invalid_video_link"),
+        ("https://127.0.0.1/v.mp4", "video_link_not_public"),
+        ("https://10.1.2.3/v.mp4", "video_link_not_public"),
+        ("https://[::1]/v.mp4", "video_link_not_public"),
+        ("https://localhost:8080/v1/rooms", "video_link_not_public"),
+    ] {
+        assert_eq!(c.act(&host, CLIENT, add(bad)).await.1["error"], why, "{bad}");
+    }
+    assert_eq!(c.act(&attendee, CLIENT, add("https://93.184.215.14/v.mp4")).await.0, StatusCode::FORBIDDEN);
+    let (status, doc) = c.act(&host, CLIENT, add("https://93.184.215.14/media/promo.mp4?v=2")).await;
+    assert_eq!((status, doc["name"].as_str(), doc["kind"].as_str()), (StatusCode::OK, Some("promo.mp4"), Some("media")), "{doc}");
+    let id = doc["id"].as_str().unwrap().to_string();
+    // Browsers play it from there, and nothing of it is here.
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"media_play","id":id,"duration":30.0})).await.0, StatusCode::OK);
+    let seen = c.snapshot(&attendee, CLIENT).await["state"]["media"].clone();
+    assert_eq!((seen["url"].as_str(), seen["streamed"].as_bool()), (Some("https://93.184.215.14/media/promo.mp4?v=2"), Some(false)));
+    assert_eq!(c.fetch(&format!("{host}/files/{id}?c={CLIENT}")).await.0, StatusCode::NOT_FOUND);
+    // An HLS stream needs the media server, which then fetches the link itself.
+    let (_, hls) = c.act(&host, CLIENT, add("https://93.184.215.14/live/index.m3u8")).await;
+    let hls = hls["id"].as_str().unwrap().to_string();
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"media_play","id":hls})).await.1["error"], "link_needs_media_server");
+    let mut settings = c.snapshot(&host, CLIENT).await["state"]["settings"].clone();
+    settings["streamVideos"] = json!(true);
+    c.act(&host, CLIENT, json!({"type":"set_settings","settings":settings})).await;
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"media_play","id":hls})).await.0, StatusCode::OK);
+    assert!(c.fake.calls.lock().unwrap().iter().any(|x| x.starts_with("video:") && x.ends_with(":https://93.184.215.14/live/index.m3u8")));
+    // If the media server can't take an HLS stream, there's nothing for browsers to fall back on.
+    *c.fake.fail_video.lock().unwrap() = true;
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"media_play","id":hls})).await.1["error"], "video_stream_unavailable");
+    assert!(c.snapshot(&host, CLIENT).await["state"]["media"].is_null(), "not left showing a stream that was stopped");
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"file_delete","id":id})).await.0, StatusCode::OK);
+}

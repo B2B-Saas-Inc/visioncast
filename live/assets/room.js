@@ -90,7 +90,11 @@
     not_available: "That isn't available right now.",
     ingress_not_configured: "RTMP input isn't set up on this server.",
     video_streamed: "A video going through the media server can't be paused. Stop it instead.",
-    storage_full: "There isn't room for that file on the server. Delete some files, or ask whoever runs it for more space."
+    storage_full: "There isn't room for that file on the server. Delete some files, or ask whoever runs it for more space.",
+    invalid_video_link: "Use the video's https:// address, like a link to an MP4 on your CDN.",
+    video_link_not_public: "That address isn't on the public internet, so it can't be used.",
+    link_needs_media_server: "That's an HLS stream (.m3u8), which not every browser can play. Turn on Send videos through the media server in Settings to play it.",
+    video_stream_unavailable: "The media server couldn't play that video. Check the link works, and try again."
   };
   function message(err) { return MESSAGES[err && err.code] || "Something went wrong. Check your connection and try again."; }
 
@@ -1636,6 +1640,11 @@
 
   // ---- videos on the stage
 
+  // A video added by link plays from where it's hosted; an uploaded one from this server.
+  function videoSrc(id) {
+    var f = S.files.filter(function (x) { return x.id === id; })[0];
+    return f && f.url ? f.url : fileUrl(id);
+  }
   function probeDuration(id) {
     return new Promise(function (resolve) {
       var probe = h("video", { preload: "metadata" });
@@ -1643,7 +1652,7 @@
       probe.onloadedmetadata = function () { resolve(isFinite(probe.duration) ? probe.duration : 0); };
       probe.onerror = function () { resolve(0); };
       setTimeout(function () { resolve(0); }, 8000);
-      probe.src = fileUrl(id);
+      probe.src = videoSrc(id);
     });
   }
   function playVideo(id) { probeDuration(id).then(function (d) { quietly({ type: "media_play", id: id, duration: d }); }); }
@@ -1824,7 +1833,16 @@
       h("div", { class: "row end" }, mini("Add words with no graphic", function () { quietly({ type: "layer_save", layer: { id: "", fileId: null, name: "", visible: false, title: "Your words here", subtitle: "", scroll: false, mime: "", x: PLACES.chyron.x, y: PLACES.chyron.y, w: PLACES.chyron.w, h: PLACES.chyron.h } }); })),
       h("div", { id: "layer-list" })));
     var mediaInput = h("input", { type: "file", accept: ".mp4,video/mp4", "data-upload": "media", onchange: function () { upload(this.files[0], "media", this); } });
-    look.appendChild(h("div", { class: "box" }, h("h3", { text: "Video" }), h("p", { class: "muted small", text: "An MP4 played right on the stage, like a promo reel or a whole recorded session. It looks better than sharing your screen, and it's in the recording. It comes off the stage when it's over. Videos are also in the green room, where you can go live with one." }), mediaInput, h("div", { id: "media-list" })));
+    var linkInput = h("input", { type: "url", id: "media-link", placeholder: "https://cdn.example.com/session.mp4", "aria-label": "Video link", spellcheck: "false" });
+    var linkForm = h("form", { class: "row media-link" }, linkInput, h("button", { class: "mini primary", type: "submit", text: "Add link" }));
+    linkForm.addEventListener("submit", function (event) {
+      event.preventDefault();
+      if (!linkInput.value.trim()) { return; }
+      act({ type: "media_link_add", url: linkInput.value.trim() }).then(function () { linkInput.value = ""; }).catch(function () {});
+    });
+    look.appendChild(h("div", { class: "box" }, h("h3", { text: "Video" }), h("p", { class: "muted small", text: "An MP4 played right on the stage, like a promo reel or a whole recorded session. It looks better than sharing your screen, and it's in the recording. It comes off the stage when it's over. Videos are also in the green room, where you can go live with one." }), mediaInput,
+      h("p", { class: "muted small", text: "Or play one from where it's already hosted, without uploading it: paste its https:// link (an MP4, or with Send videos through the media server on, an HLS .m3u8 stream). It plays straight from there." }), linkForm,
+      h("div", { id: "media-list" })));
     var simFile = h("select", { id: "sim-file", "aria-label": "Which video" });
     var simAt = h("input", { id: "sim-at", type: "datetime-local", "aria-label": "When it goes live" });
     var simEnd = h("input", { id: "sim-end", type: "checkbox", checked: true });
@@ -1896,7 +1914,9 @@
       } else {
         acts.appendChild(mini("Play on stage", function () { playVideo(f.id); }, "primary"));
       }
-      media.appendChild(h("div", { class: "file" }, h("div", { text: f.name }), acts));
+      if (f.url && !playing) { acts.appendChild(mini("Remove", function () { quietly({ type: "file_delete", id: f.id }); }, "danger")); }
+      var where = f.url ? (function () { try { return new URL(f.url).host; } catch (e) { return ""; } })() : "";
+      media.appendChild(h("div", { class: "file", "data-media": f.name }, h("div", {}, h("div", { text: f.name }), where ? h("div", { class: "muted small", text: "Plays from " + where }) : null), acts));
     });
   }
 
@@ -2097,7 +2117,7 @@
         tile = h("div", { class: "gtile gtile-video", "data-identity": key, "data-video": f.name });
         var thumb = h("video", { preload: "metadata", playsinline: true });
         thumb.muted = true;
-        thumb.src = fileUrl(f.id) + "#t=1";
+        thumb.src = videoSrc(f.id) + "#t=1";
         tile.appendChild(thumb);
         tile.appendChild(h("div", { class: "gtile-meta" }));
         tile.appendChild(h("div", { class: "gtile-actions" }));
@@ -2107,7 +2127,7 @@
       var meta = tile.querySelector(".gtile-meta");
       meta.textContent = "";
       meta.appendChild(h("b", { text: f.name }));
-      meta.appendChild(h("span", { class: "badge", text: "Video" }));
+      meta.appendChild(h("span", { class: "badge", text: f.url ? "Link" : "Video" }));
       if (playing) { meta.appendChild(h("span", { class: "badge on", text: "On stage" })); }
       var actions = tile.querySelector(".gtile-actions");
       actions.textContent = "";

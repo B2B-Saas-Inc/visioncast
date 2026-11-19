@@ -150,7 +150,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         let ws = &state.config.livekit_public_url;
         let http = ws.replacen("wss://", "https://", 1).replacen("ws://", "http://", 1);
         format!(
-            "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; \
+            "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: https:; font-src 'self'; \
              connect-src 'self' {ws} {http}; worker-src 'self' blob:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
         )
     };
@@ -553,7 +553,7 @@ async fn program_page(State(state): State<Arc<AppState>>, Path(value): Path<Stri
     if !ok {
         return (StatusCode::NOT_FOUND, [(header::CACHE_CONTROL, "no-store")], Html(include_str!("../assets/not-found.html"))).into_response();
     }
-    let csp = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; \
+    let csp = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: https:; font-src 'self'; \
                connect-src 'self' ws: wss: http: https:; worker-src 'self' blob:; base-uri 'none'; form-action 'none'";
     ([(header::CACHE_CONTROL, "no-store"), (header::CONTENT_SECURITY_POLICY, csp)], Html(include_str!("../assets/room.html"))).into_response()
 }
