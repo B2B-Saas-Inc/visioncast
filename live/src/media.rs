@@ -70,6 +70,13 @@ fn signed(app: &AppState, room: &str, target: &Target) -> String {
     format!("{}/files/{}", app.config.public_url, token(&app.config.ticket_key, "file", &format!("{room}|{kind}|{reference}|{expires}")))
 }
 
+/// Where LiveKit's ingress fetches a video to play on the stage: this server, on its internal
+/// address, signed for as long as the video plays and then some.
+pub fn stage_video_link(app: &AppState, room: &str, id: &str, duration: f64) -> String {
+    let expires = now() + duration.max(0.0) as i64 + 12 * 3600;
+    format!("{}/files/{}", app.config.internal_url, token(&app.config.ticket_key, "file", &format!("{room}|u|{id}|{expires}")))
+}
+
 pub fn bucket_link(app: &AppState, room: &str, key: &str) -> String {
     signed(app, room, &Target::Bucket(key.to_string()))
 }
@@ -149,6 +156,25 @@ pub async fn file(State(app): State<Arc<AppState>>, Path(value): Path<String>, Q
             parts.headers.insert(header::CONTENT_DISPOSITION, disposition.parse().map_err(|_| NOT_FOUND)?);
             parts.headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
             parts.headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static("default-src 'none'; media-src 'self'; sandbox"));
+            Ok(Response::from_parts(parts, axum::body::Body::new(body)))
+        }
+        "u" => {
+            // A video uploaded for the stage, fetched by the media server.
+            if !crate::ticket::valid_id(reference) {
+                return Err(NOT_FOUND);
+            }
+            let found = app.store.get_doc(room, "file", reference)?.and_then(|j| serde_json::from_str::<Value>(&j).ok()).ok_or(NOT_FOUND)?;
+            if found["kind"] != "media" {
+                return Err(NOT_FOUND);
+            }
+            let path = std::path::Path::new(&app.config.upload_dir).join(room).join(reference);
+            let served = ServeFile::new_with_mime(path, &"video/mp4".parse().map_err(|_| NOT_FOUND)?)
+                .oneshot(request)
+                .await
+                .map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "storage_unavailable"))?;
+            let (mut parts, body) = served.into_parts();
+            parts.headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
+            parts.headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static("default-src 'none'; sandbox"));
             Ok(Response::from_parts(parts, axum::body::Body::new(body)))
         }
         _ => Err(NOT_FOUND),

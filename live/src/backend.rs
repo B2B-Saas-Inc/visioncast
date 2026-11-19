@@ -38,6 +38,9 @@ pub trait Backend: Send + Sync {
     /// Makes an RTMP input that publishes to a room as `identity`. Returns its ID and stream key.
     async fn create_ingress(&self, room: &str, identity: &str, name: &str) -> Result<(String, String), BackendError>;
     async fn delete_ingress(&self, id: &str) -> Result<(), BackendError>;
+    /// Plays the video at `url` into a room as `identity`, once, through LiveKit's ingress, so
+    /// everyone gets it the way they get cameras. Returns the ingress ID.
+    async fn create_video_ingress(&self, room: &str, identity: &str, name: &str, url: &str) -> Result<String, BackendError>;
 }
 
 /// A room stays open this long with nobody in it, so a host can drop and rejoin.
@@ -189,6 +192,53 @@ impl Backend for LiveKit {
     async fn delete_ingress(&self, id: &str) -> Result<(), BackendError> {
         self.ingress.delete_ingress(id).await.map(|_| ()).map_err(|e| BackendError(e.to_string()))
     }
+
+    async fn create_video_ingress(&self, room: &str, identity: &str, name: &str, url: &str) -> Result<String, BackendError> {
+        let (video, audio) = video_ingress_encoding();
+        let options = CreateIngressOptions {
+            name: name.to_string(),
+            room_name: room.to_string(),
+            participant_identity: identity.to_string(),
+            participant_name: name.to_string(),
+            url: url.to_string(),
+            video,
+            audio,
+            ..Default::default()
+        };
+        let info = self.ingress.create_ingress(proto::IngressInput::UrlInput, options).await.map_err(|e| BackendError(e.to_string()))?;
+        Ok(info.ingress_id)
+    }
+}
+
+/// How a video sent through the media server is encoded: 1080p30 H.264 at 6 Mbps, with 720p and
+/// 360p layers for slower connections, and 128 kbps stereo Opus without silence suppression, so
+/// music and quiet passages come through.
+pub fn video_ingress_encoding() -> (proto::IngressVideoOptions, proto::IngressAudioOptions) {
+    let layer = |quality: proto::VideoQuality, width: u32, height: u32, bitrate: u32| proto::VideoLayer { quality: quality as i32, width, height, bitrate, ..Default::default() };
+    let video = proto::IngressVideoOptions {
+        name: "video".into(),
+        source: proto::TrackSource::ScreenShare as i32,
+        encoding_options: Some(proto::ingress_video_options::EncodingOptions::Options(proto::IngressVideoEncodingOptions {
+            video_codec: proto::VideoCodec::H264Baseline as i32,
+            frame_rate: 30.0,
+            layers: vec![
+                layer(proto::VideoQuality::High, 1920, 1080, 6_000_000),
+                layer(proto::VideoQuality::Medium, 1280, 720, 2_500_000),
+                layer(proto::VideoQuality::Low, 640, 360, 600_000),
+            ],
+        })),
+    };
+    let audio = proto::IngressAudioOptions {
+        name: "audio".into(),
+        source: proto::TrackSource::ScreenShareAudio as i32,
+        encoding_options: Some(proto::ingress_audio_options::EncodingOptions::Options(proto::IngressAudioEncodingOptions {
+            audio_codec: proto::AudioCodec::Opus as i32,
+            bitrate: 128_000,
+            disable_dtx: true,
+            channels: 2,
+        })),
+    };
+    (video, audio)
 }
 
 const CAMERA_AND_MIC: [proto::TrackSource; 2] = [proto::TrackSource::Camera, proto::TrackSource::Microphone];

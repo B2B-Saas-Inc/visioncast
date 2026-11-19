@@ -26,6 +26,7 @@ struct Fake {
     calls: Mutex<Vec<String>>,
     fail: Mutex<bool>,
     fail_cast: Mutex<bool>,
+    fail_video: Mutex<bool>,
     mics: Mutex<Vec<(String, String)>>,
 }
 
@@ -63,8 +64,14 @@ impl Backend for Fake {
     async fn create_ingress(&self, _room: &str, identity: &str, _name: &str) -> Result<(String, String), BackendError> {
         Ok((format!("ing-{identity}"), "stream-key".into()))
     }
-    async fn delete_ingress(&self, _id: &str) -> Result<(), BackendError> {
+    async fn delete_ingress(&self, id: &str) -> Result<(), BackendError> {
+        self.calls.lock().unwrap().push(format!("unplug:{id}"));
         Ok(())
+    }
+    async fn create_video_ingress(&self, room: &str, identity: &str, _name: &str, url: &str) -> Result<String, BackendError> {
+        self.calls.lock().unwrap().push(format!("video:{room}:{identity}:{url}"));
+        if *self.fail_video.lock().unwrap() { return Err(BackendError("no ingress".into())); }
+        Ok("IN_VIDEO".into())
     }
     async fn close_room(&self, room: &str) -> Result<(), BackendError> {
         self.calls.lock().unwrap().push(format!("close:{room}"));
@@ -104,6 +111,8 @@ fn config(recording: bool) -> Config {
         ingress_url: None,
         min_cpus: 0,
         max_upload_bytes: 1024 * 1024,
+        max_video_bytes: 4 * 1024 * 1024,
+        video_ingress: true,
         retention_days: 90,
         recording_video_kbps: 12000,
         recording: recording.then(|| RecordingStorage {
@@ -2075,4 +2084,200 @@ async fn deleting_a_session_can_delete_its_recordings_and_does_nothing_if_the_bu
     gone.sort();
     assert_eq!(gone, vec![format!("recordings/{ROOM}/a.mp4"), format!("recordings/{ROOM}/a.srt"), format!("recordings/{ROOM}/speakers/x-maya.mp4")], "only this session's files");
     assert_eq!(c.v1("GET", &format!("/v1/rooms/{ROOM}"), None).await.0, StatusCode::GONE);
+}
+
+// ---- videos on the stage
+
+const MP4: &[u8] = b"\0\0\0\x18ftypisom0000";
+
+async fn video(c: &Ctx, host: &str) -> String {
+    let (status, body) = c.upload(host, CLIENT, "media", "reel.mp4", MP4).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    body["id"].as_str().unwrap().to_string()
+}
+
+async fn wait_for(c: &Ctx, path: &str, what: &str, test: impl Fn(&Value) -> bool) -> Value {
+    for _ in 0..40 {
+        let state = c.snapshot(path, CLIENT).await["state"].clone();
+        if test(&state) {
+            return state;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    panic!("timed out waiting for {what}");
+}
+
+#[tokio::test]
+async fn a_video_comes_off_the_stage_when_its_over() {
+    let c = ctx(true);
+    let host = live_with_host(&c).await;
+    let id = video(&c, &host).await;
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"media_play","id":id,"duration":0.2})).await.0, StatusCode::OK);
+    let state = c.snapshot(&host, CLIENT).await["state"].clone();
+    assert_eq!((state["media"]["id"].as_str(), state["media"]["streamed"].as_bool()), (Some(id.as_str()), Some(false)));
+    wait_for(&c, &host, "the video to come off", |s| s["media"].is_null()).await;
+    assert_eq!(c.snapshot(&host, CLIENT).await["state"]["phase"], "not_live", "playing a video doesn't go live");
+    // Paused, it stays.
+    c.act(&host, CLIENT, json!({"type":"media_play","id":id,"duration":0.2})).await;
+    c.act(&host, CLIENT, json!({"type":"media_control","playing":false,"position":0.0})).await;
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    assert_eq!(c.snapshot(&host, CLIENT).await["state"]["media"]["id"], id.as_str());
+}
+
+#[tokio::test]
+async fn going_live_with_a_video_starts_both_and_can_end_the_session_with_it() {
+    let c = ctx(true);
+    let host = live_with_host(&c).await;
+    let guest = c.member("guest", "Gus").await;
+    c.enter(&guest, "Gus", CLIENT).await;
+    let id = video(&c, &host).await;
+    assert_eq!(c.act(&guest, CLIENT, json!({"type":"go_live_with_video","id":id,"duration":0.2,"endSession":true})).await.0, StatusCode::FORBIDDEN);
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"go_live_with_video","id":"nope","duration":0.2,"endSession":true})).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"go_live_with_video","id":id,"duration":0.2,"endSession":true})).await.0, StatusCode::OK);
+    let state = c.snapshot(&host, CLIENT).await["state"].clone();
+    assert_eq!((state["phase"].as_str(), state["media"]["id"].as_str()), (Some("live"), Some(id.as_str())));
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"go_live_with_video","id":id,"duration":0.2,"endSession":true})).await.0, StatusCode::CONFLICT, "only from not live");
+    wait_for(&c, &host, "the session to end with the video", |s| s["phase"] == "ended").await;
+    // Without ending it, the hosts carry on after the video.
+    c.v1("POST", &format!("/v1/rooms/{ROOM}/reopen"), None).await;
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"go_live_with_video","id":id,"duration":0.2,"endSession":false})).await.0, StatusCode::OK);
+    let state = wait_for(&c, &host, "the video to come off", |s| s["media"].is_null()).await;
+    assert_eq!(state["phase"], "live");
+}
+
+#[tokio::test]
+async fn a_scheduled_recorded_session_still_goes_live_and_ends_by_itself() {
+    let c = ctx(true);
+    let host = live_with_host(&c).await;
+    let id = video(&c, &host).await;
+    let at = Utc::now().timestamp_millis() + 300;
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"simulive_set","fileId":id,"atMs":at,"duration":0.3,"autoEnd":true})).await.0, StatusCode::OK);
+    wait_for(&c, &host, "it to go live", |s| s["phase"] == "live" && s["media"]["id"] == id.as_str()).await;
+    wait_for(&c, &host, "it to end", |s| s["phase"] == "ended").await;
+}
+
+#[tokio::test]
+async fn videos_can_go_through_the_media_server_and_viewers_never_see_how() {
+    let c = ctx(true);
+    let host = live_with_host(&c).await;
+    let attendee = c.attendee_path("p1").await;
+    c.enter(&attendee, "Ada", CLIENT).await;
+    let id = video(&c, &host).await;
+    let mut settings = c.snapshot(&host, CLIENT).await["state"]["settings"].clone();
+    assert_eq!(settings["streamVideos"], false, "off unless asked for");
+    settings["streamVideos"] = json!(true);
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"set_settings","settings":settings})).await.0, StatusCode::OK);
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"go_live_with_video","id":id,"duration":60.0,"endSession":true})).await.0, StatusCode::OK);
+    let state = c.snapshot(&host, CLIENT).await["state"].clone();
+    assert_eq!((state["phase"].as_str(), state["media"]["streamed"].as_bool(), state["media"]["ingress"].as_str()), (Some("live"), Some(true), Some("IN_VIDEO")));
+    let identity = state["media"]["identity"].as_str().unwrap().to_string();
+    assert!(identity.starts_with("host-v-"));
+    let seen = c.snapshot(&attendee, CLIENT).await["state"]["media"].clone();
+    assert_eq!(seen["streamed"], true);
+    assert!(seen.get("ingress").is_none() && seen.get("identity").is_none(), "{seen}");
+    // The media server fetches the file on a signed link, which plays it and nothing else.
+    let call = c.fake.calls.lock().unwrap().iter().find(|x| x.starts_with("video:")).cloned().unwrap();
+    let url = call.splitn(4, ':').nth(3).unwrap().to_string();
+    let (status, headers, bytes) = c.fetch(&path_of(&url)).await;
+    assert_eq!((status, bytes.as_slice()), (StatusCode::OK, MP4));
+    assert_eq!(headers[header::CONTENT_TYPE], "video/mp4");
+    let forged = path_of(&url).replace("/files/", "/files/x");
+    assert_eq!(c.fetch(&forged).await.0, StatusCode::NOT_FOUND);
+    // On the stage it may publish, though it's nobody on the stage: the room mustn't put it out.
+    for event in ["participant_joined", "track_published"] {
+        let hook = json!({"id": format!("v-{event}"), "event": event, "createdAt": 4, "room": {"name": ROOM}, "participant": {"identity": identity, "sid": "PA_v", "kind": 0}, "track": {"sid": "TR_v", "type": 1}});
+        assert_eq!(c.webhook(hook).await, StatusCode::OK);
+    }
+    let calls = c.fake.calls.lock().unwrap().clone();
+    assert!(!calls.iter().any(|x| x.contains(&identity) && (x.starts_with("publish:") || x.starts_with("remove:"))), "{calls:?}");
+    // It can't be paused, and when its stream leaves the room it's over: here, the session too.
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"media_control","playing":false,"position":1.0})).await.1["error"], "video_streamed");
+    let left = json!({"id":"v1","event":"participant_left","createdAt":5,"room":{"name":ROOM},"participant":{"identity":identity,"sid":"PA_v","kind":1}});
+    assert_eq!(c.webhook(left).await, StatusCode::OK);
+    let state = c.snapshot(&host, CLIENT).await["state"].clone();
+    assert_eq!((state["phase"].as_str(), state["media"].is_null()), (Some("ended"), true));
+    assert!(c.fake.calls.lock().unwrap().contains(&"unplug:IN_VIDEO".to_string()));
+}
+
+#[tokio::test]
+async fn a_video_the_media_server_cant_take_plays_in_browsers_and_one_it_cant_play_comes_off() {
+    let c = ctx(true);
+    let host = live_with_host(&c).await;
+    let id = video(&c, &host).await;
+    let mut settings = c.snapshot(&host, CLIENT).await["state"]["settings"].clone();
+    settings["streamVideos"] = json!(true);
+    c.act(&host, CLIENT, json!({"type":"set_settings","settings":settings})).await;
+    *c.fake.fail_video.lock().unwrap() = true;
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"media_play","id":id,"duration":30.0})).await.0, StatusCode::OK);
+    assert_eq!(c.snapshot(&host, CLIENT).await["state"]["media"]["streamed"], false, "the show goes on in browsers");
+    *c.fake.fail_video.lock().unwrap() = false;
+    c.act(&host, CLIENT, json!({"type":"media_play","id":id,"duration":30.0})).await;
+    let identity = c.snapshot(&host, CLIENT).await["state"]["media"]["identity"].as_str().unwrap().to_string();
+    let ended = json!({"id":"i1","event":"ingress_ended","createdAt":5,"ingressInfo":{"ingressId":"IN_VIDEO","roomName":ROOM,"participantIdentity":identity,"state":{"status":4,"error":"could not fetch"}}});
+    assert_eq!(c.webhook(ended).await, StatusCode::OK);
+    let state = c.snapshot(&host, CLIENT).await["state"].clone();
+    assert_eq!((state["media"].is_null(), state["phase"].as_str()), (true, Some("not_live")));
+    // Stopping one by hand stops its stream.
+    c.act(&host, CLIENT, json!({"type":"media_play","id":id,"duration":30.0})).await;
+    c.fake.calls.lock().unwrap().clear();
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"media_stop"})).await.0, StatusCode::OK);
+    assert!(c.fake.calls.lock().unwrap().contains(&"unplug:IN_VIDEO".to_string()));
+}
+
+// ---- uploads in pieces
+
+impl Ctx {
+    async fn piece(&self, path: &str, id: &str, offset: u64, bytes: &[u8]) -> (StatusCode, Value) {
+        let req = Request::put(format!("{path}/uploads/{id}?offset={offset}")).body(Body::from(bytes.to_vec())).unwrap();
+        let res = self.app.clone().oneshot(req).await.unwrap();
+        let status = res.status();
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+}
+
+#[tokio::test]
+async fn big_files_upload_in_pieces_and_carry_on_where_they_stopped() {
+    let c = ctx(true);
+    let host = live_with_host(&c).await;
+    let producer = c.member("producer", "Pat").await;
+    c.enter(&producer, "Pat", CLIENT).await;
+    let attendee = c.attendee_path("p1").await;
+    let start = |size: u64, kind: &str| json!({"kind": kind, "name": "session.mp4", "size": size});
+    assert_eq!(c.call("POST", &format!("{attendee}/uploads"), None, Some(start(10, "media"))).await.0, StatusCode::FORBIDDEN);
+    // Videos have their own, larger limit (4 MB here; 1 MB for other files).
+    assert_eq!(c.call("POST", &format!("{host}/uploads"), None, Some(start(5 * 1024 * 1024, "media"))).await.1["error"], "file_too_large");
+    assert_eq!(c.call("POST", &format!("{host}/uploads"), None, Some(start(2 * 1024 * 1024, "resource"))).await.1["error"], "file_too_large");
+    assert_eq!(c.call("POST", &format!("{host}/uploads"), None, Some(start(10, "nonsense"))).await.0, StatusCode::BAD_REQUEST);
+    let mut file = MP4.to_vec();
+    file.extend(std::iter::repeat_n(7u8, 2 * 1024 * 1024));
+    let (status, up, _) = c.call("POST", &format!("{host}/uploads"), None, Some(start(file.len() as u64, "media"))).await;
+    assert_eq!(status, StatusCode::OK, "{up}");
+    let id = up["id"].as_str().unwrap().to_string();
+    let half = file.len() / 2;
+    assert_eq!(c.piece(&host, &id, 0, &file[..half]).await.1["received"], half);
+    // A piece sent twice, or out of place, is refused with where it got to.
+    let (status, body) = c.piece(&host, &id, 0, &file[..half]).await;
+    assert_eq!((status, body["received"].as_u64()), (StatusCode::CONFLICT, Some(half as u64)));
+    assert_eq!(c.piece(&host, &id, half as u64 + 5, &file[half..]).await.0, StatusCode::CONFLICT);
+    // Someone else can't see it or add to it.
+    assert_eq!(c.call("GET", &format!("{producer}/uploads/{id}"), None, None).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(c.piece(&producer, &id, half as u64, &file[half..]).await.0, StatusCode::NOT_FOUND);
+    // After a reload: ask where it got to, and finish.
+    assert_eq!(c.call("GET", &format!("{host}/uploads/{id}"), None, None).await.1["received"], half);
+    assert_eq!(c.piece(&host, &id, half as u64, &[file[half..].to_vec(), vec![1]].concat()).await.0, StatusCode::BAD_REQUEST, "never past its size");
+    let (status, done) = c.piece(&host, &id, half as u64, &file[half..]).await;
+    assert_eq!((status, done["done"].as_bool(), done["file"]["kind"].as_str()), (StatusCode::OK, Some(true), Some("media")), "{done}");
+    assert_eq!(done["file"]["size"], file.len());
+    let (status, _, bytes) = c.fetch(&format!("{host}/files/{id}?c={CLIENT}")).await;
+    assert_eq!((status, bytes.len()), (StatusCode::OK, file.len()));
+    assert_eq!(c.call("GET", &format!("{host}/uploads/{id}"), None, None).await.0, StatusCode::NOT_FOUND, "finished, it's gone");
+    // Not a video after all: refused at the end. And one given up on goes away.
+    let (_, up, _) = c.call("POST", &format!("{host}/uploads"), None, Some(start(20, "media"))).await;
+    let bad = up["id"].as_str().unwrap().to_string();
+    assert_eq!(c.piece(&host, &bad, 0, &[9u8; 20]).await.0, StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    let (_, up, _) = c.call("POST", &format!("{host}/uploads"), None, Some(start(20, "media"))).await;
+    let gone = up["id"].as_str().unwrap().to_string();
+    assert_eq!(c.call("DELETE", &format!("{host}/uploads/{gone}"), None, None).await.0, StatusCode::OK);
+    assert_eq!(c.piece(&host, &gone, 0, MP4).await.0, StatusCode::NOT_FOUND);
 }

@@ -176,6 +176,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/join/{ticket}/share-token", post(studio::share_token))
         .route("/join/{ticket}/files", put(studio::upload).layer(DefaultBodyLimit::disable()))
         .route("/join/{ticket}/files/{id}", get(studio::download))
+        .route("/join/{ticket}/uploads", post(studio::upload_start))
+        .route(
+            "/join/{ticket}/uploads/{id}",
+            get(studio::upload_status).put(studio::upload_piece).delete(studio::upload_cancel).layer(DefaultBodyLimit::max(studio::UPLOAD_PIECE_BYTES + 4096)),
+        )
         .route("/join/{ticket}/files/{id}/pages/{page}", get(studio::deck_page))
         .route("/join/{ticket}/local/{id}/{seq}", put(studio::local_chunk).layer(DefaultBodyLimit::disable()))
         .route("/join/{ticket}/local/{id}", get(studio::local_download))
@@ -643,6 +648,22 @@ async fn livekit_webhook(State(state): State<Arc<AppState>>, headers: HeaderMap,
         if let (Some(p), Some(room)) = (event.participant.as_ref().filter(|p| p.identity.starts_with("host-i-")), event.room.as_ref().map(|r| r.name.clone())) {
             if state.store.room(&room)?.is_some() {
                 studio::encoder_presence(&state, &room, &p.identity, &p.name, event.event == "participant_joined")?;
+            }
+        }
+    }
+    // A video streamed through the media server played to its end, or couldn't play.
+    if matches!(event.event.as_str(), "participant_left" | "participant_connection_aborted") {
+        if let (Some(p), Some(room)) = (event.participant.as_ref().filter(|p| p.identity.starts_with("host-v-")), event.room.as_ref().map(|r| r.name.clone())) {
+            if state.store.room(&room)?.is_some() {
+                studio::video_stream_stopped(&state, &room, &p.identity, "", "").await?;
+            }
+        }
+    }
+    if event.event == "ingress_ended" {
+        if let Some(info) = event.ingress_info.as_ref().filter(|i| i.participant_identity.starts_with("host-v-")) {
+            let error = info.state.as_ref().map(|s| s.error.clone()).unwrap_or_default();
+            if state.store.room(&info.room_name)?.is_some() {
+                studio::video_stream_stopped(&state, &info.room_name, &info.participant_identity, &info.ingress_id, &error).await?;
             }
         }
     }

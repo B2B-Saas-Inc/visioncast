@@ -580,6 +580,14 @@ impl Store {
         Ok(rows)
     }
 
+    /// Like [`Store::docs`], with each one's ID.
+    pub fn doc_rows(&self, room: &str, kind: &str, limit: i64) -> rusqlite::Result<Vec<(String, String)>> {
+        let db = self.db();
+        let mut stmt = db.prepare("SELECT id, json FROM studio_docs WHERE room=?1 AND kind=?2 ORDER BY seq DESC LIMIT ?3")?;
+        let rows = stmt.query_map(params![room, kind, limit], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect()
+    }
+
     /// Records a vote. False when this person already voted, unless `replace`.
     pub fn vote(&self, room: &str, target: &str, identity: &str, choice: i64) -> rusqlite::Result<bool> {
         let changed = self.db().execute(

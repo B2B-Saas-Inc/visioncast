@@ -2870,6 +2870,7 @@ dependencies = [
  "futures-util",
  "hmac",
  "http-body-util",
+ "libc",
  "livekit-api",
  "livekit-protocol",
  "rand 0.9.5",
