@@ -377,6 +377,8 @@ pub async fn delete_room_files(app: &AppState, room: &str) -> Result<usize, Stri
     let mut next: Option<String> = None;
     loop {
         let mut list = bucket.list_objects_v2(Some(&credentials));
+        // Plain keys: asked for URL-encoded ones, DigitalOcean Spaces encodes the slashes too.
+        list.query_mut().remove("encoding-type");
         list.with_prefix(prefix.as_str());
         if let Some(token) = next.as_deref() {
             list.with_continuation_token(token.to_string());
@@ -386,8 +388,8 @@ pub async fn delete_room_files(app: &AppState, room: &str) -> Result<usize, Stri
             return Err(format!("list: http {}", res.status()));
         }
         let page = rusty_s3::actions::ListObjectsV2::parse_response(&res.text().await.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-        for object in page.contents.iter().filter(|o| o.key.starts_with(&prefix)) {
-            let res = app.http.delete(bucket.delete_object(Some(&credentials), &object.key).sign(signed(300))).send().await.map_err(|e| e.to_string())?;
+        for key in page.contents.iter().map(|o| percent_decoded(&o.key)).filter(|k| k.starts_with(&prefix)) {
+            let res = app.http.delete(bucket.delete_object(Some(&credentials), &key).sign(signed(300))).send().await.map_err(|e| e.to_string())?;
             if !res.status().is_success() && res.status() != StatusCode::NOT_FOUND {
                 return Err(format!("delete: http {}", res.status()));
             }
@@ -398,6 +400,24 @@ pub async fn delete_room_files(app: &AppState, room: &str) -> Result<usize, Stri
             _ => return Ok(deleted),
         }
     }
+}
+
+/// A key as stored, from one a bucket may have sent URL-encoded anyway. Ours never contain `%`.
+fn percent_decoded(key: &str) -> String {
+    let bytes = key.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() && bytes[i + 1].is_ascii_hexdigit() && bytes[i + 2].is_ascii_hexdigit() {
+            let hex = |b: u8| (b as char).to_digit(16).unwrap_or(0) as u8;
+            out.push(hex(bytes[i + 1]) * 16 + hex(bytes[i + 2]));
+            i += 3;
+            continue;
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| key.to_string())
 }
 
 async fn put_file(app: &AppState, room: &str, rec: &crate::studio::LocalRecording, key: &str) -> Result<(), String> {
@@ -466,6 +486,14 @@ mod tests {
         let forged = format!("{}.{mac}", URL_SAFE_NO_PAD.encode("room|b|recordings/other/x.mp4|9"));
         assert_ne!(payload, forged.split_once('.').unwrap().0);
         assert_eq!(open_token("k", "file", &forged), None);
+    }
+
+    #[test]
+    fn bucket_keys_are_decoded_when_sent_encoded() {
+        assert_eq!(percent_decoded("recordings%2Fvc-a%2Fspeakers%2Fx-maya.mp4"), "recordings/vc-a/speakers/x-maya.mp4");
+        assert_eq!(percent_decoded("recordings/vc-a/b.mp4"), "recordings/vc-a/b.mp4");
+        assert_eq!(percent_decoded("odd%2"), "odd%2");
+        assert_eq!(percent_decoded("odd%zz"), "odd%zz");
     }
 
     #[test]
