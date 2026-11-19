@@ -2,6 +2,11 @@
 
 Test evidence, newest first. Implemented with Claude Code orchestrators and bounded subagents, independent review and corrective work. Public demonstration deployed; not production certification. No live payment/provider sends or registry publication.
 
+## Live server: production check of 0.4.19-pre, and room actions that finish when a browser goes away — 2026-11-19
+
+- Production (`v0.4.19-pre`, throwaway session with automatic recording, browser-played video): **Go live with it** went live 1.6 s after the press and started the video 5.6 s after it, once the recorder was running; the session ended with the video. In the recording, the first quarter-second sample with the video shows its timecode at 00:00:00.200 (frame 6), against about 2 s missed before. A CDN link (test-videos.co.uk, 10 s 1080p MP4) then played in the attendee's browser straight from that host, 1920x1080, through the room page's new `media-src https:`.
+- Found there: the test browser closed right after pressing **End**. The service had asked LiveKit to stop the recording, but the request was cancelled before the session was marked ended (LiveKit: `StopEgress ... request canceled`), so the session stayed live with no recording. Fixed: each room action now runs on its own task, so it finishes whatever happens to the browser that asked. Test: `ending_finishes_even_if_the_browser_goes_away_halfway` (a recorder stop that takes 300 ms, a client that gives up after 50 ms; the session ends and the recording is off); it fails without the fix. Live suite: 90 HTTP and 21 unit tests pass; no new clippy warnings. The session was then ended and deleted with its recording; nothing was left in the bucket.
+
 ## Live server: videos by link, and the recorder before the video — 2026-11-19
 
 - Recorder first: **Go live with it** and scheduled simulive now go live, then, if that started a recording, wait until LiveKit reports the recorder active (`egress_updated` ACTIVE, at most 20 s, then 0.5 s for its page to catch up), and only then start the video. Before, the video started first and the recording missed its first ~2 s (0.4.17-pre production test). Test: `a_video_started_with_the_session_waits_for_the_recorder` (live, recording starting, no video yet; the ACTIVE webhook arrives; then the video).
