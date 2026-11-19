@@ -176,7 +176,7 @@ These are estimates for planning, not measurements on a server. They scale LiveK
 * **Budget 5.5 GB per hour for the main recording,** at 12 Mbps. It reaches the bucket when it stops, so a crash during a long session can lose it.
 * **Speakers' own recordings go to the server's disk as they're made, then to the bucket,** at 10 Mbps, which is 4.5 GB per speaker-hour (a screen, 2.7 GB an hour). A file holds 8 GB, so a new one starts about every 1 hour 45 minutes, and a room holds 100 GB, about 22 speaker-hours. With this on, a speaker needs about 18 Mbps of steady upload, and encoding twice is hard on older laptops. If their connection can't keep up, their own copy loses a part, and the main recording isn't affected.
 * **Videos on the stage cost bandwidth or CPU.** Played by browsers, this server sends the whole file to each viewer: a 6 Mbps video to 100 people is 600 Mbps for as long as it plays. Through the media server, it's fetched once and sent like a camera, so it fits the table above, and transcoding it takes about two CPU cores while it plays. A video played from a CDN link costs this server nothing in browsers; the CDN serves it.
-* **Uploaded videos take disk.** Up to `LIVE_MAX_VIDEO_MB` each (8 GB by default), kept with the room until it's purged or deleted. An upload that wouldn't leave 2 GB free is refused. The nightly backup includes them.
+* **Uploaded videos take disk.** Up to `LIVE_MAX_VIDEO_MB` each (8 GB by default), kept with the room until it's purged or deleted. An upload that wouldn't leave 2 GB free is refused. They aren't in backups: you have the original.
 * **Size is checked for you, up to a point.** The room warns below 8 CPUs. It doesn't know how many people are coming, so run `size-check.sh` for that.
 * **Set the session's end time honestly.** Nobody new can enter more than 4 hours after the scheduled end, and an empty room closes after 30 minutes.
 * **The longest automated session so far is a few minutes.** Rehearse the length you plan to run.
@@ -276,7 +276,7 @@ The script writes new secrets to `deploy/live/.env`, without printing them, down
 
 **Updating.** On the server, from the checkout: `deploy/live/update.sh v0.4.20-pre` (any release tag). A release can also change `deploy/live/compose.yaml`, like the ingress image; the update applies that too. It refuses to run over local code changes, takes a backup first when backups are set up, checks out the tag, rebuilds the images, restarts what changed and waits for `/healthz`. `.env`, the data volumes and the captions model are kept. It ends by printing the command that goes back to the previous tag. Rooms in progress drop for the restart, so update between sessions.
 
-**Backups.** `deploy/live/backup.sh` makes one encrypted file of the database (rooms, crew, accounts, settings, engagement), uploads (slides, graphics, videos, the brand) and speakers' local recordings, using a consistent copy of the database while the service runs. Recordings already sent to a bucket aren't included. Set it up once, as root:
+**Backups.** `deploy/live/backup.sh` keeps each file once. Every run saves an encrypted copy of the database (rooms, crew, accounts, settings, engagement), taken consistently while the service runs, and a list of the files on the data volume. The files themselves (slides, graphics, the brand, fonts, and speakers' own recordings that haven't reached the bucket) are stored once each, encrypted, by their contents: one that hasn't changed isn't stored again however many nights it stays, and one that changes is stored once more. Left out, because each already has its one copy elsewhere: videos uploaded for the stage (you have the original), uploads still in progress, speakers' recordings already in the bucket, and the main recordings. Set it up once, as root:
 
 ```bash
 apt-get install -y age sqlite3
@@ -284,7 +284,9 @@ echo 'LIVE_BACKUP_AGE_RECIPIENT=age1...' >> deploy/live/.env   # a public key; k
 echo '30 2 * * * root /opt/visioncast/deploy/live/backup.sh >> /var/log/visioncast-live-backup.log 2>&1' > /etc/cron.d/visioncast-live
 ```
 
-Everything in the data volume goes in, so uploaded videos (up to 8 GB each) make each backup that much bigger; delete the ones you're done with, or lower `LIVE_BACKUP_KEEP_DAYS`. Files go to `/var/backups/visioncast-live` (`LIVE_BACKUP_DIR`) and are kept 14 days (`LIVE_BACKUP_KEEP_DAYS`). They're on the same server, so copy them somewhere else, or use your provider's server backups as well. To restore, stop the stack, then `age -d -i <identity> live-<time>.tar.age | tar -x -C <the live-data volume>`, and start it again.
+Backups go to `/var/backups/visioncast-live` (`LIVE_BACKUP_DIR`): `db/` has the database from each run, `lists/` what each run listed, and `files/` each file once, named by its contents' hash. Each run's database and list are kept 14 days (`LIVE_BACKUP_KEEP_DAYS`), and the newest is always kept; a file goes when no kept run lists it. `update.sh` makes one before each update. They're on the same server, so copy the folder somewhere else (`rsync` only sends what's new), or use your provider's server backups as well.
+
+To restore, stop the service (`docker compose stop live` in `deploy/live`), run `deploy/live/restore.sh <age identity file> [time]` (the newest run unless you name one), and start it again. It checks every file the run lists is there before changing anything. Stage videos need uploading again. Backups made before 0.4.21-pre are single `live-<time>.tar.age` archives: restore those with `age -d -i <identity> live-<time>.tar.age | tar -x -C <the live-data volume>`. They age out after 14 days.
 
 ## Service API
 
@@ -371,6 +373,7 @@ E2E_SUITE=browsers live/tests/e2e/run.sh  # Firefox, Safari's engine and phone s
 E2E_SUITE=attack LIVE_RTMP_ALLOW_PRIVATE=0 live/tests/e2e/run.sh  # attacks on the running stack, as a hostile user
 live/tests/e2e/run-visioncast.sh          # the same stack through VisionCast's real waiting room and import
 live/tests/load/run.sh                    # how much one machine takes
+live/tests/backup/run.sh                  # backup.sh and restore.sh, in a Debian container
 python3 live/tests/captions/accuracy.py   # word error rate on recordings of real voices
 node live/tests/turn/check.cjs            # media forced through TURN over TLS, against a real server
 ```
