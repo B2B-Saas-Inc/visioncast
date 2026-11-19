@@ -331,3 +331,5 @@ body.in-breakout .stage-wrap, body.in-breakout #layouts, body.in-breakout #my-co
 .green-go p { margin: 0 0 0.4rem; }
 .upload-progress { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.35rem; }
 .upload-progress:empty { display: none; }
+.media-link { display: flex; gap: 0.4rem; margin: 0.35rem 0 0.6rem; }
+.media-link input { flex: 1; }

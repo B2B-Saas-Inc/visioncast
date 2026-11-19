@@ -155,7 +155,7 @@ fn valid_url(url: &str) -> bool {
     url.len() <= 2000 && host_of(url).is_some() && !url.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
-fn is_private(ip: IpAddr) -> bool {
+pub(crate) fn is_private(ip: IpAddr) -> bool {
     // An IPv4 address written as IPv6 is still that IPv4 address.
     if let IpAddr::V6(v) = ip {
         if let Some(mapped) = v.to_ipv4_mapped() {

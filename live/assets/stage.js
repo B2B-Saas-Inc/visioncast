@@ -160,7 +160,8 @@
       if (!mediaEl || mediaId !== m.id) {
         if (mediaEl) { mediaEl.remove(); }
         mediaEl = el("video");
-        mediaEl.src = options.fileUrl(m.id);
+        // A video added by its link plays from where it's hosted.
+        mediaEl.src = m.url || options.fileUrl(m.id);
         mediaEl.playsInline = true;
         mediaEl.preload = "auto";
         mediaEl.muted = muted;

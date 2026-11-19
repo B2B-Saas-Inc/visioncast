@@ -218,6 +218,9 @@ pub struct MediaPlay {
     pub ingress: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub identity: String,
+    /// Where browsers play it from, for a video added by its link. Otherwise this server.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub url: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -507,6 +510,9 @@ pub struct FileDoc {
     /// Speaker notes, one per page. The crew's only.
     #[serde(default)]
     pub notes: Vec<String>,
+    /// A video played from where it's already hosted (a CDN), rather than uploaded here.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub url: String,
 }
 
 fn doc<T: DeserializeOwned>(json: &str) -> Option<T> {
@@ -805,8 +811,9 @@ impl Hub {
                         sim.at_ms = now_ms;
                     }
                 })?;
-                start_media(app, self, &self.room, &file_id, duration, auto_end).await?;
                 go_live(app, self, &room).await?;
+                wait_for_recorder(app, &self.room).await;
+                start_media(app, self, &self.room, &file_id, duration, auto_end).await?;
                 return Ok(());
             }
         }
@@ -1308,6 +1315,12 @@ pub enum Action {
     },
     MediaControl { playing: bool, position: f64 },
     MediaStop,
+    /// Adds a video by its link, to be played from where it's hosted rather than uploaded.
+    MediaLinkAdd {
+        url: String,
+        #[serde(default)]
+        name: String,
+    },
     /// Goes live and plays a video, together: a recorded session, started from the green room.
     GoLiveWithVideo {
         id: String,
@@ -1665,8 +1678,24 @@ async fn apply(app: &Arc<AppState>, hub: &Arc<Hub>, me: &Me, action: Action) -> 
             if hub.state().phase != "not_live" {
                 return Err(ApiError(StatusCode::CONFLICT, "not_available"));
             }
-            start_media(app, hub, room, &id, duration, end_session).await?;
+            let file = app.store.get_doc(room, "file", &id)?.and_then(|j| doc::<FileDoc>(&j)).ok_or(NOT_FOUND)?;
+            if file.kind != "media" {
+                return Err(INVALID);
+            }
             go_live(app, hub, &me.room).await?;
+            // The recorder takes a moment to start: the video waits for it, so it's all in the recording.
+            wait_for_recorder(app, room).await;
+            start_media(app, hub, room, &id, duration, end_session).await?;
+        }
+        Action::MediaLinkAdd { url, name } => {
+            require(runs)?;
+            let url = check_video_link(app, url.trim()).await?;
+            let name = if name.trim().is_empty() { link_name(&url) } else { clean_filename(&name) };
+            let id = new_id();
+            let doc = FileDoc { id: id.clone(), kind: "media".into(), name, size: 0, public: false, downloads: 0, at: now(), mime: String::new(), status: String::new(), pages: 0, notes: vec![], url };
+            app.store.put_doc(room, "file", &id, &serde_json::to_string(&doc).unwrap_or_default())?;
+            hub.send_files(app)?;
+            return Ok(json!(doc));
         }
         Action::MediaControl { playing, position } => {
             require(runs)?;
@@ -2400,6 +2429,70 @@ async fn close_breakouts(app: &Arc<AppState>, hub: &Arc<Hub>, room: &str, state:
 /// ingress takes a few seconds to start, and normally says itself when it's done.
 const STREAM_SLACK_SECONDS: f64 = 20.0;
 
+/// How long a video started with the session waits for the recorder, at most.
+const RECORDER_WAIT: Duration = Duration::from_secs(20);
+
+/// If a recording is starting, waits until it's really recording (LiveKit says so in a webhook),
+/// so what starts next is in it from the first frame. Returns at once when nothing's starting.
+async fn wait_for_recorder(app: &AppState, room: &str) {
+    let deadline = tokio::time::Instant::now() + RECORDER_WAIT;
+    loop {
+        let Ok(rows) = app.store.recordings(room) else { return };
+        if rows.iter().any(|r| r.status == "active") {
+            // The recorder's page needs a moment to show what's now on stage.
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            return;
+        }
+        if !rows.iter().any(|r| r.status == "starting") {
+            return;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            tracing::warn!("the recorder didn't say it had started; playing the video anyway");
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+}
+
+fn is_hls(url: &str) -> bool {
+    url.split(['?', '#']).next().unwrap_or("").to_ascii_lowercase().ends_with(".m3u8")
+}
+
+/// A video link must be https, on a public address: the media server fetches it from inside the
+/// server's network, so it mustn't be able to reach anything private. Returns it as kept.
+async fn check_video_link(app: &AppState, url: &str) -> ApiResult<String> {
+    let bad = || ApiError(StatusCode::BAD_REQUEST, "invalid_video_link");
+    let parsed = reqwest::Url::parse(url).map_err(|_| bad())?;
+    let local = app.config.rtmp_allow_private;
+    if url.len() > 2000 || !(parsed.scheme() == "https" || (local && parsed.scheme() == "http")) || !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(bad());
+    }
+    let host = parsed.host_str().ok_or_else(bad)?.trim_start_matches('[').trim_end_matches(']').to_string();
+    if !local {
+        let public = match host.parse::<std::net::IpAddr>() {
+            Ok(ip) => !crate::broadcast::is_private(ip),
+            Err(_) => match tokio::net::lookup_host((host.as_str(), parsed.port_or_known_default().unwrap_or(443))).await {
+                Ok(found) => {
+                    let all: Vec<_> = found.collect();
+                    !all.is_empty() && all.iter().all(|a| !crate::broadcast::is_private(a.ip()))
+                }
+                Err(_) => false,
+            },
+        };
+        if !public {
+            return Err(ApiError(StatusCode::BAD_REQUEST, "video_link_not_public"));
+        }
+    }
+    Ok(parsed.to_string())
+}
+
+/// A name for a video added by link: the end of its path.
+fn link_name(url: &str) -> String {
+    let path = reqwest::Url::parse(url).map(|u| u.path().to_string()).unwrap_or_default();
+    let last = path.rsplit('/').find(|p| !p.is_empty()).unwrap_or("video");
+    clean_filename(last)
+}
+
 /// Puts a video on the stage, from the start. With the session's "send videos through the media
 /// server" on, LiveKit's ingress plays it into the room; if that can't start, every browser plays
 /// it instead and the crew is told, because the show must go on. Call with the show lock held.
@@ -2409,23 +2502,38 @@ async fn start_media(app: &Arc<AppState>, hub: &Arc<Hub>, room: &str, file_id: &
         return Err(INVALID);
     }
     let duration = if duration.is_finite() && duration > 0.0 && duration < 86_400.0 { duration } else { 0.0 };
+    // A link is checked again each time: where a name points can change.
+    if !file.url.is_empty() {
+        check_video_link(app, &file.url).await?;
+    }
     let state = hub.state();
+    let streaming = state.settings.stream_videos && app.config.video_ingress;
+    // Browsers can't all play HLS: a stream like that needs the media server.
+    if is_hls(&file.url) && !streaming {
+        return Err(ApiError(StatusCode::CONFLICT, "link_needs_media_server"));
+    }
     stop_media_stream(app, &state).await;
     let (mut ingress, mut identity) = (String::new(), String::new());
-    if state.settings.stream_videos && app.config.video_ingress {
+    if streaming {
         let who = format!("{}v-{}", app::HOST_PREFIX, new_id());
-        let url = crate::media::stage_video_link(app, room, file_id, duration);
+        let url = if file.url.is_empty() { crate::media::stage_video_link(app, room, file_id, duration) } else { file.url.clone() };
         match app.backend.create_video_ingress(room, &who, &file.name, &url).await {
             Ok(id) => (ingress, identity) = (id, who),
             Err(err) => {
                 tracing::warn!(error = %err.0, "could not stream a video through the media server");
+                if is_hls(&file.url) {
+                    // What was playing has been stopped for it: nothing's left on the stage.
+                    hub.change(app, |s| s.media = None)?;
+                    return Err(ApiError(StatusCode::BAD_GATEWAY, "video_stream_unavailable"));
+                }
                 hub.send(Audience::Crew, "video_notice", json!({ "text": "The video couldn't go through the media server, so everyone's browser is playing it instead." }));
             }
         }
     }
     let streamed = !ingress.is_empty();
     let at_ms = chrono::Utc::now().timestamp_millis();
-    hub.change(app, |s| s.media = Some(MediaPlay { id: file_id.to_string(), playing: true, position: 0.0, at_ms, duration, end_session, streamed, ingress, identity }))?;
+    let url = file.url.clone();
+    hub.change(app, |s| s.media = Some(MediaPlay { id: file_id.to_string(), playing: true, position: 0.0, at_ms, duration, end_session, streamed, ingress, identity, url }))?;
     Ok(())
 }
 
@@ -2973,7 +3081,7 @@ fn record_upload(app: &Arc<AppState>, room: &str, id: &str, kind: &str, name: St
         "banner" => banner_mime(head).unwrap_or_default().to_string(),
         _ => String::new(),
     };
-    let doc = FileDoc { id: id.to_string(), kind: kind.to_string(), name, size, public: false, downloads: 0, at: now(), mime, status: String::new(), pages: 0, notes: vec![] };
+    let doc = FileDoc { id: id.to_string(), kind: kind.to_string(), name, size, public: false, downloads: 0, at: now(), mime, status: String::new(), pages: 0, notes: vec![], url: String::new() };
     app.store.put_doc(room, "file", id, &serde_json::to_string(&doc).unwrap_or_default())?;
     app.hub(room)?.send_files(app)?;
     if doc.kind == "deck" {
@@ -3156,6 +3264,9 @@ pub async fn download(State(app): State<Arc<AppState>>, Path((ticket, id)): Path
     let (_, room) = check_ticket(&app, &ticket)?;
     let me = resolve(&app, &ticket)?;
     let mut f = app.store.get_doc(&room.id, "file", &id)?.and_then(|j| doc::<FileDoc>(&j)).ok_or(NOT_FOUND)?;
+    if !f.url.is_empty() {
+        return Err(NOT_FOUND);
+    }
     let state = app.hub(&room.id)?.state();
     let on_stage = [&state.frame_id, &state.background_id, &state.logo_id, &state.visual_id, &state.banner_id].iter().any(|s| s.as_deref() == Some(&id))
         || state.media.as_ref().is_some_and(|m| m.id == id)
