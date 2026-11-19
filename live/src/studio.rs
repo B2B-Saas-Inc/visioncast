@@ -121,6 +121,8 @@ pub struct Settings {
     pub qa_private: bool,
     /// Each person on stage also records their own camera and microphone, in full quality.
     pub local_recordings: bool,
+    /// Videos go out through the media server rather than from this server to each browser.
+    pub stream_videos: bool,
 }
 
 impl Default for Settings {
@@ -141,6 +143,7 @@ impl Default for Settings {
             captions_on_picture: false,
             qa_private: false,
             local_recordings: true,
+            stream_videos: false,
         }
     }
 }
@@ -191,8 +194,9 @@ pub struct Cta {
     pub url: String,
 }
 
-/// A video played on the stage. Every browser plays the file itself, which looks and sounds
-/// better than screen sharing it, and they stay in step with these numbers.
+/// A video played on the stage. Either every browser plays the file itself, in step with these
+/// numbers, which looks and sounds better than screen sharing it; or, for a large audience,
+/// LiveKit's ingress plays it into the room and everyone gets it the way they get cameras.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaPlay {
@@ -200,6 +204,20 @@ pub struct MediaPlay {
     pub playing: bool,
     pub position: f64,
     pub at_ms: i64,
+    /// Seconds, when known: the video comes off the stage when it's over.
+    #[serde(default)]
+    pub duration: f64,
+    /// The session ends when the video does.
+    #[serde(default)]
+    pub end_session: bool,
+    /// Sent through the media server, so it can't be paused.
+    #[serde(default)]
+    pub streamed: bool,
+    /// The ingress playing it, and who it plays as. Never sent to viewers.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub ingress: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub identity: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -367,6 +385,10 @@ fn for_viewers(mut value: Value) -> Value {
     if let Some(map) = value.as_object_mut() {
         map.remove("simulive");
         map.remove("savedLayouts");
+        if let Some(media) = map.get_mut("media").and_then(Value::as_object_mut) {
+            media.remove("ingress");
+            media.remove("identity");
+        }
         if map.get("phase").and_then(Value::as_str) != Some("ended") {
             map.remove("survey");
         }
@@ -384,6 +406,9 @@ fn state_json(app: &AppState, state: &StudioState) -> Value {
     value["translateLanguages"] = json!(app.config.translate_languages);
     value["slidesAvailable"] = json!(app.config.slides_dir.is_some());
     value["ingressAvailable"] = json!(app.config.ingress_url.is_some());
+    value["videoStreamingAvailable"] = json!(app.config.video_ingress);
+    value["maxVideoBytes"] = json!(app.config.max_video_bytes);
+    value["maxUploadBytes"] = json!(app.config.max_upload_bytes);
     value
 }
 
@@ -595,6 +620,8 @@ pub struct Hub {
     pub show_lock: tokio::sync::Mutex<()>,
     /// One chunk at a time for each speaker's own recording.
     local_lock: tokio::sync::Mutex<()>,
+    /// One piece at a time of the files being uploaded in pieces.
+    upload_lock: tokio::sync::Mutex<()>,
 }
 
 impl AppState {
@@ -605,7 +632,7 @@ impl AppState {
         }
         let state = self.store.studio_state(room)?.and_then(|s| doc(&s)).unwrap_or_default();
         let (tx, _) = broadcast::channel(2048);
-        let hub = Arc::new(Hub { room: room.to_string(), tx, state: Mutex::new(state), people: Default::default(), dirty: Default::default(), captioning: Default::default(), caption_languages: Default::default(), show_lock: Default::default(), local_lock: Default::default() });
+        let hub = Arc::new(Hub { room: room.to_string(), tx, state: Mutex::new(state), people: Default::default(), dirty: Default::default(), captioning: Default::default(), caption_languages: Default::default(), show_lock: Default::default(), local_lock: Default::default(), upload_lock: Default::default() });
         hubs.insert(room.to_string(), hub.clone());
         // Votes and presence change far faster than anyone needs to see: send them once a second.
         // A room nobody's in goes away after a while, and comes back from what's saved when asked for.
@@ -771,18 +798,24 @@ impl Hub {
         if let Some(sim) = &state.simulive {
             if !sim.started && state.phase == "not_live" && now_ms >= sim.at_ms {
                 let room = app.store.room(&self.room)?.ok_or(NOT_FOUND)?;
-                let at_ms = now_ms;
-                let file_id = sim.file_id.clone();
+                let (file_id, duration, auto_end) = (sim.file_id.clone(), sim.duration, sim.auto_end);
                 self.change(app, |s| {
                     if let Some(sim) = s.simulive.as_mut() {
                         sim.started = true;
-                        sim.at_ms = at_ms;
+                        sim.at_ms = now_ms;
                     }
-                    s.media = Some(MediaPlay { id: file_id, playing: true, position: 0.0, at_ms });
                 })?;
+                start_media(app, self, &self.room, &file_id, duration, auto_end).await?;
                 go_live(app, self, &room).await?;
-            } else if sim.started && sim.auto_end && state.phase == "live" && now_ms as f64 >= sim.at_ms as f64 + sim.duration * 1000.0 {
-                end_session(app, self, &self.room).await?;
+                return Ok(());
+            }
+        }
+        // A video that's over comes off the stage, or ends the session if it was meant to.
+        // A streamed one is normally ended by LiveKit saying it's done; this is the backstop.
+        if let Some(m) = state.media.as_ref().filter(|m| m.playing && m.duration > 0.0) {
+            let position = m.position + (now_ms - m.at_ms) as f64 / 1000.0;
+            if position >= m.duration + if m.streamed { STREAM_SLACK_SECONDS } else { 1.0 } {
+                finish_media(app, self, &self.room, &m.id).await?;
             }
         }
         if state.phase == "live" {
@@ -1268,9 +1301,21 @@ pub enum Action {
     SetTicker { text: Option<String> },
     SetCta { title: Option<String>, subtitle: Option<String>, label: Option<String>, url: Option<String> },
     SetSettings { settings: Settings },
-    MediaPlay { id: String },
+    MediaPlay {
+        id: String,
+        #[serde(default)]
+        duration: f64,
+    },
     MediaControl { playing: bool, position: f64 },
     MediaStop,
+    /// Goes live and plays a video, together: a recorded session, started from the green room.
+    GoLiveWithVideo {
+        id: String,
+        #[serde(default)]
+        duration: f64,
+        #[serde(default)]
+        end_session: bool,
+    },
     ChatSend { text: String, channel: String },
     ChatDelete { id: String },
     ChatApprove { id: String },
@@ -1609,19 +1654,27 @@ async fn apply(app: &Arc<AppState>, hub: &Arc<Hub>, me: &Me, action: Action) -> 
             hub.change(app, |s| s.settings = settings)?;
             crate::captions::sync(app, room).await;
         }
-        Action::MediaPlay { id } => {
+        Action::MediaPlay { id, duration } => {
             require(runs)?;
-            let file = app.store.get_doc(room, "file", &id)?.and_then(|j| doc::<FileDoc>(&j)).ok_or(NOT_FOUND)?;
-            if file.kind != "media" {
-                return Err(INVALID);
+            let _show = hub.show_lock.lock().await;
+            start_media(app, hub, room, &id, duration, false).await?;
+        }
+        Action::GoLiveWithVideo { id, duration, end_session } => {
+            require(may_go_live(me.role, &state.settings))?;
+            let _show = hub.show_lock.lock().await;
+            if hub.state().phase != "not_live" {
+                return Err(ApiError(StatusCode::CONFLICT, "not_available"));
             }
-            let at_ms = chrono::Utc::now().timestamp_millis();
-            hub.change(app, |s| s.media = Some(MediaPlay { id, playing: true, position: 0.0, at_ms }))?;
+            start_media(app, hub, room, &id, duration, end_session).await?;
+            go_live(app, hub, &me.room).await?;
         }
         Action::MediaControl { playing, position } => {
             require(runs)?;
             if !position.is_finite() || position < 0.0 {
                 return Err(INVALID);
+            }
+            if state.media.as_ref().is_some_and(|m| m.streamed) {
+                return Err(ApiError(StatusCode::CONFLICT, "video_streamed"));
             }
             let at_ms = chrono::Utc::now().timestamp_millis();
             hub.change(app, |s| {
@@ -1634,6 +1687,8 @@ async fn apply(app: &Arc<AppState>, hub: &Arc<Hub>, me: &Me, action: Action) -> 
         }
         Action::MediaStop => {
             require(runs)?;
+            let _show = hub.show_lock.lock().await;
+            stop_media_stream(app, &hub.state()).await;
             hub.change(app, |s| s.media = None)?;
         }
 
@@ -1906,6 +1961,9 @@ async fn apply(app: &Arc<AppState>, hub: &Arc<Hub>, me: &Me, action: Action) -> 
             let file = app.store.get_doc(room, "file", &id)?.and_then(|j| doc::<FileDoc>(&j)).ok_or(NOT_FOUND)?;
             if !ticket_safe(&id) {
                 return Err(INVALID);
+            }
+            if state.media.as_ref().is_some_and(|m| m.id == id) {
+                stop_media_stream(app, &state).await;
             }
             app.store.del_doc(room, "file", &id)?;
             let _ = tokio::fs::remove_file(file_path(app, room, &id)).await;
@@ -2338,6 +2396,84 @@ async fn close_breakouts(app: &Arc<AppState>, hub: &Arc<Hub>, room: &str, state:
 }
 
 /// Everyone sees the session go live; broadcasts, captions and any automatic recording follow.
+/// How long past its end a streamed video may run before it's taken off regardless: LiveKit's
+/// ingress takes a few seconds to start, and normally says itself when it's done.
+const STREAM_SLACK_SECONDS: f64 = 20.0;
+
+/// Puts a video on the stage, from the start. With the session's "send videos through the media
+/// server" on, LiveKit's ingress plays it into the room; if that can't start, every browser plays
+/// it instead and the crew is told, because the show must go on. Call with the show lock held.
+async fn start_media(app: &Arc<AppState>, hub: &Arc<Hub>, room: &str, file_id: &str, duration: f64, end_session: bool) -> ApiResult<()> {
+    let file = app.store.get_doc(room, "file", file_id)?.and_then(|j| doc::<FileDoc>(&j)).ok_or(NOT_FOUND)?;
+    if file.kind != "media" || !ticket_safe(file_id) {
+        return Err(INVALID);
+    }
+    let duration = if duration.is_finite() && duration > 0.0 && duration < 86_400.0 { duration } else { 0.0 };
+    let state = hub.state();
+    stop_media_stream(app, &state).await;
+    let (mut ingress, mut identity) = (String::new(), String::new());
+    if state.settings.stream_videos && app.config.video_ingress {
+        let who = format!("{}v-{}", app::HOST_PREFIX, new_id());
+        let url = crate::media::stage_video_link(app, room, file_id, duration);
+        match app.backend.create_video_ingress(room, &who, &file.name, &url).await {
+            Ok(id) => (ingress, identity) = (id, who),
+            Err(err) => {
+                tracing::warn!(error = %err.0, "could not stream a video through the media server");
+                hub.send(Audience::Crew, "video_notice", json!({ "text": "The video couldn't go through the media server, so everyone's browser is playing it instead." }));
+            }
+        }
+    }
+    let streamed = !ingress.is_empty();
+    let at_ms = chrono::Utc::now().timestamp_millis();
+    hub.change(app, |s| s.media = Some(MediaPlay { id: file_id.to_string(), playing: true, position: 0.0, at_ms, duration, end_session, streamed, ingress, identity }))?;
+    Ok(())
+}
+
+/// Stops the ingress of a streamed video, if there is one. The state is left to the caller.
+async fn stop_media_stream(app: &AppState, state: &StudioState) {
+    if let Some(m) = state.media.as_ref().filter(|m| !m.ingress.is_empty()) {
+        if let Err(err) = app.backend.delete_ingress(&m.ingress).await {
+            tracing::warn!(error = %err.0, "could not stop a streamed video");
+        }
+    }
+}
+
+/// A video on the stage is over: off the stage it comes, or the session ends if it was meant to.
+/// Call with the show lock held.
+async fn finish_media(app: &Arc<AppState>, hub: &Arc<Hub>, room: &str, file_id: &str) -> ApiResult<()> {
+    let state = hub.state();
+    let Some(m) = state.media.as_ref().filter(|m| m.id == file_id) else { return Ok(()) };
+    if m.end_session && state.phase == "live" {
+        return end_session(app, hub, room).await;
+    }
+    stop_media_stream(app, &state).await;
+    hub.change(app, |s| {
+        if s.media.as_ref().is_some_and(|m| m.id == file_id) {
+            s.media = None;
+        }
+    })?;
+    Ok(())
+}
+
+/// LiveKit says a streamed video's ingress stopped: it played to the end, or it couldn't play.
+pub async fn video_stream_stopped(app: &Arc<AppState>, room: &str, identity: &str, ingress: &str, error: &str) -> ApiResult<()> {
+    let hub = app.hub(room)?;
+    let _show = hub.show_lock.lock().await;
+    let state = hub.state();
+    let Some(m) = state.media.as_ref().filter(|m| m.streamed && ((!identity.is_empty() && m.identity == identity) || (!ingress.is_empty() && m.ingress == ingress))) else {
+        return Ok(());
+    };
+    if !error.is_empty() {
+        tracing::warn!(error, "a streamed video stopped with an error");
+        hub.send(Audience::Crew, "video_notice", json!({ "text": "The video stopped: the media server couldn't play it." }));
+        stop_media_stream(app, &state).await;
+        hub.change(app, |s| s.media = None)?;
+        return Ok(());
+    }
+    let id = m.id.clone();
+    finish_media(app, &hub, room, &id).await
+}
+
 async fn go_live(app: &Arc<AppState>, hub: &Arc<Hub>, room: &crate::store::Room) -> ApiResult<()> {
     let id = room.id.as_str();
     hub.change(app, |s| {
@@ -2358,6 +2494,7 @@ async fn go_live(app: &Arc<AppState>, hub: &Arc<Hub>, room: &crate::store::Room)
 }
 
 async fn end_session(app: &Arc<AppState>, hub: &Arc<Hub>, room: &str) -> ApiResult<()> {
+    stop_media_stream(app, &hub.state()).await;
     if let Err(err) = app::stop_recording(app, room).await {
         tracing::warn!(error = err.1, "recording did not stop");
     }
@@ -2461,7 +2598,8 @@ pub async fn enforce_webhook(app: &Arc<AppState>, event: &livekit_protocol::Webh
     let member = |id: &str| matches!(app.store.crew_member(id), Ok(Some(m)) if m.room == base);
     let valid = match identity.strip_prefix(app::HOST_PREFIX) {
         Some(rest) => match rest.split_once('-') {
-            Some(("i", _)) => true,
+            // An encoder's input, or a video sent through the media server: made by this service.
+            Some(("i" | "v", _)) => true,
             Some(("m", owner)) => owner.split_once('-').is_some_and(|(_, id)| member(id)),
             Some((_, id)) => member(id),
             None => false,
@@ -2480,7 +2618,7 @@ pub async fn enforce_webhook(app: &Arc<AppState>, event: &livekit_protocol::Webh
     }
     if event.event == "track_published" && kind == "stage" {
         let on_stage = state.stage.iter().any(|m| m.identity == identity);
-        let allowed = on_stage || identity.starts_with("host-i-") || identity.starts_with("host-m-");
+        let allowed = on_stage || identity.starts_with("host-i-") || identity.starts_with("host-m-") || identity.starts_with("host-v-");
         if !allowed {
             tracing::info!(room = %lk_room.name, "closed publishing for someone who isn't on stage");
             let _ = app.backend.set_can_publish(&lk_room.name, identity, false).await;
@@ -2767,16 +2905,8 @@ const DECK_EXTENSIONS: [&str; 4] = ["pdf", "pptx", "ppt", "odp"];
 pub async fn upload(State(app): State<Arc<AppState>>, Path(ticket): Path<String>, Query(q): Query<UploadQuery>, body: Body) -> ApiResult<Json<Value>> {
     let me = resolve(&app, &ticket)?;
     require(me.role.runs_show())?;
-    if !["resource", "frame", "background", "logo", "visual", "media", "graphic", "banner", "deck"].contains(&q.kind.as_str()) {
-        return Err(INVALID);
-    }
-    let name = clean_filename(&q.name);
-    if q.kind == "resource" && !RESOURCE_EXTENSIONS.contains(&extension(&name).as_str()) {
-        return Err(ApiError(StatusCode::UNSUPPORTED_MEDIA_TYPE, "file_type_not_allowed"));
-    }
-    if q.kind == "deck" && (app.config.slides_dir.is_none() || !DECK_EXTENSIONS.contains(&extension(&name).as_str())) {
-        return Err(ApiError(StatusCode::UNSUPPORTED_MEDIA_TYPE, "file_type_not_allowed"));
-    }
+    let name = check_upload(&app, &q.kind, &q.name)?;
+    let limit = size_limit(&app, &q.kind);
     let id = new_id();
     let dir = std::path::Path::new(&app.config.upload_dir).join(&me.room.id);
     tokio::fs::create_dir_all(&dir).await.map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "storage_unavailable"))?;
@@ -2789,7 +2919,7 @@ pub async fn upload(State(app): State<Arc<AppState>>, Path(ticket): Path<String>
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|_| INVALID)?;
             size += chunk.len() as u64;
-            if size > app.config.max_upload_bytes {
+            if size > limit {
                 return Err(ApiError(StatusCode::PAYLOAD_TOO_LARGE, "file_too_large"));
             }
             if head.len() < 16 {
@@ -2812,19 +2942,209 @@ pub async fn upload(State(app): State<Arc<AppState>>, Path(ticket): Path<String>
         return Err(err);
     }
     tokio::fs::rename(&partial, dir.join(&id)).await.map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "storage_unavailable"))?;
-    let mime = match q.kind.as_str() {
-        "graphic" => graphic_mime(&head).unwrap_or_default().to_string(),
-        "banner" => banner_mime(&head).unwrap_or_default().to_string(),
+    let doc = record_upload(&app, &me.room.id, &id, &q.kind, name, size, &head)?;
+    Ok(Json(json!(doc)))
+}
+
+/// The kinds of file the studio takes, and their names. Returns the name as it's kept.
+fn check_upload(app: &AppState, kind: &str, name: &str) -> ApiResult<String> {
+    if !["resource", "frame", "background", "logo", "visual", "media", "graphic", "banner", "deck"].contains(&kind) {
+        return Err(INVALID);
+    }
+    let name = clean_filename(name);
+    if kind == "resource" && !RESOURCE_EXTENSIONS.contains(&extension(&name).as_str()) {
+        return Err(ApiError(StatusCode::UNSUPPORTED_MEDIA_TYPE, "file_type_not_allowed"));
+    }
+    if kind == "deck" && (app.config.slides_dir.is_none() || !DECK_EXTENSIONS.contains(&extension(&name).as_str())) {
+        return Err(ApiError(StatusCode::UNSUPPORTED_MEDIA_TYPE, "file_type_not_allowed"));
+    }
+    Ok(name)
+}
+
+/// Videos for the stage can be whole sessions, so they have their own, larger limit.
+fn size_limit(app: &AppState, kind: &str) -> u64 {
+    if kind == "media" { app.config.max_video_bytes } else { app.config.max_upload_bytes }
+}
+
+/// A file that has arrived in full, checked, under its final name: list it.
+fn record_upload(app: &Arc<AppState>, room: &str, id: &str, kind: &str, name: String, size: u64, head: &[u8]) -> ApiResult<FileDoc> {
+    let mime = match kind {
+        "graphic" => graphic_mime(head).unwrap_or_default().to_string(),
+        "banner" => banner_mime(head).unwrap_or_default().to_string(),
         _ => String::new(),
     };
-    let doc = FileDoc { id: id.clone(), kind: q.kind, name, size, public: false, downloads: 0, at: now(), mime, status: String::new(), pages: 0, notes: vec![] };
-    app.store.put_doc(&me.room.id, "file", &id, &serde_json::to_string(&doc).unwrap_or_default())?;
-    app.hub(&me.room.id)?.send_files(&app)?;
+    let doc = FileDoc { id: id.to_string(), kind: kind.to_string(), name, size, public: false, downloads: 0, at: now(), mime, status: String::new(), pages: 0, notes: vec![] };
+    app.store.put_doc(room, "file", id, &serde_json::to_string(&doc).unwrap_or_default())?;
+    app.hub(room)?.send_files(app)?;
     if doc.kind == "deck" {
-        let (app, room, deck) = (app.clone(), me.room.id.clone(), doc.clone());
+        let (app, room, deck) = (app.clone(), room.to_string(), doc.clone());
         tokio::spawn(async move { convert_deck(app, room, deck).await });
     }
-    Ok(Json(json!(doc)))
+    Ok(doc)
+}
+
+// ---- uploads in pieces, for big files: a dropped connection or a reload carries on where it stopped
+
+/// How much each piece carries. Small enough to resend cheaply, big enough not to be slow.
+pub const UPLOAD_PIECE_BYTES: usize = 8 * 1024 * 1024;
+/// Uploads nobody has added to in this long are thrown away.
+const UPLOAD_ABANDONED_SECONDS: i64 = 2 * 86_400;
+/// What's always left free on the server's disk, for recordings and the database.
+const DISK_RESERVE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct PendingUpload {
+    kind: String,
+    name: String,
+    size: u64,
+    identity: String,
+    at: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StartUpload {
+    kind: String,
+    name: String,
+    size: u64,
+}
+
+#[derive(Deserialize)]
+pub struct PieceQuery {
+    offset: u64,
+}
+
+/// Bytes free where uploads go, if the system says.
+fn free_bytes(dir: &std::path::Path) -> Option<u64> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let path = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
+        let mut stats: libc::statvfs = unsafe { std::mem::zeroed() };
+        // SAFETY: a valid C string and a zeroed struct for the system to fill in.
+        if unsafe { libc::statvfs(path.as_ptr(), &mut stats) } != 0 {
+            return None;
+        }
+        #[allow(clippy::unnecessary_cast)]
+        Some(stats.f_bavail as u64 * stats.f_frsize as u64)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+        None
+    }
+}
+
+fn part_path(app: &AppState, room: &str, id: &str) -> std::path::PathBuf {
+    std::path::Path::new(&app.config.upload_dir).join(room).join(format!("{id}.part"))
+}
+
+/// One of this person's uploads in progress.
+fn pending_upload(app: &AppState, room: &str, id: &str, identity: &str) -> ApiResult<PendingUpload> {
+    if !crate::ticket::valid_id(id) {
+        return Err(NOT_FOUND);
+    }
+    app.store.get_doc(room, "upload", id)?.and_then(|j| doc::<PendingUpload>(&j)).filter(|u| u.identity == identity).ok_or(NOT_FOUND)
+}
+
+/// `POST /join/{ticket}/uploads`: starts one. Refused up front if it's too big or won't fit.
+pub async fn upload_start(State(app): State<Arc<AppState>>, Path(ticket): Path<String>, Json(q): Json<StartUpload>) -> ApiResult<Json<Value>> {
+    let me = resolve(&app, &ticket)?;
+    require(me.role.runs_show())?;
+    let name = check_upload(&app, &q.kind, &q.name)?;
+    if q.size == 0 {
+        return Err(INVALID);
+    }
+    if q.size > size_limit(&app, &q.kind) {
+        return Err(ApiError(StatusCode::PAYLOAD_TOO_LARGE, "file_too_large"));
+    }
+    let room = me.room.id.clone();
+    let dir = std::path::Path::new(&app.config.upload_dir).join(&room);
+    tokio::fs::create_dir_all(&dir).await.map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "storage_unavailable"))?;
+    if free_bytes(&dir).is_some_and(|free| free < q.size.saturating_add(DISK_RESERVE_BYTES)) {
+        return Err(ApiError(StatusCode::INSUFFICIENT_STORAGE, "storage_full"));
+    }
+    for (id, up) in app.store.doc_rows(&room, "upload", 200)?.into_iter().filter_map(|(id, j)| doc::<PendingUpload>(&j).map(|u| (id, u))) {
+        if now() - up.at > UPLOAD_ABANDONED_SECONDS {
+            let _ = tokio::fs::remove_file(part_path(&app, &room, &id)).await;
+            app.store.del_doc(&room, "upload", &id)?;
+        }
+    }
+    let id = new_id();
+    tokio::fs::File::create(part_path(&app, &room, &id)).await.map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "storage_unavailable"))?;
+    let up = PendingUpload { kind: q.kind, name, size: q.size, identity: me.identity.clone(), at: now() };
+    app.store.put_doc(&room, "upload", &id, &serde_json::to_string(&up).unwrap_or_default())?;
+    Ok(Json(json!({ "id": id, "received": 0, "size": up.size, "pieceBytes": UPLOAD_PIECE_BYTES })))
+}
+
+/// `GET /join/{ticket}/uploads/{id}`: how much has arrived, to carry on from there.
+pub async fn upload_status(State(app): State<Arc<AppState>>, Path((ticket, id)): Path<(String, String)>) -> ApiResult<Json<Value>> {
+    let me = resolve(&app, &ticket)?;
+    require(me.role.runs_show())?;
+    let up = pending_upload(&app, &me.room.id, &id, &me.identity)?;
+    let received = tokio::fs::metadata(part_path(&app, &me.room.id, &id)).await.map_err(|_| NOT_FOUND)?.len();
+    Ok(Json(json!({ "id": id, "received": received, "size": up.size, "pieceBytes": UPLOAD_PIECE_BYTES })))
+}
+
+/// `PUT /join/{ticket}/uploads/{id}?offset=`: the next piece. A piece for the wrong place is
+/// refused with how much has arrived, so a repeat or a gap can never corrupt the file. The last
+/// piece checks the file and lists it.
+pub async fn upload_piece(State(app): State<Arc<AppState>>, Path((ticket, id)): Path<(String, String)>, Query(q): Query<PieceQuery>, body: axum::body::Bytes) -> ApiResult<Response> {
+    use tokio::io::AsyncReadExt;
+    let me = resolve(&app, &ticket)?;
+    require(me.role.runs_show())?;
+    let room = me.room.id.clone();
+    let hub = app.hub(&room)?;
+    let _one = hub.upload_lock.lock().await;
+    let mut up = pending_upload(&app, &room, &id, &me.identity)?;
+    let part = part_path(&app, &room, &id);
+    let received = tokio::fs::metadata(&part).await.map_err(|_| NOT_FOUND)?.len();
+    if q.offset != received {
+        return Ok((StatusCode::CONFLICT, Json(json!({ "error": "offset_mismatch", "received": received }))).into_response());
+    }
+    if body.is_empty() || body.len() > UPLOAD_PIECE_BYTES || received + body.len() as u64 > up.size {
+        return Err(INVALID);
+    }
+    let storage = || ApiError(StatusCode::INTERNAL_SERVER_ERROR, "storage_unavailable");
+    let mut file = tokio::fs::OpenOptions::new().append(true).open(&part).await.map_err(|_| storage())?;
+    if let Err(err) = file.write_all(&body).await.and(file.flush().await) {
+        // Whatever made it is cut back, so the next try starts from a known place.
+        tracing::warn!(error = %err, "could not write an upload piece");
+        let _ = file.set_len(received).await;
+        return Err(storage());
+    }
+    drop(file);
+    let received = received + body.len() as u64;
+    if received < up.size {
+        up.at = now();
+        app.store.put_doc(&room, "upload", &id, &serde_json::to_string(&up).unwrap_or_default())?;
+        return Ok(Json(json!({ "received": received })).into_response());
+    }
+    let mut head = vec![0u8; 16];
+    let mut file = tokio::fs::File::open(&part).await.map_err(|_| storage())?;
+    let n = file.read(&mut head).await.map_err(|_| storage())?;
+    head.truncate(n);
+    drop(file);
+    app.store.del_doc(&room, "upload", &id)?;
+    if !looks_right(&up.kind, &head) {
+        let _ = tokio::fs::remove_file(&part).await;
+        return Err(ApiError(StatusCode::UNSUPPORTED_MEDIA_TYPE, "file_type_not_allowed"));
+    }
+    tokio::fs::rename(&part, file_path(&app, &room, &id)).await.map_err(|_| storage())?;
+    let doc = record_upload(&app, &room, &id, &up.kind, up.name, up.size, &head)?;
+    Ok(Json(json!({ "received": received, "done": true, "file": doc })).into_response())
+}
+
+/// `DELETE /join/{ticket}/uploads/{id}`: gives up on one.
+pub async fn upload_cancel(State(app): State<Arc<AppState>>, Path((ticket, id)): Path<(String, String)>) -> ApiResult<Json<Value>> {
+    let me = resolve(&app, &ticket)?;
+    require(me.role.runs_show())?;
+    let hub = app.hub(&me.room.id)?;
+    let _one = hub.upload_lock.lock().await;
+    pending_upload(&app, &me.room.id, &id, &me.identity)?;
+    let _ = tokio::fs::remove_file(part_path(&app, &me.room.id, &id)).await;
+    app.store.del_doc(&me.room.id, "upload", &id)?;
+    Ok(Json(json!({ "ok": true })))
 }
 
 /// Attendees get a resource once it's public, and a stage file only while it's on stage.

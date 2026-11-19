@@ -29,6 +29,11 @@ pub struct Config {
     /// Where files uploaded in the studio are kept.
     pub upload_dir: String,
     pub max_upload_bytes: u64,
+    /// The size limit for videos played on the stage, which can be whole sessions.
+    pub max_video_bytes: u64,
+    /// LiveKit's ingress is running, so a video can be sent through the media server instead of
+    /// to each browser. On with `LIVE_VIDEO_INGRESS=1`, or whenever RTMP input is set up.
+    pub video_ingress: bool,
     /// Whisper, in its own container. Without it there are no captions.
     pub captions_url: Option<String>,
     /// Where this service reaches the bucket, when that differs from where the recorder does.
@@ -139,6 +144,11 @@ impl Config {
                 Ok(v) => v.trim().parse::<u64>().map_err(|_| "LIVE_MAX_UPLOAD_MB must be a whole number".to_string())? * 1024 * 1024,
                 Err(_) => 500 * 1024 * 1024,
             },
+            max_video_bytes: match env::var("LIVE_MAX_VIDEO_MB") {
+                Ok(v) => v.trim().parse::<u64>().map_err(|_| "LIVE_MAX_VIDEO_MB must be a whole number".to_string())? * 1024 * 1024,
+                Err(_) => 8192 * 1024 * 1024,
+            },
+            video_ingress: env::var("LIVE_VIDEO_INGRESS").is_ok_and(|v| v == "1") || env::var("LIVE_INGRESS_URL").is_ok_and(|v| !v.is_empty()),
             db_path: env::var("LIVE_DB_PATH").unwrap_or_else(|_| "/data/live.sqlite3".to_string()),
             retention_days,
             recording,

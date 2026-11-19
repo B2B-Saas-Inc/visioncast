@@ -326,3 +326,8 @@ body.in-breakout .stage-wrap, body.in-breakout #layouts, body.in-breakout #my-co
 .delete-choice { border: 0; padding: 0; margin: 0 0 0.75rem; display: grid; gap: 0.35rem; }
 .delete-choice legend { padding: 0; margin-bottom: 0.35rem; }
 .delete-choice label.check { white-space: normal; align-items: flex-start; }
+.gtile-video video { object-fit: contain; background: #000; }
+.green-go { margin-top: 0.5rem; padding: 0.6rem 0.75rem; border: 1px solid var(--line); border-radius: 8px; max-width: 34rem; }
+.green-go p { margin: 0 0 0.4rem; }
+.upload-progress { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.35rem; }
+.upload-progress:empty { display: none; }

@@ -43,7 +43,7 @@ services:
     ports: ["127.0.0.1:18095:8090"]
   # An encoder's way in: OBS or vMix send RTMP here. The test pushes with ffmpeg.
   ingress:
-    image: livekit/ingress:v1.4.3
+    image: livekit/ingress:v1.6.0
     environment:
       INGRESS_CONFIG_BODY: |
         api_key: devkey

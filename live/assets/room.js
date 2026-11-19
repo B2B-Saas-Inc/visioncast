@@ -88,7 +88,9 @@
     on_stage: "Leave the stage before going to a breakout room.",
     already_answered: "You've already answered this.",
     not_available: "That isn't available right now.",
-    ingress_not_configured: "RTMP input isn't set up on this server."
+    ingress_not_configured: "RTMP input isn't set up on this server.",
+    video_streamed: "A video going through the media server can't be paused. Stop it instead.",
+    storage_full: "There isn't room for that file on the server. Delete some files, or ask whoever runs it for more space."
   };
   function message(err) { return MESSAGES[err && err.code] || "Something went wrong. Check your connection and try again."; }
 
@@ -216,6 +218,7 @@
     on("demoted", function (d) { if (S.me && d.identity === S.me.identity) { sessionStorage.setItem("vc-rejoin", "1"); window.location.reload(); } });
     on("removed", function (d) { if (S.me && d.identity === S.me.identity) { leave("You've been removed from this session."); } });
     on("session_deleted", function () { leave("This session has been deleted.", true); });
+    on("video_notice", function (d) { setError($("room-error"), d.text); });
     on("invite_result", function () {});
     source.onerror = function () {
       if (source && source.readyState === EventSource.CLOSED) { reopenEvents(); }
@@ -391,6 +394,8 @@
   }
 
   function keyFor(participant) {
+    // A video sent through the media server plays as its own participant.
+    if (participant.identity.indexOf("host-v-") === 0) { return "media"; }
     return participant.identity.indexOf("host-m-") === 0 ? "screen:" + participant.identity : "cam:" + participant.identity;
   }
 
@@ -1540,6 +1545,13 @@
   function upload(file, kind, input) {
     if (!file) { return; }
     setError($("room-error"), "");
+    var limit = kind === "media" ? S.state.maxVideoBytes : S.state.maxUploadBytes;
+    if (limit && file.size > limit) {
+      setError($("room-error"), "That file is over the " + bigSize(limit) + " limit.");
+      if (input) { input.value = ""; }
+      return Promise.resolve();
+    }
+    if (file.size > PIECE_BYTES) { return uploadInPieces(file, kind, input); }
     var url = base + "/files?c=" + clientId + "&kind=" + kind + "&name=" + encodeURIComponent(file.name);
     return fetch(url, { method: "PUT", body: file }).then(function (res) {
       return res.json().catch(function () { return {}; }).then(function (d) {
@@ -1548,6 +1560,94 @@
       });
     }).catch(function (err) { setError($("room-error"), message(err)); }).then(function (d) { if (input) { input.value = ""; } return d; });
   }
+
+  function bigSize(n) { return n >= 1073741824 ? (n / 1073741824).toFixed(1) + " GB" : size(n); }
+
+  // Big files go up in pieces: a dropped connection carries on where it stopped, and choosing the
+  // same file again after a reload or a crash does too.
+  var PIECE_BYTES = 8 * 1024 * 1024;
+  function uploadInPieces(file, kind, input) {
+    var key = "vc-upload:" + base + ":" + kind + ":" + file.name + ":" + file.size + ":" + file.lastModified;
+    var id = null, stopped = false;
+    var line = null;
+    if (input && input.parentNode) {
+      line = input.parentNode.querySelector(".upload-progress");
+      if (!line) { line = h("div", { class: "upload-progress small", role: "status" }); input.insertAdjacentElement("afterend", line); }
+      input.disabled = true;
+    }
+    function remember() { try { localStorage.setItem(key, id); } catch (e) { /* private mode: no resuming after a reload */ } }
+    function forget() { try { localStorage.removeItem(key); } catch (e) { /* nothing to forget */ } }
+    function say(text, cancellable) {
+      if (!line) { return; }
+      line.textContent = "";
+      line.appendChild(h("span", { text: text }));
+      if (cancellable) {
+        line.appendChild(mini("Cancel", function () {
+          stopped = true;
+          if (id) { fetch(base + "/uploads/" + id, { method: "DELETE" }).catch(function () {}); }
+          forget();
+          say("");
+        }, "danger"));
+      }
+    }
+    function start() { return request("/uploads", { kind: kind, name: file.name, size: file.size }).then(function (d) { id = d.id; remember(); return 0; }); }
+    function begin() {
+      var saved = null;
+      try { saved = localStorage.getItem(key); } catch (e) { saved = null; }
+      if (!saved) { return start(); }
+      return request("/uploads/" + saved).then(function (d) { id = saved; return d.received; }, function () { forget(); return start(); });
+    }
+    function wait(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
+    function send(offset, failures) {
+      if (stopped) { return Promise.resolve(null); }
+      var percent = Math.floor(offset / file.size * 100);
+      say((failures ? "Connection lost, trying again. " : "") + "Uploading " + file.name + ": " + percent + "% of " + bigSize(file.size), true);
+      return fetch(base + "/uploads/" + id + "?offset=" + offset, { method: "PUT", body: file.slice(offset, Math.min(file.size, offset + PIECE_BYTES)) }).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (d) {
+          if (res.status === 409 && typeof d.received === "number") { return send(d.received, failures); }
+          if (res.ok) { return d.done ? d.file : send(d.received, 0); }
+          if (res.status >= 500 && res.status !== 507) { throw { retry: true }; }
+          var err = new Error(d.error); err.code = d.error; throw err;
+        });
+      }).catch(function (err) {
+        if (err && err.code) { throw err; }
+        // The connection dropped or the server is restarting: wait, ask where it got to, carry on.
+        if (failures >= 12) { var gave = new Error("stalled"); gave.code = "upload_stalled"; throw gave; }
+        return wait(Math.min(30000, 1000 * Math.pow(2, failures))).then(function () {
+          return request("/uploads/" + id).then(function (d) { return send(d.received, failures + 1); }, function () { return send(offset, failures + 1); });
+        });
+      });
+    }
+    return begin().then(function (offset) { return send(offset, 0); }).then(function (f) {
+      forget();
+      if (f) { say(""); }
+      return f;
+    }, function (err) {
+      if (err && err.code === "upload_stalled") {
+        say("The upload stopped. Choose the same file again to carry on from where it got to.");
+        return null;
+      }
+      forget();
+      say("");
+      setError($("room-error"), message(err));
+      return null;
+    }).then(function (f) { if (input) { input.value = ""; input.disabled = false; } return f; });
+  }
+
+  // ---- videos on the stage
+
+  function probeDuration(id) {
+    return new Promise(function (resolve) {
+      var probe = h("video", { preload: "metadata" });
+      probe.muted = true;
+      probe.onloadedmetadata = function () { resolve(isFinite(probe.duration) ? probe.duration : 0); };
+      probe.onerror = function () { resolve(0); };
+      setTimeout(function () { resolve(0); }, 8000);
+      probe.src = fileUrl(id);
+    });
+  }
+  function playVideo(id) { probeDuration(id).then(function (d) { quietly({ type: "media_play", id: id, duration: d }); }); }
+  var goVideo = null, goVideoEnd = true;
 
   var recordings = null, recordingSpeakers = null, localFiles = null;
   function loadRecordings() {
@@ -1724,7 +1824,7 @@
       h("div", { class: "row end" }, mini("Add words with no graphic", function () { quietly({ type: "layer_save", layer: { id: "", fileId: null, name: "", visible: false, title: "Your words here", subtitle: "", scroll: false, mime: "", x: PLACES.chyron.x, y: PLACES.chyron.y, w: PLACES.chyron.w, h: PLACES.chyron.h } }); })),
       h("div", { id: "layer-list" })));
     var mediaInput = h("input", { type: "file", accept: ".mp4,video/mp4", "data-upload": "media", onchange: function () { upload(this.files[0], "media", this); } });
-    look.appendChild(h("div", { class: "box" }, h("h3", { text: "Video" }), h("p", { class: "muted small", text: "An MP4 played right on the stage. It looks better than sharing your screen, and it's in the recording." }), mediaInput, h("div", { id: "media-list" })));
+    look.appendChild(h("div", { class: "box" }, h("h3", { text: "Video" }), h("p", { class: "muted small", text: "An MP4 played right on the stage, like a promo reel or a whole recorded session. It looks better than sharing your screen, and it's in the recording. It comes off the stage when it's over. Videos are also in the green room, where you can go live with one." }), mediaInput, h("div", { id: "media-list" })));
     var simFile = h("select", { id: "sim-file", "aria-label": "Which video" });
     var simAt = h("input", { id: "sim-at", type: "datetime-local", "aria-label": "When it goes live" });
     var simEnd = h("input", { id: "sim-end", type: "checkbox", checked: true });
@@ -1783,7 +1883,10 @@
     S.files.filter(function (f) { return f.kind === "media"; }).forEach(function (f) {
       var playing = S.state.media && S.state.media.id === f.id;
       var acts = h("div", { class: "acts" });
-      if (playing) {
+      if (playing && S.state.media.streamed) {
+        acts.appendChild(h("span", { class: "muted small", text: "Through the media server" }));
+        acts.appendChild(mini("Stop", function () { quietly({ type: "media_stop" }); }, "danger"));
+      } else if (playing) {
         acts.appendChild(mini(S.state.media.playing ? "Pause" : "Resume", function () {
           var m = S.state.media;
           var position = m.position + (m.playing ? (Date.now() + serverOffset - m.atMs) / 1000 : 0);
@@ -1791,7 +1894,7 @@
         }));
         acts.appendChild(mini("Stop", function () { quietly({ type: "media_stop" }); }, "danger"));
       } else {
-        acts.appendChild(mini("Play on stage", function () { quietly({ type: "media_play", id: f.id }); }, "primary"));
+        acts.appendChild(mini("Play on stage", function () { playVideo(f.id); }, "primary"));
       }
       media.appendChild(h("div", { class: "file" }, h("div", { text: f.name }), acts));
     });
@@ -1907,6 +2010,7 @@
     ["handRaising", "Raise hand", "Attendees can ask to come on stage."],
     ["profanityFilter", "Hide common swear words", "In chat and questions."],
     ["qaPrivate", "Keep questions private", "Attendees' questions are seen only by the crew and whoever asked. Answers too."],
+    ["streamVideos", "Send videos through the media server", "For a large audience. Videos played on the stage reach everyone the way cameras do, instead of every browser fetching the file from this server. They start a few seconds after you press play and can't be paused."],
     ["localRecordings", "Each speaker records their own copy", "While you're recording, each person on stage also records their own camera and microphone, and anyone sharing their screen records it, at full quality from the source, uploaded as they go and copied to your bucket afterwards. For editing and media assets. It uses more of their computer and upload speed."],
     ["captions", "Live captions", "Transcribes the people on stage while live, per speaker, and saves SRT and transcript files with the recording. Each viewer turns the display on or off."],
     ["captionsOnPicture", "Put captions on the picture", "Everyone sees them, and they're in recordings and broadcasts."],
@@ -1916,6 +2020,7 @@
     var box = $("settings");
     box.textContent = "";
     SETTINGS.forEach(function (s) {
+      if (s[0] === "streamVideos" && !S.state.videoStreamingAvailable) { return; }
       var locked = s[0] === "producersCanGoLive" && S.me.role !== "host";
       box.appendChild(h("label", { class: "setting" },
         h("input", { type: "checkbox", "data-setting": s[0], checked: S.state.settings[s[0]], disabled: locked, onchange: function () {
@@ -1970,6 +2075,7 @@
         }
       }
     });
+    if (runs()) { greenVideos(strip, seen); }
     Array.from(strip.children).forEach(function (tile) {
       var id = tile.dataset.identity;
       if (!seen[id]) {
@@ -1977,6 +2083,66 @@
         tile.remove();
       }
     });
+  }
+
+  // Uploaded videos wait in the green room like people: put one on the stage, or go live with it.
+  function greenVideos(strip, seen) {
+    var videos = S.files.filter(function (f) { return f.kind === "media"; });
+    videos.forEach(function (f) {
+      var key = "video:" + f.id;
+      seen[key] = true;
+      var playing = !!S.state.media && S.state.media.id === f.id;
+      var tile = strip.querySelector('[data-identity="' + CSS.escape(key) + '"]');
+      if (!tile) {
+        tile = h("div", { class: "gtile gtile-video", "data-identity": key, "data-video": f.name });
+        var thumb = h("video", { preload: "metadata", playsinline: true });
+        thumb.muted = true;
+        thumb.src = fileUrl(f.id) + "#t=1";
+        tile.appendChild(thumb);
+        tile.appendChild(h("div", { class: "gtile-meta" }));
+        tile.appendChild(h("div", { class: "gtile-actions" }));
+        strip.appendChild(tile);
+      }
+      tile.classList.toggle("on-stage", playing);
+      var meta = tile.querySelector(".gtile-meta");
+      meta.textContent = "";
+      meta.appendChild(h("b", { text: f.name }));
+      meta.appendChild(h("span", { class: "badge", text: "Video" }));
+      if (playing) { meta.appendChild(h("span", { class: "badge on", text: "On stage" })); }
+      var actions = tile.querySelector(".gtile-actions");
+      actions.textContent = "";
+      if (playing) {
+        actions.appendChild(mini("Stop", function () { quietly({ type: "media_stop" }); }, "danger"));
+      } else {
+        actions.appendChild(mini("Play on stage", function () { playVideo(f.id); }, "primary"));
+        if (S.state.phase === "not_live" && S.me.perms.goLive) {
+          actions.appendChild(mini("Go live with it", function () { goVideo = f.id; goVideoEnd = true; schedule(); }));
+        }
+      }
+    });
+    var panel = $("green-go");
+    if (!panel) {
+      panel = h("div", { class: "green-go", id: "green-go", role: "group", "aria-label": "Go live with a video" });
+      $("green").appendChild(panel);
+    }
+    var chosen = videos.filter(function (f) { return f.id === goVideo; })[0];
+    if (!chosen || S.state.phase !== "not_live" || !S.me.perms.goLive) { goVideo = null; panel.hidden = true; panel.textContent = ""; return; }
+    panel.hidden = false;
+    if (panel.dataset.video === chosen.id) { return; }
+    panel.dataset.video = chosen.id;
+    panel.textContent = "";
+    var end = h("input", { type: "checkbox", id: "green-go-end", checked: goVideoEnd, onchange: function () { goVideoEnd = this.checked; } });
+    panel.appendChild(h("p", { class: "small" }, h("strong", { text: "Go live with " + chosen.name + "?" }), document.createTextNode(" The session goes live and the video starts for everyone at once. Chat, questions and polls work as usual.")));
+    panel.appendChild(h("label", { class: "check small" }, end, document.createTextNode(" End the session when the video finishes")));
+    panel.appendChild(h("div", { class: "row end" },
+      mini("Cancel", function () { goVideo = null; panel.dataset.video = ""; schedule(); }),
+      mini("Go live now", function () {
+        var button = this;
+        button.disabled = true;
+        probeDuration(chosen.id).then(function (d) {
+          return act({ type: "go_live_with_video", id: chosen.id, duration: d, endSession: goVideoEnd });
+        }).then(function () { goVideo = null; panel.dataset.video = ""; schedule(); }, function () { button.disabled = false; });
+      }, "primary")));
   }
 
   function renderBar() {

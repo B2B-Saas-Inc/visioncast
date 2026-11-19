@@ -151,7 +151,7 @@
 
     function syncMedia() {
       var m = state.media;
-      var show = !!m && options.showMedia !== false;
+      var show = !!m && !m.streamed && options.showMedia !== false;
       if (!show) {
         if (mediaEl) { mediaEl.pause(); mediaEl.remove(); mediaEl = null; mediaId = ""; }
         return;
@@ -256,7 +256,8 @@
         }
         tile.label.hidden = !tile.who.textContent;
         tile.avatar.hidden = !isCam || !!tracks[key];
-        if (key !== "media" && key !== "slides") { bind(key, tile); }
+        // A video sent through the media server arrives as a track, like a camera.
+        if ((key !== "media" || (state.media && state.media.streamed)) && key !== "slides") { bind(key, tile); }
       });
       syncMedia();
       syncSlides();
