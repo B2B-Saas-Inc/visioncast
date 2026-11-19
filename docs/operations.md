@@ -317,13 +317,13 @@ Runs from `deploy/live`. See [live/README.md](../live/README.md).
 | Replace a crew link | Crew, on the session's page at `/admin` or its Hosting page in the studio |
 | Check it from outside | `deploy/live/verify-public.sh <live host> <media host> <TURN host>` |
 | Slides | `docker compose logs slides`. A deck that fails says so in the room, and doesn't stop the next one |
-| Back up | The `live-data` volume: its SQLite file has accounts, crew, chat, questions, polls, surveys, captions and stream keys, and it holds uploaded files (stage videos included), slide pages, fonts and speakers' own recordings. Main recordings are in your bucket. `deploy/live/backup.sh` does it nightly |
+| Back up | The `live-data` volume: its SQLite file has accounts, crew, chat, questions, polls, surveys, captions and stream keys, and it holds uploaded files, slide pages, fonts and speakers' own recordings. `deploy/live/backup.sh` runs nightly: the database each run, and each file once. Stage videos, and recordings in your bucket, aren't included. `deploy/live/restore.sh` puts a run back ([live/README.md](../live/README.md#updating-and-backups)) |
 | Retention | Rooms and what's in them go `LIVE_RETENTION_DAYS` after their end, 90 by default. Your bucket's files don't |
 | Delete a session | At the bottom of its page at `/admin`: keep its recordings in the bucket or delete them too. Its event is unlinked in the studio within a few minutes |
 
 **Don't change `LIVE_TICKET_KEY` around a session.** It signs every link and seals stream keys, so all links stop working and keys need entering again.
 
-Watch the disk. Speakers' own recordings are on by default, about 4.5 GB per speaker-hour, and stay on the server's disk as well as being copied to the bucket. Uploaded stage videos can be up to 8 GB each. Both stay until the room is purged or deleted, and both go into every nightly backup, which is kept 14 days on the same disk. Delete what you're done with.
+Watch the disk. Speakers' own recordings are on by default, about 4.5 GB per speaker-hour, and stay on the server's disk as well as being copied to the bucket. Uploaded stage videos can be up to 8 GB each. Both stay until the room is purged or deleted. Backups store each speaker's recording once, until it reaches the bucket, and leave stage videos out. Delete what you're done with.
 
 Videos sent through the media server run in the `ingress` container (`COMPOSE_PROFILES=video` and `LIVE_VIDEO_INGRESS=1`). If one doesn't start, the crew is told and browsers play it instead: check `docker compose logs ingress`.
 

@@ -1,6 +1,6 @@
 # Remaining gaps
 
-What is still open on `0.4.20-pre`, reconciled 2026-11-19. **Everything here needs vendor accounts, an operator's decision, or a real event with real people.** Nothing implemented or already proven is listed; test evidence lives only in [validation.md](validation.md), and the ordered, tickable form of this page is [release-checklist.md](release-checklist.md). Detailed behaviour is owned by [mcp.md](mcp.md), [native-integrations.md](native-integrations.md), [tickets.md](tickets.md), [hosting.md](hosting.md), [kits.md](kits.md) and [operations.md](operations.md); where they disagree with this page on detail, theirs win.
+What is still open on `0.4.21-pre`, reconciled 2026-11-19. **Everything here needs vendor accounts, an operator's decision, or a real event with real people.** Nothing implemented or already proven is listed; test evidence lives only in [validation.md](validation.md), and the ordered, tickable form of this page is [release-checklist.md](release-checklist.md). Detailed behaviour is owned by [mcp.md](mcp.md), [native-integrations.md](native-integrations.md), [tickets.md](tickets.md), [hosting.md](hosting.md), [kits.md](kits.md) and [operations.md](operations.md); where they disagree with this page on detail, theirs win.
 
 ## 1. Release blockers
 
@@ -138,7 +138,8 @@ Released in 0.4.0-pre. Tested on a real LiveKit stack in real browsers, on one m
 - A video sent through the media server starts a few seconds after it's played, can't be paused, and is transcoded on your server (about two CPU cores while it plays). Without that setting, this server sends the whole file to every viewer, which suits tens of people, not hundreds.
 - When going live with a video also starts the recording, attendees see the live stage, empty, for the 2 or 3 seconds the recorder takes to start.
 - A video added by link is checked for a private address when it's added and when it's played, but the media server looks the name up again when it fetches it. An HLS link plays only through the media server. A CDN that blocks hotlinking won't play in browsers.
-- Uploaded videos, up to 8 GB each, live on the live server's disk until the room is purged or deleted, and the nightly backup includes them, so each night's backup can be that much bigger.
+- Uploaded videos, up to 8 GB each, live on the live server's disk until the room is purged or deleted, and aren't in backups: after a restore, upload them again.
+- Live backups stay on the same server unless you copy them off.
 - `engagement.recorded` reaches webhook destinations and workflow presets. The native connectors (Salesforce, Pipedrive and the rest) don't send it yet.
 - Surveys appear to people still on the page when the session ends. Nothing emails them afterwards unless you set that up from the event.
 - Breakout rooms aren't recorded, captioned or included in attendance.
