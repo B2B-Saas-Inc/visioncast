@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Encrypted backup of the live server's data: the database (rooms, crew, accounts, settings,
-# engagement), uploads (slides, graphics, the brand) and speakers' local recordings. Run on the
+# engagement), uploads (slides, graphics, videos, the brand) and speakers' local recordings. Run on the
 # server as root; setup puts it in cron nightly. Recordings sent to a bucket aren't included.
 #
 # Needs, once:

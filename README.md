@@ -96,7 +96,7 @@ flowchart LR
 * **Website kits.** A WordPress plugin; references for Next.js, Astro, SvelteKit, Nuxt, React, Vue and Svelte; CMS integrations for Sanity, Contentful, Payload and Prismic; a dependency-free form script and a Google Tag Manager tag. The WordPress plugin and the Next.js, SvelteKit, Astro and Nuxt kits were each installed fresh in Docker; none is production-tested on a real site yet. [docs/kits.md](docs/kits.md)
 * **Recognition without accounts.** A returning browser skips fields it already gave, through a revocable HttpOnly cookie. An email address alone never reveals or changes anyone's profile.
 * **Hosting providers** (preview). Create, update or attach Zoom Webinars; create Wistia and Sequel sessions; attach Riverside with per-registrant links; manual links for StreamYard; rooms on your own LiveKit server. [docs/hosting.md](docs/hosting.md)
-* **Your own video** (optional add-on). A live studio on a LiveKit server you run, at addresses like `live.example.com/your-event`, in 1080p with high-quality stereo sound: hosts, guests and producers each with their own link, in a green room; go live when ready; layouts you can save, frames, GIF and video overlays, slides from PDF or PowerPoint, screen sharing, virtual backgrounds; polls that pop up or run on a schedule, moderated chat with reactions, public or private Q&A, surveys, downloads; attendees invited on stage; breakout rooms and a networking hub; recorded sessions played as if live; RTMP in from an encoder; broadcast out to YouTube, Meta, X and LinkedIn; live captions, translated if you like, saved per speaker with the recording; each speaker's own copy. Settings live at `/admin`, where everyone signs in as themselves and People lists everyone, crew included. What people did comes back to VisionCast and your CRM. [live/README.md](live/README.md)
+* **Your own video** (optional add-on). A live studio on a LiveKit server you run, at addresses like `live.example.com/your-event`, in 1080p with high-quality stereo sound: hosts, guests and producers each with their own link, in a green room; go live when ready; layouts you can save, frames, GIF and video overlays, slides from PDF or PowerPoint, screen sharing, virtual backgrounds; polls that pop up or run on a schedule, moderated chat with reactions, public or private Q&A, surveys, downloads; attendees invited on stage; breakout rooms and a networking hub; holding graphics before and after the session; videos on the stage, uploaded or played from a CDN link, including a whole pre-recorded session started from the green room, and sent through the media server for large audiences; recorded sessions played as if live; RTMP in from an encoder; broadcast out to YouTube, Meta, X and LinkedIn; live captions, translated if you like, saved per speaker with the recording; recordings at 1080p for your website and YouTube, with a watch page you can publish, and each speaker's own full-quality copy. Settings live at `/admin`, where everyone signs in as themselves and People lists everyone, crew included. What people did comes back to VisionCast and your CRM. [live/README.md](live/README.md)
 * **Your name on it, on any provider.** One command puts the studio and live rooms on a server, with your name, colour and logo. Any provider that gives you a real server with a public address will do. [docs/branding.md](docs/branding.md)
 * **An MCP server.** Claude and other assistants can draft events, schedule sessions, record attendance and pull reports with a scoped key, under the same rules as your team. [docs/mcp.md](docs/mcp.md)
 
@@ -246,11 +246,11 @@ No scope implies another. VisionCast stores keys hashed and shows each one once.
 
 ## Status
 
-VisionCast is a pre-release. Here is exactly where it stands on **0.4.20-pre** (2026-11-18). [docs/validation.md](docs/validation.md) records every run with its date; [docs/remaining-gaps.md](docs/remaining-gaps.md) and [docs/release-checklist.md](docs/release-checklist.md) list what's left.
+VisionCast is a pre-release. Here is exactly where it stands on **0.4.20-pre** (2026-11-19). [docs/validation.md](docs/validation.md) records every run with its date; [docs/remaining-gaps.md](docs/remaining-gaps.md) and [docs/release-checklist.md](docs/release-checklist.md) list what's left.
 
 **Proven**
 
-* 2,574 automated tests pass on Python 3.12 and PostgreSQL 16 at this release, with lint, system and migration checks clean, plus 98 for the live service.
+* 2,578 automated tests pass on Python 3.12 and PostgreSQL 16 at this release, with lint, system and migration checks clean, plus 111 for the live service.
 * A real-browser walkthrough of the studio passes 13 of 13 steps, plus browser suites for the form script, Google Tag Manager tag and Riverside flow.
 * An end-to-end acceptance test covers create, provision, register, pay, check in, record attendance and deliver.
 * Images build for amd64 and arm64 and publish to GHCR on every tag; backup, restore, in-place upgrade and rollback have been rehearsed.
@@ -263,6 +263,12 @@ VisionCast is a pre-release. Here is exactly where it stands on **0.4.20-pre** (
 * 26 of 26 attacks held against the running stack, after an adversarial review by four reviewers.
 * 1,000 event streams with every message delivered, and 100 simulated viewers on real media with under 0.1% packet loss.
 * Captions with 11.2% of words wrong on public recordings of real voices, about a second behind the sound.
+
+**The live add-on in production**, on a public server with recordings in DigitalOcean Spaces, in throwaway sessions with test cameras:
+
+* The studio and the live server work together by their public names: rooms created from the studio, the session's status following the live room, and a room deleted at `/admin` unlinked in the studio.
+* Recordings at 1080p30 H.264 High with AAC, speakers' own copies reaching the bucket, signed download links and published watch pages, and deleting a session's recordings from the bucket.
+* A 25 MB video uploaded in pieces in 5 seconds, then **Go live with it** through the media server: the attendee had the video 2 seconds later, the session ended with it, and the recording starts at the video's first frame. A video played from a CDN link reached the attendee straight from that host.
 
 **Not yet proven**
 
@@ -318,7 +324,7 @@ Issues and pull requests are welcome. Please include a test with every behaviour
 | [deploy/production/README.md](deploy/production/README.md) | A production install on DigitalOcean behind Cloudflare, upgrades, verification |
 | [docs/studio.md](docs/studio.md) | The marketer studio |
 | [docs/kits.md](docs/kits.md), [docs/browser-integration.md](docs/browser-integration.md), [docs/integration.md](docs/integration.md) | Website kits, form script, consent, first-party proxy, Google Tag Manager |
-| [live/README.md](live/README.md) | Your own video: the studio, roles, addresses, `/admin`, captions, graphics, broadcasting, capacity, choosing a provider, and the service's API |
+| [live/README.md](live/README.md) | Your own video: the studio, roles, addresses, `/admin`, videos on the stage, recordings, captions, graphics, broadcasting, capacity, choosing a provider, and the service's API |
 | [docs/branding.md](docs/branding.md) | One-step install of the studio and live rooms with your name, colour and logo, backups and upgrades |
 | [docs/native-integrations.md](docs/native-integrations.md), [docs/webhooks.md](docs/webhooks.md) | Native integrations; webhook payloads, signatures, retries |
 | [docs/waiting-room.md](docs/waiting-room.md), [docs/tickets.md](docs/tickets.md), [docs/hosting.md](docs/hosting.md), [docs/email.md](docs/email.md) | Waiting room, seats and paid tickets, hosting providers, operational email |

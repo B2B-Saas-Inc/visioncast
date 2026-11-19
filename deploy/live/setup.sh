@@ -32,12 +32,13 @@ LIVE_ADMIN_PASSWORD=$(openssl rand -base64 18)
 # RECORDING_S3_SECRET_KEY=
 # RECORDING_S3_FORCE_PATH_STYLE=1
 # RECORDING_PUBLIC_BASE_URL=
-# Optional parts: COMPOSE_PROFILES=encoder,translate
+# Optional parts, any of: COMPOSE_PROFILES=encoder,video,translate
 # RTMP input, for OBS, vMix or a hardware encoder. Open port 1935 too.
 # LIVE_INGRESS_URL=rtmp://$1/x
 # Videos played on the stage sent through the media server, for large audiences:
 # COMPOSE_PROFILES=video (or encoder) and LIVE_VIDEO_INGRESS=1.
-# The size limit for those videos, in MB. Default 8192.
+# LIVE_VIDEO_INGRESS=1
+# The size limit for videos uploaded for the stage, in MB. Default 8192.
 # LIVE_MAX_VIDEO_MB=8192
 # Captions in other languages, separated by commas.
 # LIVE_TRANSLATE_URL=http://127.0.0.1:5000

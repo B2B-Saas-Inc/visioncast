@@ -1,6 +1,6 @@
 # Remaining gaps
 
-What is still open on `0.4.20-pre`, reconciled 2026-11-05. **Everything here needs vendor accounts, an operator's decision, or a real event with real people.** Nothing implemented or already proven is listed; test evidence lives only in [validation.md](validation.md), and the ordered, tickable form of this page is [release-checklist.md](release-checklist.md). Detailed behaviour is owned by [mcp.md](mcp.md), [native-integrations.md](native-integrations.md), [tickets.md](tickets.md), [hosting.md](hosting.md), [kits.md](kits.md) and [operations.md](operations.md); where they disagree with this page on detail, theirs win.
+What is still open on `0.4.20-pre`, reconciled 2026-11-19. **Everything here needs vendor accounts, an operator's decision, or a real event with real people.** Nothing implemented or already proven is listed; test evidence lives only in [validation.md](validation.md), and the ordered, tickable form of this page is [release-checklist.md](release-checklist.md). Detailed behaviour is owned by [mcp.md](mcp.md), [native-integrations.md](native-integrations.md), [tickets.md](tickets.md), [hosting.md](hosting.md), [kits.md](kits.md) and [operations.md](operations.md); where they disagree with this page on detail, theirs win.
 
 ## 1. Release blockers
 
@@ -116,16 +116,15 @@ Committed scope for this release is closed. Still **not** built:
 
 ## Your own live server (LiveKit add-on)
 
-Released in 0.4.0-pre. Tested on a real LiveKit stack in real browsers, on one machine ([validation.md](validation.md)).
+Released in 0.4.0-pre. Tested on a real LiveKit stack in real browsers, on one machine, and since 0.4.11-pre on a public production server with a DigitalOcean Spaces bucket, in throwaway sessions with test cameras ([validation.md](validation.md)).
 
 **Needs a public server, a real event, or your own accounts.** Each has a script or a checklist:
 
 - Certificates, firewalls and real networks: `deploy/live/verify-public.sh`.
 - People on networks that only allow port 443: `live/tests/turn/check.cjs` against your server (a TURN relay over TLS on 443 through Traefik, with LiveKit's credentials).
-- The studio talking to a live server by its public name and certificate; locally it's only been exercised over the test transport.
 - A real session with real attendees.
 - A real stream to YouTube, Meta, X and LinkedIn. So far only a local RTMP server has received one, over RTMP and RTMPS.
-- A real bucket. A local S3-compatible server that checks every signature has taken recordings and captions, but Amazon S3 and DigitalOcean Spaces haven't.
+- Amazon S3. DigitalOcean Spaces has taken recordings and speakers' own copies (in multipart uploads), served them on signed links, and had them listed and deleted, in production; a strict local S3-compatible server has taken captions as well.
 - A load test on your own server: `live/tests/load/run.sh`. So far, on a laptop sharing its CPU with the load: 1,000 event streams and 100 simulated media viewers ([validation.md](validation.md)). No real browsers at that scale, and no recording under load.
 - Safari itself, and real phones. So far: Playwright's WebKit build, including screen sharing, and phone screens in desktop browsers. Publishing a camera or microphone from Safari, and a transparent WebM graphic on a Safari viewer's screen, haven't been checked.
 - Caption accuracy with your own speakers, names and jargon.
@@ -135,7 +134,11 @@ Released in 0.4.0-pre. Tested on a real LiveKit stack in real browsers, on one m
 - Slides lose animations and transitions. Notes come from PowerPoint files, not PDFs. A deck the converter never picks up shows as converting for up to 20 minutes, then fails. This happened once in testing and wasn't explained.
 - RTMP input is RTMP only, not RTMPS, and an encoder is on stage for as long as its stream runs. There's no holding it in the green room.
 - Translated captions are live only. Saved SRT and transcript files stay in the spoken language. Translation needs a language pack per language on your server.
-- Speakers' own recordings stay on the live server's disk, listed with the recordings. They aren't copied to the bucket. A browser that can't keep up loses its own copy, not the main recording.
+- Speakers' own recordings are on by default. They go to the live server's disk as they're made and are copied to the bucket once finished. A browser that can't keep up loses its own copy, not the main recording.
+- A video sent through the media server starts a few seconds after it's played, can't be paused, and is transcoded on your server (about two CPU cores while it plays). Without that setting, this server sends the whole file to every viewer, which suits tens of people, not hundreds.
+- When going live with a video also starts the recording, attendees see the live stage, empty, for the 2 or 3 seconds the recorder takes to start.
+- A video added by link is checked for a private address when it's added and when it's played, but the media server looks the name up again when it fetches it. An HLS link plays only through the media server. A CDN that blocks hotlinking won't play in browsers.
+- Uploaded videos, up to 8 GB each, live on the live server's disk until the room is purged or deleted, and the nightly backup includes them, so each night's backup can be that much bigger.
 - `engagement.recorded` reaches webhook destinations and workflow presets. The native connectors (Salesforce, Pipedrive and the rest) don't send it yet.
 - Surveys appear to people still on the page when the session ends. Nothing emails them afterwards unless you set that up from the event.
 - Breakout rooms aren't recorded, captioned or included in attendance.
@@ -145,7 +148,7 @@ Released in 0.4.0-pre. Tested on a real LiveKit stack in real browsers, on one m
 - Removing someone from the studio's Team doesn't remove their host link from a session. Remove them under Crew.
 - A replaced crew link's old LiveKit credential can watch for up to 15 minutes. It can't publish unless that person is on stage.
 - A host or producer who deliberately modifies their browser could send their voice as a screen's audio.
-- Go live is one press, with no undo.
+- Go live is one press. Once live, the only way back is End, then Reopen.
 - A poll's counts are in the event stream even with counts hidden on screen, so someone reading the stream can see them.
 - Guests, and attendees brought on stage, see attendees' names in crew chat.
 - A person can hold a breakout seat through `/act` without connecting, until the rooms close.
@@ -153,4 +156,4 @@ Released in 0.4.0-pre. Tested on a real LiveKit stack in real browsers, on one m
 - iOS autoplay hasn't been checked on a real phone. If a browser blocks sound, the page offers a button to turn it on.
 - After a page redraw, keyboard focus is restored for typing but not always for buttons.
 
-**Not implemented:** captions from screen-share sound or video played on stage; pressing Go live on a platform for you; clustering across several LiveKit servers.
+**Not implemented:** captions from screen-share sound or video played on stage; pausing a video sent through the media server; pressing Go live on a platform for you; clustering across several LiveKit servers.

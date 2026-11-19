@@ -2,8 +2,10 @@
 # Run deploy/live/setup.sh first. Host networking because LiveKit carries media on many UDP
 # ports. Everything but Traefik and LiveKit's media ports listens on 127.0.0.1 only.
 #
-# Optional parts are off until asked for: COMPOSE_PROFILES=encoder,translate in .env
+# Optional parts are off until asked for: COMPOSE_PROFILES=encoder,video,translate in .env
 #   encoder    RTMP input, for OBS, vMix or a hardware encoder. Opens port 1935.
+#   video      videos played on the stage sent through the media server (LIVE_VIDEO_INGRESS=1).
+#              The same ingress container as encoder, so either starts it.
 #   translate  captions in other languages. Needs about 1 GB of disk and memory per language.
 name: visioncast-live
 x-host: &host
