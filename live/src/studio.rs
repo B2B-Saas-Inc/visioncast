@@ -1468,7 +1468,12 @@ pub async fn act(State(app): State<Arc<AppState>>, Path(ticket): Path<String>, J
     if me.role == Crew::Attendee && !matches!(app::room_window(me.ticket_role, &me.room, now()), app::Window::Open) && !matches!(body.action, Action::SurveyAnswer { .. }) {
         return Err(ApiError(StatusCode::CONFLICT, "not_available"));
     }
-    let result = apply(&app, &hub, &me, body.action).await?;
+    // On its own task: a browser that closes or loses its connection mid-action mustn't leave it
+    // half done, like a recording stopped by End while the session stays live.
+    let (app, hub, action) = (app.clone(), hub.clone(), body.action);
+    let result = tokio::spawn(async move { apply(&app, &hub, &me, action).await })
+        .await
+        .map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "internal_error"))??;
     Ok(Json(result))
 }
 

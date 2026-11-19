@@ -27,6 +27,7 @@ struct Fake {
     fail: Mutex<bool>,
     fail_cast: Mutex<bool>,
     fail_video: Mutex<bool>,
+    slow_stop: Mutex<bool>,
     mics: Mutex<Vec<(String, String)>>,
 }
 
@@ -50,6 +51,10 @@ impl Backend for Fake {
         Ok(())
     }
     async fn stop_egress(&self, egress_id: &str) -> Result<(), BackendError> {
+        let slow = *self.slow_stop.lock().unwrap();
+        if slow {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        }
         self.calls.lock().unwrap().push(format!("stop:{egress_id}"));
         Ok(())
     }
@@ -2348,4 +2353,20 @@ async fn a_video_can_play_from_its_link_without_being_uploaded() {
     assert_eq!(c.act(&host, CLIENT, json!({"type":"media_play","id":hls})).await.1["error"], "video_stream_unavailable");
     assert!(c.snapshot(&host, CLIENT).await["state"]["media"].is_null(), "not left showing a stream that was stopped");
     assert_eq!(c.act(&host, CLIENT, json!({"type":"file_delete","id":id})).await.0, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn ending_finishes_even_if_the_browser_goes_away_halfway() {
+    let c = ctx(true);
+    let host = live_with_host(&c).await;
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"go_live"})).await.0, StatusCode::OK);
+    assert_eq!(c.act(&host, CLIENT, json!({"type":"record","on":true})).await.0, StatusCode::OK);
+    *c.fake.slow_stop.lock().unwrap() = true;
+    let end = json!({"clientId": CLIENT, "action": {"type": "end_session"}});
+    let req = Request::post(format!("{host}/act")).header(header::CONTENT_TYPE, "application/json").body(Body::from(end.to_string())).unwrap();
+    // The browser gives up while the recorder is still being stopped.
+    assert!(tokio::time::timeout(std::time::Duration::from_millis(50), c.app.clone().oneshot(req)).await.is_err());
+    tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+    let state = c.snapshot(&host, CLIENT).await["state"].clone();
+    assert_eq!((state["phase"].as_str(), state["recording"].as_bool()), (Some("ended"), Some(false)));
 }
